@@ -1,0 +1,365 @@
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { supabase } from '../services/supabase';
+import { apiFetch } from '../services/api';
+import { type LocationStatus, fetchCurrentLocation } from '../utils/geolocation';
+
+export interface Entitlements {
+  max_fields: number;
+  can_use_whatsapp: boolean;
+  can_use_push: boolean;
+}
+
+export interface Location {
+  id?: string;
+  lat: number;
+  lng: number;
+  name?: string;
+  boundaries?: [number, number][];
+  cultura?: string;
+  dataPlantio?: string;
+  variedade?: string;
+  areaHa?: number;
+  farm_id?: string;
+}
+
+export interface Farm {
+  id: string;
+  name: string;
+  description?: string;
+  fields: Location[];
+}
+
+export type MapLayer = 'satellite' | 'ndvi' | 'moisture';
+
+export interface Alert {
+  id: string;
+  type: 'critical' | 'warning' | 'info';
+  title: string;
+  message: string;
+  timestamp: number;
+  dismissed: boolean;
+  field?: string;
+  value?: string;
+  valueLabel?: string;
+}
+
+export interface WeatherCache {
+  lat: number;
+  lng: number;
+  fetchedAt: number;
+  temperature: number;
+  windSpeed: number;
+  humidity: number;
+  weatherCode: number;
+  daily: {
+    time: string[];
+    tempMax: number[];
+    tempMin: number[];
+    precipSum: number[];
+    et0: number[];
+  };
+  hourly: {
+    time: string[];
+    temp: number[];
+    humidity: number[];
+    precip: number[];
+    windSpeed: number[];
+    visibility: number[];
+  };
+}
+
+// ── Funções centralizadas de mapeamento (OBRIGATÓRIO — não mapear manualmente) ──
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapDbToField(row: any): Location {
+  return {
+    id: row.id,
+    farm_id: row.farm_id,
+    name: row.name,
+    lat: Number(row.latitude),
+    lng: Number(row.longitude),
+    cultura: row.crop_type ?? undefined,
+    variedade: row.variety ?? undefined,
+    dataPlantio: row.planting_date ?? undefined,
+    areaHa: row.area_ha != null ? Number(row.area_ha) : undefined,
+    boundaries: Array.isArray(row.boundaries)
+      ? row.boundaries.map((p: [number, number]) => [Number(p[0]), Number(p[1])] as [number, number])
+      : undefined,
+  };
+}
+
+function mapFieldToDb(field: Omit<Location, 'id'> & { farm_id: string; user_id: string }) {
+  return {
+    farm_id: field.farm_id,
+    user_id: field.user_id,
+    name: field.name ?? 'Talhão',
+    latitude: field.lat,
+    longitude: field.lng,
+    crop_type: field.cultura ?? null,
+    variety: field.variedade ?? null,
+    planting_date: field.dataPlantio ?? null,
+    area_ha: field.areaHa ?? null,
+    boundaries: field.boundaries ?? null,
+  };
+}
+
+// ── State Interface ───────────────────────────────────────────────────────────
+
+interface AppState {
+  farms: Farm[];
+  fields: Location[];
+  chatHistory: { role: 'user' | 'model'; text: string }[];
+  alerts: Alert[];
+  weatherCache: WeatherCache | null;
+  activeFarmId: string | null;
+  activeFieldId: string | null;
+  activeMapLayer: MapLayer;
+  currentLocation: Location | null;
+  locationStatus: LocationStatus;
+  isSyncing: boolean;
+  syncError: string | null;
+  entitlements: Entitlements | null;
+
+  setFarms: (farms: Farm[]) => void;
+  setActiveFarm: (id: string | null) => void;
+  setActiveField: (id: string | null) => void;
+  setMapLayer: (layer: MapLayer) => void;
+  setCurrentLocation: (loc: Location | null) => void;
+  setLocationStatus: (status: LocationStatus) => void;
+  updateGeolocation: () => Promise<void>;
+  addFarm: (farm: Farm) => void;
+  syncFields: () => Promise<void>;
+  createField: (farmId: string, field: Omit<Location, 'id'>) => Promise<void>;
+  removeField: (farmId: string, fieldId: string) => Promise<void>;
+  addMessage: (role: 'user' | 'model', text: string) => void;
+  clearChat: () => void;
+  setAlerts: (alerts: Alert[]) => void;
+  dismissAlert: (id: string) => void;
+  setWeatherCache: (cache: WeatherCache) => void;
+  fetchEntitlements: () => Promise<void>;
+  syncFromBackend: () => Promise<void>;
+  resetStore: () => void;
+}
+
+const MAX_CHAT_HISTORY = 100;
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      farms: [],
+      fields: [],
+      chatHistory: [],
+      alerts: [],
+      weatherCache: null,
+      activeFarmId: null,
+      activeFieldId: null,
+      activeMapLayer: 'satellite',
+      currentLocation: null,
+      locationStatus: 'loading',
+      isSyncing: false,
+      syncError: null,
+      entitlements: null,
+
+      setFarms: (farms) => {
+        set({ farms });
+      },
+
+      setActiveFarm: (id) =>
+        set({
+          activeFarmId: id,
+          activeFieldId: null,
+        }),
+
+      setActiveField: (id) => set({ activeFieldId: id }),
+      setMapLayer: (layer) => set({ activeMapLayer: layer }),
+      setCurrentLocation: (loc) => set({ currentLocation: loc }),
+      setLocationStatus: (status) => set({ locationStatus: status }),
+
+      updateGeolocation: async () => {
+        set({ locationStatus: 'loading' });
+        const res = await fetchCurrentLocation();
+        set({
+          currentLocation: { lat: res.lat, lng: res.lng, name: res.name },
+          locationStatus: res.status,
+        });
+      },
+
+      addFarm: (farm) =>
+        set((state) => ({
+          farms: [...state.farms, farm],
+          activeFarmId: state.activeFarmId || farm.id,
+        })),
+
+      // ── syncFields: fonte única de verdade via Supabase ──────────────────────
+      syncFields: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          console.warn('[Store] syncFields: usuário não autenticado.');
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('fields')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.error('[Store] Erro ao sincronizar talhões:', error);
+          throw error;
+        }
+
+        const mappedFields = (data ?? []).map(mapDbToField);
+        set({ fields: mappedFields });
+      },
+
+      // ── createField: insert no Supabase com validações obrigatórias ──────────
+      createField: async (farmId, fieldData) => {
+        // Validação obrigatória antes de qualquer operação
+        if (!farmId) {
+          throw new Error('Nenhuma fazenda ativa selecionada. Operação cancelada.');
+        }
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          throw new Error('Usuário não autenticado. Faça login novamente.');
+        }
+
+        const dbPayload = mapFieldToDb({
+          ...fieldData,
+          farm_id: farmId,
+          user_id: user.id,
+        });
+
+        const { data: newField, error } = await supabase
+          .from('fields')
+          .insert(dbPayload)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[Store] Erro ao criar talhão:', error);
+          throw error;
+        }
+
+        // Atualizar o estado local APENAS com a resposta confirmada do banco
+        const mapped = mapDbToField(newField);
+        set((state) => ({ fields: [...state.fields, mapped] }));
+      },
+
+      // ── removeField: delete no Supabase + garantia de consistência ───────────
+      removeField: async (_farmId, fieldId) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          throw new Error('Usuário não autenticado.');
+        }
+
+        const { error } = await supabase
+          .from('fields')
+          .delete()
+          .eq('id', fieldId)
+          .eq('user_id', user.id); // garantia de ownership
+
+        if (error) {
+          console.error('[Store] Erro ao remover talhão:', error);
+          throw error;
+        }
+
+        // Otimista: remover do estado local imediatamente
+        set((state) => ({
+          fields: state.fields.filter((f) => f.id !== fieldId),
+          activeFieldId: state.activeFieldId === fieldId ? null : state.activeFieldId,
+        }));
+
+        // Garantia de consistência pós-delete
+        await get().syncFields();
+      },
+
+      addMessage: (role, text) =>
+        set((state) => ({
+          chatHistory: [...state.chatHistory, { role, text }].slice(-MAX_CHAT_HISTORY),
+        })),
+
+      clearChat: () => set({ chatHistory: [] }),
+      setAlerts: (alerts) => set({ alerts }),
+
+      dismissAlert: (id) =>
+        set((state) => ({
+          alerts: state.alerts.map((a) => (a.id === id ? { ...a, dismissed: true } : a)),
+        })),
+
+      setWeatherCache: (cache) => set({ weatherCache: cache }),
+
+      fetchEntitlements: async () => {
+        try {
+          const ent = await apiFetch<Entitlements>('/api/billing/entitlements');
+          set({ entitlements: ent });
+        } catch (e) {
+          console.error('[Store] Erro ao buscar entitlements', e);
+        }
+      },
+
+      syncFromBackend: async () => {
+        set({ isSyncing: true, syncError: null });
+        try {
+          await get().fetchEntitlements();
+
+          // Sincronizar fazendas via API (autenticação via JWT)
+          const { farmService } = await import('../services/farm_service');
+          await farmService.bootstrapFarm();
+
+          const farms = await farmService.getFarms();
+          set({
+            farms,
+            activeFarmId: (() => {
+              const currentActiveId = get().activeFarmId;
+              const firstFarmId = farms.length > 0 ? farms[0].id : null;
+              return currentActiveId && farms.find((f) => f.id === currentActiveId)
+                ? currentActiveId
+                : firstFarmId;
+            })(),
+          });
+
+          // Sincronizar talhões via Supabase (fonte única de verdade)
+          await get().syncFields();
+        } catch (error) {
+          console.error('[Store] Erro ao sincronizar:', error);
+          set({ syncError: 'Ocorreu um erro ao carregar seus talhões.' });
+        } finally {
+          set({ isSyncing: false });
+        }
+      },
+
+      resetStore: () =>
+        set({
+          farms: [],
+          fields: [],
+          chatHistory: [],
+          alerts: [],
+          weatherCache: null,
+          activeFarmId: null,
+          activeFieldId: null,
+          currentLocation: null,
+          locationStatus: 'loading',
+          syncError: null,
+          isSyncing: false,
+          entitlements: null,
+        }),
+    }),
+    {
+      name: 'tracto-app-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        activeFarmId: state.activeFarmId,
+        activeFieldId: state.activeFieldId,
+        activeMapLayer: state.activeMapLayer,
+        currentLocation: state.currentLocation,
+        locationStatus: state.locationStatus,
+        // fields NÃO é persistido — vem sempre do Supabase via syncFields()
+      }),
+    }
+  )
+);
+
+export default useAppStore;

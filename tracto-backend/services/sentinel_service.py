@@ -1,0 +1,256 @@
+import os
+import httpx
+import logging
+import json
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+def get_oauth_token():
+    client_id = os.getenv("SENTINEL_CLIENT_ID")
+    client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
+    
+    if not client_id or not client_secret:
+        logging.error("SENTINEL credentials not configured.")
+        return None
+        
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                "https://services.sentinel-hub.com/oauth/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret
+                }
+            )
+            response.raise_for_status()
+            return response.json().get("access_token")
+    except Exception as e:
+        logging.error(f"Error getting Sentinel OAuth token: {str(e)}")
+        return None
+
+def get_bbox_from_boundaries(boundaries: list[list[float]] | None, lat: float, lng: float) -> list[float]:
+    """
+    Calcula o BBox [min_lng, min_lat, max_lng, max_lat] a partir das boundaries.
+    Caso nao existam boundaries, usa um offset de 0.005 (~500m).
+    """
+    if not boundaries or len(boundaries) < 3:
+        # Fallback para aprox 1km x 1km (0.01 grau total)
+        return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
+    
+    if boundaries is not None:
+        lats: List[float] = [p[0] for p in boundaries if p is not None and len(p) >= 1]
+        lngs: List[float] = [p[1] for p in boundaries if p is not None and len(p) >= 2]
+    else:
+        return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
+    
+    # Adiciona uma pequena margem de 10% ou 0.0005 graus
+    margin = 0.0005
+    return [
+        min(lngs) - margin,
+        min(lats) - margin,
+        max(lngs) + margin,
+        max(lats) + margin
+    ]
+
+def get_ndvi_stats(bbox: list[float], boundaries: list[list[float]] | None = None):
+    """
+    Obtem estatisticas reais de NDVI via Sentinel Hub Statistics API.
+    Retorna media, classes e cobertura de nuvens deterministica.
+    """
+    token = get_oauth_token()
+    if not token:
+        return None
+        
+    # Se tivermos polígono real, podemos usar no 'geometry' da API para masking
+    bounds_payload: Dict[str, Any] = {
+        "bbox": bbox,
+        "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}
+    }
+    
+    if boundaries and len(boundaries) >= 3:
+        # GeoJSON Polygon: [[ [lng, lat], [lng, lat]... ]]
+        # Add real geometry for masking if available
+        # Explicit float conversion and safe indexing
+        valid_poly = []
+        for p in boundaries:
+            if p is not None and len(p) >= 2:
+                valid_poly.append([float(p[1]), float(p[0])])
+        
+        if len(valid_poly) >= 3:
+            polygon = [valid_poly]
+            if polygon[0][0] != polygon[0][-1]:
+                polygon[0].append(polygon[0][0])
+            # Ensure bounds_payload is a dict (linter fix)
+            if isinstance(bounds_payload, dict): # This check is redundant as bounds_payload is initialized as Dict[str, Any]
+                bounds_payload["geometry"] = {"type": "Polygon", "coordinates": polygon}
+
+    # Evalscript que calcula NDVI e retorna stats
+    evalscript = """
+    //VERSION=3
+    function setup() {
+      return {
+        input: [{ bands: ["B04", "B08", "dataMask"] }],
+        output: [
+          { id: "ndvi", bands: 1 },
+          { id: "dataMask", bands: 1 }
+        ]
+      };
+    }
+    function evaluatePixel(samples) {
+      let ndvi = (samples.B08 - samples.B04) / (samples.B08 + samples.B04);
+      return {
+        ndvi: [ndvi],
+        dataMask: [samples.dataMask]
+      };
+    }
+    """
+
+    payload = {
+        "input": {
+            "bounds": bounds_payload,
+            "data": [
+                {
+                    "type": "sentinel-2-l2a",
+                    "dataFilter": {
+                        "maxCloudCoverage": 30,
+                        "timeRange": {
+                            "from": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z"),
+                            "to": datetime.now().strftime("%Y-%m-%dT23:59:59Z")
+                        }
+                    }
+                }
+            ]
+        },
+        "aggregation": {
+            "timeRange": {
+                "from": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z"),
+                "to": datetime.now().strftime("%Y-%m-%dT23:59:59Z")
+            },
+            "aggregationInterval": {"of": "P30D"},
+            "evalscript": evalscript,
+            "resx": 10,
+            "resy": 10
+        }
+    }
+
+    try:
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        with httpx.Client() as client:
+            response = client.post("https://services.sentinel-hub.com/api/v1/statistics", headers=headers, json=payload, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+        
+        # Parseando o resultado (simplificado para pegar o primeiro entry)
+        output = data.get("data", [])[0].get("outputs", {}).get("ndvi", {}).get("bands", {}).get("B0", {}).get("stats", {})
+        
+        # Se nao houver dados reais, retornamos None para o fallback cuidar
+        if not output or output.get("count", 0) == 0:
+            return None
+            
+        return {
+            "ndvi_avg": output.get("mean", 0),
+            "ndvi_max": output.get("max", 0),
+            "ndvi_min": output.get("min", 0),
+            "count": output.get("count", 0),
+            "cloud_coverage": None # Indisponivel sem extracao explicita de nuvens
+        }
+    except Exception as e:
+        logging.warning(f"Erro ao buscar estatisticas Sentinel: {str(e)}")
+        return None
+
+def get_ndvi_image(lat: float, lng: float, boundaries: list[list[float]] | None = None, date_range_days: int = 15):
+    token = get_oauth_token()
+    if not token:
+        return None
+        
+    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+    
+    # Deterministic stats first!
+    stats = get_ndvi_stats(bbox, boundaries)
+    
+    to_date = datetime.now().strftime("%Y-%m-%d")
+    
+    evalscript = """
+    //VERSION=3
+    function setup() {
+      return { input: ["B04","B08","dataMask"], output: { bands: 4 } };
+    }
+    function evaluatePixel(s) {
+      let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
+      if (s.dataMask === 0) return [0,0,0,0];
+      if (ndvi < 0)    return [0.5, 0.5, 0.5, 1]; // solo/água
+      if (ndvi < 0.2)  return [0.8, 0.2, 0.1, 1]; // vermelho: crítico
+      if (ndvi < 0.4)  return [0.9, 0.7, 0.1, 1]; // amarelo: estresse
+      if (ndvi < 0.6)  return [0.4, 0.8, 0.2, 1]; // verde claro: ok
+      return [0.1, 0.5, 0.1, 1];                   // verde escuro: ótimo
+    }
+    """
+    
+    # Attempt with date_range_days then fallback to 30
+    attempts = [date_range_days, 30]
+    
+    for days in attempts:
+        f_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        payload = {
+            "input": {
+                "bounds": {
+                    "bbox": bbox,
+                    "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}
+                },
+                "data": [
+                    {
+                        "type": "sentinel-2-l2a",
+                        "dataFilter": {
+                            "timeRange": {"from": f"{f_date}T00:00:00Z", "to": f"{to_date}T23:59:59Z"},
+                            "maxCloudCoverage": 30
+                        }
+                    }
+                ]
+            },
+            "output": {
+                "width": 512, "height": 512,
+                "responses": [{"identifier": "default", "format": {"type": "image/png"}}]
+            },
+            "evalscript": evalscript
+        }
+        
+        # Add real geometry for masking if available
+        if boundaries is not None and len(boundaries) >= 3:
+            # Explicit float conversion and safe indexing
+            valid_poly = []
+            for p in boundaries:
+                if p is not None and len(p) >= 2:
+                    valid_poly.append([float(p[1]), float(p[0])])
+            
+            if len(valid_poly) >= 3:
+                polygon = [valid_poly]
+                if polygon[0][0] != polygon[0][-1]:
+                    polygon[0].append(polygon[0][0])
+                # Ensure payload is a dict (linter fix)
+                if isinstance(payload, dict):
+                    payload["input"]["bounds"]["geometry"] = {"type": "Polygon", "coordinates": polygon}
+
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        
+        try:
+            logging.info(f"Fetching Sentinel NDVI for {lat}, {lng} (Polygon-based)")
+            with httpx.Client() as client:
+                response = client.post("https://services.sentinel-hub.com/api/v1/process", headers=headers, json=payload, timeout=60.0)
+                response.raise_for_status()
+                
+                import base64
+                image_base64 = base64.b64encode(response.content).decode('utf-8')
+            
+            return {
+                "image_base64": image_base64,
+                "date_acquired": f"{to_date} (Aproximado)", # Explicit fallback date
+                "cloud_coverage": None, # Fallback explicitly empty so UI shows N/D instead of fake 20
+                "stats": stats,
+                "is_polygonal": boundaries is not None and len(boundaries) >= 3
+            }
+        except Exception as e:
+            logging.error(f"Error fetching Sentinel NDVI: {str(e)}")
+            continue
+            
+    return None

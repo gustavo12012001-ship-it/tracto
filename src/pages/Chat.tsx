@@ -1,0 +1,693 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import useAppStore from '../store/useAppStore';
+import { apiFetch } from '../services/api';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../services/supabase';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Message {
+  role: 'user' | 'assistant';
+  text: string;
+  time: string;
+  imagePreview?: string;
+}
+
+interface SavedConversation {
+  conversation_id: string;
+  title: string;
+  messages: { role: string; text: string }[];
+  farm_context?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const nowTime = () =>
+  new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+const nowISO = () => new Date().toISOString();
+
+function relativeDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `há ${mins}min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `há ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'ontem';
+  return `há ${days} dias`;
+}
+
+const INITIAL_MSG = (time: string): Message => ({
+  role: 'assistant',
+  text: 'Olá! Sou a **Tracto IA**, sua analista agronômica. Posso ajudar com análise de solo, NDVI, irrigação, pragas, colheita e clima.\n\n📸 **Dica:** Envie uma foto da lavoura para análise visual de pragas e doenças.\n\nComo posso ajudar?',
+  time,
+});
+
+function buildFarmContext(
+  fields: ReturnType<typeof useAppStore.getState>['fields']
+): string {
+  if (fields.length === 0) return 'Nenhum talhão cadastrado.';
+  return fields
+    .map((l, i) => {
+      const area = l.areaHa ? `${l.areaHa.toFixed(2)} ha` : 'Área N/D';
+      let ctx = `- ${l.name ?? `Talhão ${i + 1}`} (${area})`;
+      const cached = localStorage.getItem(`tracto-ndvi-${l.lat}-${l.lng}`);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+            const ndvi = parsed.data.ndvi_analysis;
+            ctx += `\n  NDVI: ndvi_medio=${ndvi.ndvi_medio?.toFixed(2)}, zona_critica=${ndvi.zona_critica_pct}%, tendencia=${ndvi.tendencia}`;
+          }
+        } catch { /* ignore */ }
+      }
+      return ctx;
+    })
+    .join('\n');
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+  });
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
+export default function Chat() {
+  const { addMessage, clearChat, fields, weatherCache } = useAppStore();
+
+  // Conversation state
+  const [conversationId, setConversationId] = useState<string>(() => uuidv4());
+  const [conversationCreatedAt, setConversationCreatedAt] = useState<string>(() => nowISO());
+  const [messages, setMessages] = useState<Message[]>(() => [INITIAL_MSG(nowTime())]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Sidebar: saved conversations
+  const [savedConversations, setSavedConversations] = useState<SavedConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+
+  // Image
+  const [pendingImage, setPendingImage] = useState<{
+    base64: string;
+    mimeType: string;
+    preview: string;
+    name: string;
+  } | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
+
+  useEffect(() => {
+    return () => {
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+      if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+    };
+  }, [pendingImage]);
+
+  // ── Load saved conversations on mount ──────────────────────────────────────
+  useEffect(() => {
+    loadConversations();
+  }, []);
+
+  const loadConversations = async () => {
+    try {
+      setLoadingConversations(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const data = await apiFetch<{ conversations: SavedConversation[] }>('/api/conversations');
+      setSavedConversations(data.conversations || []);
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : 'Nao foi possivel carregar as conversas salvas.');
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  // ── Auto-save with 3s debounce ──────────────────────────────────────────────
+  const scheduleSave = useCallback(
+    (msgs: Message[], cid: string, createdAt: string) => {
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+      saveDebounceRef.current = setTimeout(async () => {
+        const userMessages = msgs.filter((m) => m.role !== 'assistant' || msgs.indexOf(m) > 0);
+        if (userMessages.length < 2) return; // só salvar se houver pelo menos 1 troca
+
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          // Título = primeiros 40 chars da 1ª msg do usuário
+          const firstUserMsg = msgs.find((m) => m.role === 'user');
+          const title = firstUserMsg
+            ? firstUserMsg.text.slice(0, 40) + (firstUserMsg.text.length > 40 ? '...' : '')
+            : 'Nova Conversa';
+
+          await apiFetch('/api/conversations/save', {
+            method: 'POST',
+            body: JSON.stringify({
+              conversation_id: cid,
+              title,
+              messages: msgs.map((m) => ({
+                role: m.role === 'assistant' ? 'model' : 'user',
+                text: m.text,
+              })),
+              farm_context: buildFarmContext(fields),
+              created_at: createdAt,
+              updated_at: nowISO(),
+            }),
+          });
+          await loadConversations();
+        } catch (error) {
+          setApiError(error instanceof Error ? error.message : 'Nao foi possivel sincronizar a conversa.');
+        }
+      }, 3000);
+    },
+    [fields]
+  );
+
+  // ── Start new conversation ─────────────────────────────────────────────────
+  const startNewConversation = () => {
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    const newId = uuidv4();
+    const createdAt = nowISO();
+    setConversationId(newId);
+    setConversationCreatedAt(createdAt);
+    setMessages([INITIAL_MSG(nowTime())]);
+    setActiveConversationId(null);
+    clearChat();
+    setApiError(null);
+    setInput('');
+    setPendingImage(null);
+  };
+
+  // ── Load a saved conversation ──────────────────────────────────────────────
+  const loadConversation = (conv: SavedConversation) => {
+    setActiveConversationId(conv.conversation_id);
+    setConversationId(conv.conversation_id);
+    setConversationCreatedAt(conv.created_at);
+    const loaded: Message[] = conv.messages.map((m) => ({
+      role: m.role === 'model' || m.role === 'assistant' ? 'assistant' : 'user',
+      text: m.text,
+      time: '',
+    }));
+    setMessages(loaded.length > 0 ? loaded : [INITIAL_MSG(nowTime())]);
+    setInput('');
+    setPendingImage(null);
+    setApiError(null);
+  };
+
+  // ── Delete conversation ────────────────────────────────────────────────────
+  const deleteConversation = async (e: React.MouseEvent, convId: string) => {
+    e.stopPropagation();
+    try {
+      await apiFetch(`/api/conversations/${convId}`, { method: 'DELETE' });
+      setSavedConversations((prev) => prev.filter((c) => c.conversation_id !== convId));
+      if (activeConversationId === convId) startNewConversation();
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : 'Nao foi possivel deletar a conversa.');
+    }
+  };
+
+  // ── Image handling ─────────────────────────────────────────────────────────
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      setApiError('Formato inválido. Use JPG, PNG ou WEBP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setApiError('Imagem muito grande. Máximo: 5MB.');
+      return;
+    }
+    try {
+      const base64 = await fileToBase64(file);
+      const preview = URL.createObjectURL(file);
+      setPendingImage({ base64, mimeType: file.type, preview, name: file.name });
+      setApiError(null);
+    } catch {
+      setApiError('Erro ao processar a imagem.');
+    }
+    e.target.value = '';
+  };
+
+  const removePendingImage = () => {
+    if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+    setPendingImage(null);
+  };
+
+  // ── Send message ───────────────────────────────────────────────────────────
+  const sendMessage = async (text?: string) => {
+    const content = (text ?? input).trim();
+    if ((!content && !pendingImage) || isLoading) return;
+    setInput('');
+    setApiError(null);
+
+    const imagePreview = pendingImage?.preview;
+    const imageBase64 = pendingImage?.base64 ?? null;
+    const imageMime = pendingImage?.mimeType ?? 'image/jpeg';
+    const capturedImage = pendingImage;
+    setPendingImage(null);
+
+    const userMsg: Message = {
+      role: 'user',
+      text: content || '📸 [Imagem enviada para análise]',
+      time: nowTime(),
+      imagePreview,
+    };
+
+    const newMessages = (prev: Message[]) => [...prev, userMsg];
+    setMessages((p) => newMessages(p));
+    addMessage('user', userMsg.text);
+    setIsLoading(true);
+
+    try {
+      const payloadMessages = [
+        ...messages
+          .filter((m) => m.role !== 'assistant' || messages.indexOf(m) > 0)
+          .map((m) => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            text: m.text,
+          })),
+        { role: 'user', text: userMsg.text },
+      ];
+
+      const farm_context = buildFarmContext(fields);
+      const hourly_weather = weatherCache
+        ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
+        : null;
+
+      const data = await apiFetch<{ reply: string }>('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          messages: payloadMessages,
+          farm_context,
+          image_base64: imageBase64,
+          image_mime_type: imageMime,
+          hourly_weather,
+        }),
+      });
+
+      if (capturedImage) URL.revokeObjectURL(capturedImage.preview);
+
+      const aiText = data.reply ?? '';
+      const aiMsg: Message = { role: 'assistant', text: aiText, time: nowTime() };
+
+      setMessages((prev) => {
+        const updated = [...prev, aiMsg];
+        scheduleSave(updated, conversationId, conversationCreatedAt);
+        return updated;
+      });
+      addMessage('model', aiText);
+      setActiveConversationId(conversationId);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+      setApiError(msg);
+      setMessages((p) => [
+        ...p,
+        { role: 'assistant', text: `⚠️ Erro ao conectar: ${msg}`, time: nowTime() },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <>
+      {/* ── Sidebar: Histórico ──────────────────────────────────────────── */}
+      <div
+        className="w-64 flex-shrink-0 flex flex-col border-r"
+        style={{ background: 'rgba(255,255,255,0.01)', borderColor: 'rgba(255,255,255,0.07)' }}
+      >
+        {/* New conversation button */}
+        <div className="p-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+          <button
+            onClick={startNewConversation}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+            style={{ background: 'rgba(236,91,19,0.14)', border: '1px solid rgba(236,91,19,0.22)' }}
+          >
+            <span>Nova Conversa</span>
+            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>
+              add_comment
+            </span>
+          </button>
+        </div>
+
+        {/* Conversation list */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-3">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-widest px-2 py-2"
+            style={{ color: '#64748b' }}
+          >
+            Conversas Salvas
+          </p>
+
+          {loadingConversations && (
+            <div className="flex justify-center py-4">
+              <span
+                className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+                style={{ borderColor: '#ec5b13', borderTopColor: 'transparent' }}
+              />
+            </div>
+          )}
+
+          {!loadingConversations && !apiError && savedConversations.length === 0 && (
+            <p className="text-[10px] px-2 py-3" style={{ color: '#334155' }}>
+              Nenhuma conversa salva ainda.
+            </p>
+          )}
+
+
+          <div className="space-y-0.5">
+            {savedConversations.map((conv) => {
+              const isActive = activeConversationId === conv.conversation_id;
+              return (
+                <div key={conv.conversation_id} className="group relative">
+                  <button
+                    onClick={() => loadConversation(conv)}
+                    className="w-full text-left px-3 py-2.5 rounded-xl transition-all"
+                    style={{
+                      background: isActive ? 'rgba(236,91,19,0.1)' : 'transparent',
+                      border: isActive ? '1px solid rgba(236,91,19,0.3)' : '1px solid transparent',
+                    }}
+                  >
+                    <p
+                      className="text-xs font-medium truncate pr-5"
+                      style={{ color: isActive ? '#f97316' : '#cbd5e1' }}
+                    >
+                      {conv.title}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: '#475569' }}>
+                      {relativeDate(conv.updated_at)}
+                    </p>
+                  </button>
+                  {/* Delete button — visible on hover */}
+                  <button
+                    onClick={(e) => deleteConversation(e, conv.conversation_id)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
+                    style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}
+                    title="Deletar conversa"
+                  >
+                    <span className="material-symbols-outlined text-xs">delete</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Context badge */}
+          {fields.length > 0 && (
+            <div className="mt-4 px-2">
+              <p
+                className="text-[10px] font-semibold uppercase tracking-widest mb-2"
+                style={{ color: '#64748b' }}
+              >
+                Contexto ativo
+              </p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#4ade80' }}>
+                  <span className="material-symbols-outlined text-xs">map</span>
+                  {fields.length} talhão{fields.length > 1 ? 'ões' : ''}
+                </div>
+                {weatherCache && (
+                  <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#60a5fa' }}>
+                    <span className="material-symbols-outlined text-xs">wb_sunny</span>
+                    {Math.round(weatherCache.temperature)}°C · {weatherCache.humidity}%
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* API status */}
+        <div className="p-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+          <div
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-semibold ${
+              apiError ? 'text-red-400' : 'text-green-400'
+            }`}
+            style={{
+              background: apiError ? 'rgba(239,68,68,0.08)' : 'rgba(74,222,128,0.07)',
+              border: `1px solid ${apiError ? 'rgba(239,68,68,0.18)' : 'rgba(74,222,128,0.15)'}`,
+            }}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                apiError ? 'bg-red-400' : 'bg-green-400 animate-pulse'
+              }`}
+            />
+            {apiError ? 'Erro de API' : 'Servidor conectado'}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Chat Principal ─────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0" style={{ background: '#080809' }}>
+        {/* Header */}
+        <div
+          className="px-5 py-3 border-b flex items-center justify-between flex-shrink-0"
+          style={{
+            borderColor: 'rgba(255,255,255,0.07)',
+            background: 'rgba(255,255,255,0.018)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(236,91,19,0.15)' }}
+            >
+              <span className="material-symbols-outlined text-xl" style={{ color: '#ec5b13' }}>
+                smart_toy
+              </span>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Tracto IA</h2>
+              <p className="text-[10px] flex items-center gap-1.5" style={{ color: '#64748b' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+                Analista Agronômica · Claude Sonnet · Visão Ativa
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={startNewConversation}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: '#94a3b8',
+            }}
+          >
+            <span className="material-symbols-outlined text-sm">refresh</span>
+            Reiniciar
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-4">
+          {messages.map((msg, i) =>
+            msg.role === 'assistant' ? (
+              <div key={i} className="flex gap-3 max-w-2xl">
+                <div
+                  className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center mt-0.5"
+                  style={{ background: 'rgba(236,91,19,0.15)' }}
+                >
+                  <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>
+                    smart_toy
+                  </span>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div
+                    className="px-4 py-3 rounded-2xl rounded-tl-none text-sm leading-relaxed prose prose-sm prose-invert max-w-none prose-p:my-1"
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                      color: '#cbd5e1',
+                    }}
+                  >
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
+                  {msg.time && (
+                    <p className="text-[10px] ml-1" style={{ color: '#334155' }}>
+                      Tracto IA · {msg.time}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="flex gap-3 max-w-2xl ml-auto flex-row-reverse">
+                <div
+                  className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center mt-0.5"
+                  style={{ background: 'rgba(255,255,255,0.06)' }}
+                >
+                  <span className="material-symbols-outlined text-sm" style={{ color: '#64748b' }}>
+                    person
+                  </span>
+                </div>
+                <div className="flex-1 flex flex-col items-end space-y-1">
+                  {msg.imagePreview && (
+                    <img
+                      src={msg.imagePreview}
+                      alt="Imagem enviada"
+                      className="max-w-[200px] max-h-[150px] rounded-xl object-cover"
+                      style={{ border: '1px solid rgba(236,91,19,0.3)' }}
+                    />
+                  )}
+                  <div
+                    className="px-4 py-3 rounded-2xl rounded-tr-none text-sm leading-relaxed"
+                    style={{
+                      background: 'rgba(236,91,19,0.12)',
+                      border: '1px solid rgba(236,91,19,0.2)',
+                      color: '#f1f5f9',
+                    }}
+                  >
+                    {msg.text}
+                  </div>
+                  {msg.time && (
+                    <p className="text-[10px] mr-1" style={{ color: '#334155' }}>
+                      Você · {msg.time}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Typing indicator */}
+          {isLoading && (
+            <div className="flex gap-3 max-w-2xl">
+              <div
+                className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center"
+                style={{ background: 'rgba(236,91,19,0.15)' }}
+              >
+                <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>
+                  smart_toy
+                </span>
+              </div>
+              <div
+                className="px-4 py-3.5 rounded-2xl rounded-tl-none flex items-center gap-1.5"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                }}
+              >
+                {[0, 0.15, 0.3].map((d, j) => (
+                  <span
+                    key={j}
+                    className="w-2 h-2 rounded-full animate-bounce"
+                    style={{ background: '#ec5b13', opacity: 0.7, animationDelay: `${d}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* ── Input bar ────────────────────────────────────────────────────── */}
+        <div className="p-4 border-t flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+          {/* Pending image preview */}
+          {pendingImage && (
+            <div className="mb-3 flex items-start gap-2">
+              <div className="relative inline-block">
+                <img
+                  src={pendingImage.preview}
+                  alt="Preview"
+                  className="w-16 h-16 rounded-xl object-cover"
+                  style={{ border: '1px solid rgba(236,91,19,0.4)' }}
+                />
+                <button
+                  onClick={removePendingImage}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-white"
+                  style={{ background: '#ef4444' }}
+                >
+                  <span className="material-symbols-outlined text-xs">close</span>
+                </button>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-300 truncate max-w-[180px]">
+                  {pendingImage.name}
+                </p>
+                <p className="text-[10px] mt-0.5" style={{ color: '#4ade80' }}>
+                  <span className="material-symbols-outlined text-xs align-middle mr-0.5">
+                    visibility
+                  </span>
+                  Pronto para análise visual
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Input row */}
+          <div
+            className="flex items-center gap-2 p-2 rounded-2xl"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${pendingImage ? 'rgba(236,91,19,0.35)' : 'rgba(255,255,255,0.09)'}`,
+            }}
+          >
+            {/* Attach image button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              title="Enviar foto da lavoura"
+              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all hover:opacity-80"
+              style={{
+                background: pendingImage ? 'rgba(236,91,19,0.25)' : 'rgba(255,255,255,0.06)',
+                border: `1px solid ${pendingImage ? 'rgba(236,91,19,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                color: pendingImage ? '#ec5b13' : '#64748b',
+              }}
+            >
+              <span className="material-symbols-outlined text-base">attach_file</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleImageSelect}
+            />
+
+            <input
+              className="flex-1 bg-transparent border-none text-sm focus:outline-none text-slate-200 placeholder:text-slate-600 px-1"
+              placeholder={
+                pendingImage
+                  ? 'Adicione uma pergunta ou envie só a foto...'
+                  : 'Pergunte sobre sua lavoura...'
+              }
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={isLoading || (!input.trim() && !pendingImage)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all hover:opacity-90 disabled:opacity-30 flex-shrink-0"
+              style={{ background: '#ec5b13' }}
+            >
+              <span className="material-symbols-outlined text-base">
+                {isLoading ? 'more_horiz' : 'arrow_upward'}
+              </span>
+            </button>
+          </div>
+          <p className="text-center text-[10px] mt-2" style={{ color: '#1e293b' }}>
+            Tracto IA · Claude Sonnet 4.6 · JPG · PNG · WEBP até 5MB
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}

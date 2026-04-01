@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="pt-br"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#ec5b13",
+                        "background-light": "#f8f6f6",
+                        "background-dark": "#221610",
+                        "slate-custom": "#1a1a1a",
+                        "surface-dark": "#2a2a2a"
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Public Sans', sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 overflow-hidden">
+<div class="flex h-screen w-full">
+<!-- SideNavBar -->
+<aside class="w-64 border-r border-gray-800 flex flex-col justify-between py-6 px-4" data-purpose="main-navigation" style="background-color: #0d0d0d;"><div><div class="mb-10 px-2"><h1 class="text-2xl font-bold tracking-tighter text-white">TRACTO</h1><p class="text-[10px] uppercase tracking-widest text-slate-500 font-medium">Data-Driven AgTech</p></div><nav class="space-y-1"><a class="flex items-center px-3 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors" href="#"><svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg> Mapa / Talhões</a><a class="flex items-center px-3 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors" href="#"><svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg> Meteorologia</a><a class="flex items-center px-3 py-2 text-sm font-medium rounded-lg group bg-primary/10 text-primary" href="#"><svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg> Chat IA<span class="flex items-center space-x-2 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all"></span></a><a class="flex items-center px-3 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors" href="#"><svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg> Alertas</a><a class="flex items-center px-3 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors" href="#"><svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg> Relatórios</a></nav></div><div><div class="space-y-6 pt-6 border-t border-gray-800"><div class="flex items-center justify-between"><div class="flex items-center space-x-3"><img alt="Dr. Elena Volkov Avatar" class="h-9 w-9 rounded-full border border-gray-700 bg-gray-800" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB91hP93eYL7nJx00nd_AH-i8IAsI7i2UUrhJ0Bjiw7iR3_fJNWo3jAl-CjRXMJxU2onjIVXmExVLDMUkz6hoywxuH9fmS4aX4NryaK5c7qVJy-5V8nYYxRBXBJBo4jrX-6gUff6zhkPvpWkebZfV9k7QafRT78HuW2zWz-mXl5Fj3e7Y_87aTnPokxEksYBHkjsmoPFxonvxCML7bIt5j_gPPlsmjnbFEQ39eOy9pq5GIPWwAP_agakjVT6h904lyP48mkoaYpZ_c"/><div class="min-w-0"><p class="text-sm font-semibold text-white truncate">Dr. Elena Volkov</p><p class="text-[10px] text-gray-500 truncate">Chief Agronomist</p></div></div><button class="text-gray-500 hover:text-white transition-colors"><span class="material-symbols-outlined text-xl">settings</span></button></div><button class="w-full flex items-center justify-center space-x-2 px-3 py-2.5 text-xs font-bold text-red-400 hover:text-red-300 bg-red-400/5 hover:bg-red-400/10 rounded-lg transition-all border border-red-400/10"><span class="material-symbols-outlined text-sm">logout</span><span class="uppercase tracking-widest">Sair do Portal</span></button></div></div></aside>
+<!-- Main Content Area -->
+<main class="flex-grow flex flex-col bg-[#121212]" style="background-color: #0a0a0a;">
+<!-- Top Bar -->
+<header class="h-16 border-b border-gray-800 flex items-center justify-between px-8" data-purpose="top-header" style="background-color: #0a0a0a; border-bottom: 1px solid rgba(255,255,255,0.05);"><div class="flex items-center space-x-6"><div class="flex items-center space-x-3 text-gray-400"><span class="material-symbols-outlined text-xl">location_on</span><div><p class="text-xs font-semibold text-white">Londrina, PR</p><p class="text-[10px] uppercase tracking-wider text-gray-500">Localização Atual</p></div></div><div class="flex items-center space-x-3 ml-4"><div class="h-6 w-px bg-gray-800"></div></div><div class="flex items-center space-x-4"><div class="flex items-center space-x-2"><span class="material-symbols-outlined text-tracto-orange text-xl">light_mode</span><span class="text-sm font-bold">28°C</span></div><div class="flex items-center space-x-2"><span class="material-symbols-outlined text-blue-400 text-xl">water_drop</span><span class="text-sm font-bold text-gray-300">62%</span></div></div></div><div class="flex items-center space-x-4"><div class="relative flex items-center bg-primary hover:bg-[#d45111] transition-all rounded-lg shadow-lg shadow-orange-900/20"><select class="appearance-none bg-transparent border-none text-white text-xs font-bold py-2 pl-4 pr-10 focus:ring-0 cursor-pointer"><option class="bg-tracto-dark text-white" value="mt">FAZENDA MATO GROSSO</option><option class="bg-tracto-dark text-white" value="mg">GLEBA SUL - MG</option><option class="bg-tracto-dark text-white" value="sp">RECANTO DOS IPÊS - SP</option></select><span class="material-symbols-outlined absolute right-3 pointer-events-none text-white text-lg font-bold">expand_more</span></div><button class="flex items-center space-x-2 bg-primary hover:bg-[#d45111] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-orange-900/20"><span class="material-symbols-outlined text-sm">add_circle</span><span>NOVO TALHÃO</span></button><button class="p-2 text-gray-400 hover:text-white bg-gray-800/50 rounded-lg relative transition-colors"><span class="material-symbols-outlined">notifications</span><span class="absolute top-2 right-2 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-tracto-dark"></span></button></div></header>
+<!-- Chat Grid Layout -->
+<div class="flex flex-grow overflow-hidden">
+<!-- Left Panel: Chat History -->
+<div class="w-80 flex flex-col border-r border-gray-800 bg-tracto-dark/50">
+<div class="p-4 border-b border-white/5">
+<button class="w-full flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors">
+<span class="text-sm font-semibold">Nova Conversa</span>
+<span class="material-symbols-outlined">add_comment</span>
+</button>
+</div>
+<div class="flex-grow overflow-y-auto custom-scrollbar p-2">
+<div class="px-2 py-4">
+<p class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-4 px-2">Conversas Recentes</p>
+<div class="space-y-1">
+<div class="px-3 py-4 bg-primary/5 rounded-xl border border-primary/20 cursor-pointer"><h4 class="text-sm font-medium text-primary">Análise de Solo Talhão 02</h4><p class="text-xs text-gray-500 mt-1">Há 2 horas • Recomendações...</p></div>
+<div class="px-3 py-4 hover:bg-white/5 rounded-xl cursor-pointer transition-colors">
+<h4 class="text-sm font-medium text-slate-300">Risco de Geada v1</h4>
+<p class="text-xs text-slate-500 mt-1">Ontem • Dados climáticos</p>
+</div>
+<div class="px-3 py-4 hover:bg-white/5 rounded-xl cursor-pointer transition-colors">
+<h4 class="text-sm font-medium text-slate-300">Produtividade Milho 2024</h4>
+<p class="text-xs text-slate-500 mt-1">3 dias atrás • Projeção</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Center Panel: Active Chat -->
+<div class="flex-grow flex flex-col relative">
+<!-- Chat Header Info -->
+<div class="p-6 border-b border-white/5 flex items-center justify-between glass-panel bg-tracto-dark border-gray-800">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined">smart_toy</span>
+</div>
+<div>
+<h2 class="text-lg font-bold">Tracto AI</h2>
+<p class="text-xs font-medium flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full animate-pulse bg-primary"></span>
+                                    Analista Agronômico Ativo
+                                </p>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-white/5 rounded-lg text-slate-400"><span class="material-symbols-outlined">share</span></button>
+<button class="p-2 hover:bg-white/5 rounded-lg text-slate-400"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+</div>
+<!-- Messages Area -->
+<div class="flex-grow overflow-y-auto custom-scrollbar p-8 space-y-8">
+<!-- AI Message -->
+<div class="flex gap-4 max-w-4xl">
+<div class="flex items-center space-x-2 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
+<span class="material-symbols-outlined text-background-dark text-sm font-bold">bolt</span>
+</div>
+<div class="space-y-4 flex-grow">
+<div class="glass-panel p-6 rounded-2xl rounded-tl-none space-y-4">
+<p class="text-sm leading-relaxed text-slate-200">
+                                        Olá! Analisei os dados laboratoriais mais recentes do **Talhão 02**. Notei uma deficiência moderada de potássio na camada superficial (0-20cm).
+                                    </p>
+<!-- Embedded Widget: Map Snippet -->
+<div class="grid grid-cols-2 gap-4 mt-4">
+<div class="rounded-xl overflow-hidden border border-white/10 bg-black/40 h-48 relative">
+<div class="absolute inset-0 opacity-60" data-alt="Satellite thermal map of a farm field" data-location="Londrina, Brazil" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCERJsfRdlHxEpw_CFsI0hhGZr1E4eDk5xjSfaDF0ghfWLDUxAonaNJF1NDoWPGK8gjHCrDg9y-wsyhGP8yolZ0uTMqopjeLcVYwy7HUSgjUUyBOAUqduY2qxwE9dhm0LtJGLMb6xOFLOL_qqivzM08MWznQp8nLc1-7GeB61CsneUUz8huwPAdjt7snmEMFsvd2xU52dFIVP4ukdNMMMfBJnCJL1sxAwN6jRHfPuzGUlhbImk58UdrH4ASa7IHEJb4mTreKP3JsAw'); background-size: cover;"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+<div class="absolute bottom-3 left-3">
+<p class="material-symbols-outlined">Índice NDVI</p>
+<p class="text-xs font-medium">Variação por Talhão</p>
+</div>
+</div>
+<div class="rounded-xl overflow-hidden border border-white/10 bg-black/40 h-48 p-4 flex flex-col justify-between">
+<div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Recomendação</p>
+<h4 class="text-xl font-bold mt-1">240 kg/ha</h4>
+<p class="text-xs text-slate-500 mt-1">Cloreto de Potássio (KCl)</p>
+</div>
+<div class="flex items-end justify-between">
+<div class="flex gap-1">
+<div class="w-1.5 h-6 bg-primary/20 rounded-full"></div>
+<div class="w-1.5 h-10 bg-primary/40 rounded-full"></div>
+<div class="w-1.5 h-14 bg-primary rounded-full"></div>
+</div>
+<span class="text-[10px] font-bold">+12% ROI Est.</span>
+</div>
+</div>
+</div>
+<ul class="space-y-2 pt-2">
+<li class="flex items-start gap-2 text-sm text-slate-300">
+<span class="material-symbols-outlined text-primary">check_circle</span>
+                                            Aplicação recomendada em taxa variável.
+                                        </li>
+<li class="flex items-start gap-2 text-sm text-slate-300">
+<span class="material-symbols-outlined text-primary">check_circle</span>
+                                            Janela ideal de aplicação: Próximos 5 dias (janela seca).
+                                        </li>
+</ul>
+</div>
+<span class="text-[10px] text-slate-600 font-medium ml-2 uppercase tracking-tighter">Tracto AI • 14:32</span>
+</div>
+</div>
+<!-- User Message -->
+<div class="flex gap-4 max-w-4xl ml-auto flex-row-reverse">
+<div class="w-8 h-8 rounded-lg bg-white/10 flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-slate-400 text-sm">person</span>
+</div>
+<div class="flex flex-col items-end">
+<div class="bg-white/5 border border-white/10 p-4 rounded-2xl rounded-tr-none">
+<p class="text-sm text-slate-200 leading-relaxed">
+                                        Qual o impacto esperado na produtividade se eu adiar essa aplicação por 15 dias?
+                                    </p>
+</div>
+<span class="text-[10px] text-slate-600 font-medium mr-2 mt-2 uppercase tracking-tighter">Você • 14:35</span>
+</div>
+</div>
+<!-- AI Typing indicator placeholder -->
+<div class="flex gap-4 max-w-4xl">
+<div class="flex items-center space-x-2 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
+<span class="material-symbols-outlined text-background-dark text-sm font-bold">bolt</span>
+</div>
+<div class="flex items-center gap-1.5 px-6 py-4 glass-panel rounded-2xl rounded-tl-none">
+<div class="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"></div>
+<div class="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+<div class="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+</div>
+</div>
+</div>
+<!-- Input Bar -->
+<div class="p-6">
+<div class="max-w-4xl mx-auto relative flex items-center gap-4 bg-surface-dark/80 backdrop-blur-xl border border-white/10 p-2 pl-4 rounded-2xl shadow-2xl">
+<button class="p-2 text-slate-500 hover:text-slate-300 transition-colors">
+<span class="material-symbols-outlined">attach_file</span>
+</button>
+<input class="flex-grow bg-transparent border-none focus:ring-0 text-sm py-3 text-slate-200 placeholder:text-slate-600" placeholder="Pergunte à Tracto AI sobre sua lavoura..." type="text"/>
+<button class="flex items-center space-x-2 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
+<span class="material-symbols-outlined font-bold">arrow_upward</span>
+</button>
+</div>
+<p class="text-center text-[10px] text-slate-600 mt-4 uppercase tracking-[0.2em] font-medium">
+                            Tracto AI - Inteligência Proprietária para Agronegócio
+                        </p>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>
