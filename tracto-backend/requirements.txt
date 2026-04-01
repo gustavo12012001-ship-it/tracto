@@ -1,8 +1,12 @@
 fastapi
-uvicorn
+uvicorn[standard]
 supabase
 python-dotenv
 httpx
 pydantic
 pydantic-settings
 python-multipart
+slowapi
+limits
+requests
+anthropic
