@@ -8,7 +8,7 @@ import { supabase } from '../services/supabase';
 const NAV_ITEMS = [
   {
     to: '/app/dashboard',
-    label: 'Mapa / TalhÃµes',
+    label: 'Mapa / Talhões',
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
@@ -45,7 +45,7 @@ const NAV_ITEMS = [
   },
   {
     to: '/app/reports',
-    label: 'RelatÃ³rios',
+    label: 'Relatórios',
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
@@ -67,13 +67,13 @@ const NAV_ITEMS = [
 function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void, handleLogout: () => Promise<void> }) {
   const { alerts } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
-  const [userName, setUserName] = useState('UsuÃ¡rio');
+  const [userName, setUserName] = useState('Usuário');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       const name = data.user?.user_metadata?.full_name
         || data.user?.email?.split('@')[0]
-        || 'UsuÃ¡rio';
+        || 'Usuário';
       setUserName(name);
     });
   }, []);
@@ -88,7 +88,7 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
-        <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>NavegaÃ§Ã£o</p>
+        <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Navegação</p>
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
@@ -123,7 +123,7 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-white truncate">{userName}</p>
             <p className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>
-              {userName === 'UsuÃ¡rio' ? 'Carregando...' : 'Administrador'}
+              {userName === 'Usuário' ? 'Carregando...' : 'Administrador'}
             </p>
           </div>
           <button className="text-slate-600 hover:text-white transition-colors flex-shrink-0">

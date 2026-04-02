@@ -9,9 +9,9 @@ export interface GeolocationResult {
 }
 
 const FALLBACK_LOCATION: GeolocationResult = {
-  lat: -23.31028,
-  lng: -51.16278,
-  name: 'Londrina, PR',
+  lat: -18.9188,
+  lng: -48.2768,
+  name: 'Uberlândia, MG',
   status: 'fallback'
 };
 
