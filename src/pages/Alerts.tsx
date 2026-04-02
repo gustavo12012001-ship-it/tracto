@@ -44,22 +44,6 @@ export default function Alerts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const hasNdviCache = () => {
-    if (fields.length === 0) return false;
-    for (const loc of fields) {
-      if (!loc.lat || !loc.lng) continue;
-      const cached = localStorage.getItem(`tracto-ndvi-${loc.lat}-${loc.lng}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if ((Date.now() - parsed.timestamp) < 24 * 60 * 60 * 1000) return true;
-        } catch {
-          // ignore parsing error
-        }
-      }
-    }
-    return false;
-  };
 
   const loc = fields.length > 0
     ? fields[fields.length - 1]
