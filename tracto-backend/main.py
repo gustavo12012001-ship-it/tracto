@@ -80,20 +80,11 @@ async def structured_log_middleware(request: Request, call_next):
     return response
 
 
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
-if allowed_origins_env:
-    allow_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
-else:
-    allow_origins = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-    ]
-
+# TODO: temporariamente aceitar todas as origens para teste CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
