@@ -9,6 +9,10 @@ async function buildAuthHeaders() {
       data: { session },
     } = await supabase.auth.getSession();
 
+    const token = session?.access_token;
+    console.log('[API] Token:', token ? 'presente' : 'AUSENTE');
+    console.log('[API] Session:', session ? 'ativa' : 'NULA');
+
     if (!session?.access_token) {
       return {};
     }
