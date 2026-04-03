@@ -55,6 +55,9 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
     throw new Error('Backend não configurado. Defina VITE_API_URL no .env');
   }
   const url = `${API_URL}${path}`;
+  console.log('[API] API_URL:', API_URL);
+  console.log('[API] Chamando:', url);
+
   const authHeaders = await buildAuthHeaders();
   const headers = new Headers(options.headers ?? {});
 
@@ -100,8 +103,12 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
 
     return response.json();
   } catch (err) {
+    console.error('[API] fetch error:', url, err);
     if (err instanceof TypeError && err.message === 'Failed to fetch') {
-      throw new Error(`O servidor Backend/API não está acessível em ${API_URL}. Verifique se ele está rodando.`);
+      throw new Error(`O servidor Backend/API não está acessível em ${url}. Possível CORS ou URL incorreta. Detalhes: ${err.message}`);
+    }
+    if (err instanceof Error) {
+      throw new Error(`Erro de requisição para ${url}: ${err.message}`);
     }
     throw err;
   }
