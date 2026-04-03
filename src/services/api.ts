@@ -1,17 +1,21 @@
 import type { WeatherCache } from '../store/useAppStore';
 import { supabase } from './supabase';
 
-export const API_URL = import.meta.env.VITE_API_URL || '';
+export const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
 
 async function buildAuthHeaders() {
   try {
-    const {
+    let {
       data: { session },
     } = await supabase.auth.getSession();
 
-    const token = session?.access_token;
-    console.log('[API] Token:', token ? 'presente' : 'AUSENTE');
-    console.log('[API] Session:', session ? 'ativa' : 'NULA');
+    if (!session) {
+      const refreshed = await supabase.auth.refreshSession();
+      session = refreshed.data.session;
+    }
+
+    console.log('[API] Token:', session?.access_token ? 'presente' : 'AUSENTE');
+    console.log('[API] User:', session?.user?.email ?? 'nenhum');
 
     if (!session?.access_token) {
       return {};
@@ -20,7 +24,8 @@ async function buildAuthHeaders() {
     return {
       Authorization: `Bearer ${session.access_token}`,
     };
-  } catch {
+  } catch (error) {
+    console.warn('[API] Falha ao construir headers de autentição:', error);
     return {};
   }
 }
