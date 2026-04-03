@@ -290,7 +290,7 @@ export default function Chat() {
         ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
         : null;
 
-      const data = await apiFetch<{ reply: string }>('/api/chat', {
+      const data = await apiFetch<{ reply: string }>('/chat', {
         method: 'POST',
         body: JSON.stringify({
           messages: payloadMessages,
