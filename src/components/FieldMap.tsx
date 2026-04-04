@@ -114,10 +114,20 @@ function MapController() {
     const field = fields.find((f) => f.id === activeFieldId);
     if (!field) return;
 
-    map.flyTo([field.lat, field.lng], Math.max(map.getZoom(), 15), {
-      animate: true,
-      duration: 0.9,
-    });
+    if (field.boundaries && field.boundaries.length >= 3) {
+      const bounds = L.latLngBounds(field.boundaries.map((point) => [point[0], point[1]] as [number, number]));
+      map.flyToBounds(bounds, {
+        padding: [48, 48],
+        maxZoom: 17,
+        animate: true,
+        duration: 0.9,
+      });
+    } else {
+      map.flyTo([field.lat, field.lng], Math.max(map.getZoom(), 15), {
+        animate: true,
+        duration: 0.9,
+      });
+    }
     previousActiveFieldId.current = activeFieldId;
   }, [activeFieldId, activeFieldFocusToken, fields, map]);
 
@@ -161,6 +171,8 @@ export default function FieldMap() {
     createField,
     removeField,
     setActiveField,
+    setMapLayer,
+    focusActiveField,
     activeFieldId,
     activeFarmId,
     activeMapLayer,
@@ -176,12 +188,16 @@ export default function FieldMap() {
   const [fieldVariedade, setFieldVariedade] = useState('');
   const [sentinelScene, setSentinelScene] = useState<SentinelSceneResponse | null>(null);
   const [isLoadingScene, setIsLoadingScene] = useState(false);
+  const [layerControlOpen, setLayerControlOpen] = useState(false);
+  const [savedFieldName, setSavedFieldName] = useState<string | null>(null);
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lat, currentLocation.lng]
     : [FALLBACK_LOCATION.lat, FALLBACK_LOCATION.lng];
 
   const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : undefined;
+  const activeFieldArea = activeField?.areaHa
+    ?? (activeField?.boundaries && activeField.boundaries.length >= 3 ? polygonAreaHa(activeField.boundaries) : null);
   const requestLat = activeField?.lat ?? center[0];
   const requestLng = activeField?.lng ?? center[1];
   const activeBoundaries = activeField?.boundaries ?? null;
@@ -310,6 +326,9 @@ export default function FieldMap() {
     try {
       setIsSaving(true);
       await createField(activeFarmId, newLoc);
+      focusActiveField();
+      setSavedFieldName(name);
+      window.setTimeout(() => setSavedFieldName(null), 3500);
       // Limpeza do formulário APENAS após sucesso confirmado
       resetForm();
     } catch (err: unknown) {
@@ -405,8 +424,9 @@ export default function FieldMap() {
               pathOptions={{
                 color: isActive ? '#f97316' : color,
                 fillColor: isActive ? '#f97316' : color,
-                fillOpacity: isActive ? 0.42 : 0.25,
-                weight: isActive ? 3 : 2,
+                fillOpacity: isActive ? 0.34 : 0.18,
+                weight: isActive ? 4 : 2,
+                dashArray: isActive ? undefined : '4 4',
               }}
               eventHandlers={{
                 click: () => {
@@ -466,49 +486,93 @@ export default function FieldMap() {
 
       {/* ── Overlays (outside MapContainer) ── */}
 
-      {/* Layer Switcher — Visible Control */}
-      {drawMode === 'none' && (
+      {savedFieldName && (
         <div
-          className="absolute top-4 left-4 z-[500] flex flex-col gap-1.5 pointer-events-auto"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px' }}
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-[520] px-4 py-2 rounded-xl pointer-events-none"
+          style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#86efac', backdropFilter: 'blur(10px)' }}
         >
-          <p className="text-[9px] font-bold uppercase tracking-widest px-2" style={{ color: '#64748b' }}>Camadas</p>
-          <div className="flex flex-col gap-1">
-            {[
-              { id: 'osm' as const, label: 'OpenStreetMap', icon: 'map' },
-              { id: 'satellite' as const, label: 'Esri Satellite', icon: 'satellite' },
-              { id: 'sentinel' as const, label: 'Sentinel-2 Atualizado', icon: 'satellite_alt' },
-            ].map(({ id, label, icon }) => (
-              <button
-                key={id}
-                onClick={() => useAppStore.getState().setMapLayer(id)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-left flex items-center gap-2"
-                style={{
-                  background: activeMapLayer === id ? 'rgba(236,91,19,0.2)' : 'rgba(255,255,255,0.04)',
-                  border: activeMapLayer === id ? '1px solid #ec5b13' : '1px solid rgba(255,255,255,0.08)',
-                  color: activeMapLayer === id ? '#ec5b13' : '#94a3b8',
-                }}
-              >
-                <span className="material-symbols-outlined text-base">{icon}</span>
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-          {activeMapLayer === 'sentinel' && (
-            <div className="mt-1.5 px-2 pb-1 text-[9px]" style={{ color: '#64748b', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
-              <p className="font-semibold mb-0.5">
-                Sentinel-2 · Ultima cena: {sentinelScene?.scene_date_br ?? 'N/D'}
+          <p className="text-xs font-bold">Talhão salvo: {savedFieldName}</p>
+          <p className="text-[10px]" style={{ color: '#d1fae5' }}>Novo talhão ativo e em foco no mapa</p>
+        </div>
+      )}
+
+      {drawMode === 'none' && activeField && (
+        <div
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[510] px-4 py-3 rounded-2xl pointer-events-auto w-[min(92vw,460px)]"
+          style={{ background: 'rgba(8,8,9,0.9)', backdropFilter: 'blur(14px)', border: '1px solid rgba(236,91,19,0.35)' }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: '#f97316' }}>Talhão ativo</p>
+              <p className="text-sm font-bold text-white leading-tight">{activeField.name ?? 'Talhão sem nome'}</p>
+              <p className="text-[11px] mt-0.5" style={{ color: '#94a3b8' }}>
+                {activeFieldArea ? `${activeFieldArea.toFixed(2)} ha` : 'Área não calculada'}
+                {activeField.cultura ? ` · ${activeField.cultura}` : ' · Cultura não informada'}
               </p>
-              {isLoadingScene && <p className="text-[8px]" style={{ color: '#475569' }}>Buscando cena mais recente...</p>}
-              {!isLoadingScene && sentinelScene?.display_mode === 'wms' && (
-                <p className="text-[8px]" style={{ color: '#475569' }}>Fonte: Copernicus Data Space (ESA) · WMS</p>
-              )}
-              {!isLoadingScene && sentinelScene?.display_mode === 'preview' && (
-                <p className="text-[8px]" style={{ color: '#fca5a5' }}>Preview estatico da ultima cena (ilustrativo, nao georreferenciado com precisao)</p>
-              )}
-              {!isLoadingScene && sentinelScene?.display_mode === 'fallback' && (
-                <p className="text-[8px]" style={{ color: '#fda4af' }}>Fallback em Esri Satellite</p>
-              )}
+              <p className="text-[10px]" style={{ color: '#64748b' }}>
+                {activeField.dataPlantio ? `Plantio: ${new Date(activeField.dataPlantio).toLocaleDateString('pt-BR')}` : 'Plantio não informado'}
+              </p>
+            </div>
+            <button
+              onClick={() => focusActiveField()}
+              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold"
+              style={{ background: 'rgba(236,91,19,0.18)', border: '1px solid rgba(236,91,19,0.35)', color: '#f97316' }}
+            >
+              Focar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {drawMode === 'none' && !activeField && fields.length > 0 && (
+        <div
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[510] px-4 py-2.5 rounded-2xl pointer-events-none w-[min(90vw,420px)]"
+          style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(14px)', border: '1px solid rgba(255,255,255,0.14)' }}
+        >
+          <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: '#f97316' }}>Selecione um talhão</p>
+          <p className="text-xs" style={{ color: '#e2e8f0' }}>Use a lista no canto inferior esquerdo para ativar e focar um talhão.</p>
+        </div>
+      )}
+
+      {/* Layer Switcher — Compact Control */}
+      {drawMode === 'none' && (
+        <div className="absolute top-4 left-4 z-[500] pointer-events-auto">
+          <button
+            onClick={() => setLayerControlOpen((open) => !open)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold"
+            style={{ background: 'rgba(8,8,9,0.88)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0', backdropFilter: 'blur(12px)' }}
+          >
+            <span className="material-symbols-outlined text-base">layers</span>
+            Camadas
+            <span className="material-symbols-outlined text-sm">{layerControlOpen ? 'expand_less' : 'expand_more'}</span>
+          </button>
+
+          {layerControlOpen && (
+            <div
+              className="mt-2 p-2 rounded-xl w-60"
+              style={{ background: 'rgba(8,8,9,0.9)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(14px)' }}
+            >
+              <div className="flex flex-col gap-1">
+                {[
+                  { id: 'osm' as const, label: 'OpenStreetMap', icon: 'map' },
+                  { id: 'satellite' as const, label: 'Esri Satellite', icon: 'satellite' },
+                  { id: 'sentinel' as const, label: 'Sentinel-2 Atualizado', icon: 'satellite_alt' },
+                ].map(({ id, label, icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => setMapLayer(id)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left flex items-center gap-2"
+                    style={{
+                      background: activeMapLayer === id ? 'rgba(236,91,19,0.2)' : 'rgba(255,255,255,0.04)',
+                      border: activeMapLayer === id ? '1px solid #ec5b13' : '1px solid rgba(255,255,255,0.08)',
+                      color: activeMapLayer === id ? '#ec5b13' : '#94a3b8',
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-base">{icon}</span>
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -646,21 +710,38 @@ export default function FieldMap() {
         </>
       )}
 
-      {/* Fields legend */}
+      {/* Fields control list */}
       {drawMode === 'none' && fields.length > 0 && (
         <div
-          className="absolute bottom-4 left-4 z-[500] p-3 rounded-xl pointer-events-none"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)', maxHeight: '200px', overflowY: 'auto' }}
+          className="absolute bottom-4 left-4 z-[500] p-3 rounded-xl pointer-events-auto"
+          style={{ background: 'rgba(8,8,9,0.9)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', maxHeight: '250px', overflowY: 'auto', minWidth: '265px' }}
         >
-          <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Talhões</p>
-          <div className="space-y-1">
+          <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Talhões ({fields.length})</p>
+          <div className="space-y-1.5">
             {fields.map((loc, i) => (
-              <div key={loc.id} className="flex items-center gap-2 text-xs text-white">
-                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: FIELD_COLORS[i % FIELD_COLORS.length] }} />
-                <span style={{ color: loc.id && loc.id === activeFieldId ? '#f97316' : '#ffffff', fontWeight: loc.id && loc.id === activeFieldId ? 700 : 500 }}>
-                  {loc.name ?? `Talhão ${i + 1}`}{loc.id && loc.id === activeFieldId ? ' (ativo)' : ''}
+              <button
+                key={loc.id}
+                onClick={() => {
+                  if (!loc.id) return;
+                  setActiveField(loc.id);
+                  focusActiveField();
+                }}
+                className="w-full flex items-center justify-between gap-2 text-xs px-2.5 py-2 rounded-lg transition-all"
+                style={{
+                  background: loc.id && loc.id === activeFieldId ? 'rgba(236,91,19,0.16)' : 'rgba(255,255,255,0.03)',
+                  border: loc.id && loc.id === activeFieldId ? '1px solid rgba(236,91,19,0.45)' : '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: FIELD_COLORS[i % FIELD_COLORS.length] }} />
+                  <span className="truncate" style={{ color: loc.id && loc.id === activeFieldId ? '#f97316' : '#ffffff', fontWeight: loc.id && loc.id === activeFieldId ? 700 : 500 }}>
+                    {loc.name ?? `Talhão ${i + 1}`}
+                  </span>
+                </div>
+                <span className="text-[10px]" style={{ color: '#64748b' }}>
+                  {loc.id && loc.id === activeFieldId ? 'Ativo' : 'Focar'}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -670,11 +751,11 @@ export default function FieldMap() {
       {activeMapLayer === 'sentinel' && (
         <div
           className="absolute bottom-4 right-4 z-[500] p-3 rounded-xl pointer-events-none text-[10px]"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)', maxWidth: '220px' }}
+          style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', maxWidth: '280px' }}
         >
           <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Sentinel-2 Atualizado</p>
-          <div className="text-[9px] p-1.5 rounded" style={{ background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.2)', color: '#f97316' }}>
-            <p className="font-semibold mb-0.5">Ultima cena: {sentinelScene?.scene_date_br ?? 'N/D'}</p>
+          <div className="text-[9px] p-2 rounded" style={{ background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.2)', color: '#f97316' }}>
+            <p className="font-semibold mb-1">Ultima cena: {sentinelScene?.scene_date_br ?? 'Sem cena recente'}</p>
             <p className="text-[8px]" style={{ color: '#cbd5e1' }}>
               {isLoadingScene
                 ? 'Consultando Earth Search STAC...'
@@ -685,10 +766,10 @@ export default function FieldMap() {
                     : 'Fallback: Esri Satellite'}
             </p>
             {!!sentinelScene?.provider && (
-              <p className="text-[8px] mt-1" style={{ color: '#94a3b8' }}>Provider: {sentinelScene.provider}</p>
+              <p className="text-[8px] mt-1.5" style={{ color: '#94a3b8' }}>Fonte: {sentinelScene.provider}</p>
             )}
             {!!sentinelScene?.message && (
-              <p className="text-[8px] mt-1" style={{ color: '#fca5a5' }}>{sentinelScene.message}</p>
+              <p className="text-[8px] mt-1.5" style={{ color: '#fca5a5' }}>{sentinelScene.message}</p>
             )}
           </div>
         </div>

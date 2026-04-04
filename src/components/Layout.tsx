@@ -165,6 +165,8 @@ export default function Layout() {
     fields,
     activeFarmId,
     activeFieldId,
+    setActiveFarm,
+    setActiveField,
     focusActiveField,
     currentLocation,
     resetStore,
@@ -310,11 +312,11 @@ export default function Layout() {
 
           {/* TopBar */}
           <header
-            className="header-glass flex items-center justify-between px-4 md:px-6 h-14 border-b flex-shrink-0 z-30"
+            className="header-glass flex items-center justify-between px-4 md:px-6 h-16 border-b flex-shrink-0 z-30"
             style={{ borderColor: 'var(--border)' }}
           >
-            {/* Left Section: User Location & Operational Context */}
-            <div className="flex items-center gap-6">
+            {/* Left Section: Operational Context */}
+            <div className="flex items-center gap-4 md:gap-5">
               {/* Hamburguer â€” mobile only */}
               <button
                 onClick={() => setDrawerOpen(true)}
@@ -325,47 +327,54 @@ export default function Layout() {
                 <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>menu</span>
               </button>
 
-              {/* 1. Sua LocalizaÃ§Ã£o (GeogrÃ¡fica) */}
-              <div className="flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>location_on</span>
-                <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Sua LocalizaÃ§Ã£o</p>
-                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[120px] md:max-w-none">
-                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
-                  </p>
-                </div>
-              </div>
-
               <button
                 type="button"
                 disabled={!activeField}
                 onClick={() => {
                   if (!activeField?.id) return;
-                  useAppStore.getState().setActiveField(activeField.id);
+                  setActiveField(activeField.id);
                   focusActiveField();
                   navigate('/app/dashboard');
                 }}
                 title={activeField ? 'Ir para o talhão ativo no mapa' : 'Selecione um talhão para focar no mapa'}
                 className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl transition-all"
                 style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid var(--border)',
+                  background: activeField ? 'rgba(236,91,19,0.12)' : 'rgba(255,255,255,0.02)',
+                  border: activeField ? '1px solid rgba(236,91,19,0.28)' : '1px solid var(--border)',
                   cursor: activeField ? 'pointer' : 'default',
                   opacity: activeField ? 1 : 0.8,
                 }}
               >
                 <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>pin_drop</span>
                 <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>{activeContextTitle}</p>
-                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[220px]">
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: activeField ? '#f97316' : 'var(--muted)' }}>{activeContextTitle}</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[260px]">
                     {activeContextLabel}
                   </p>
                 </div>
               </button>
+
+              <div className="hidden lg:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>home_work</span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Fazenda ativa</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">{activeFarm?.name ?? 'Sem fazenda ativa'}</p>
+                </div>
+              </div>
+
+              <div className="hidden xl:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>location_on</span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
+                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Right Section: Actions & Weather */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 md:gap-4">
               {/* Weather Info â€” hidden on mobile */}
               <div className="hidden lg:flex items-center gap-4 text-xs font-semibold">
                 <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
@@ -386,16 +395,15 @@ export default function Layout() {
                   value={activeFieldId || activeFarmId || ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const store = useAppStore.getState();
-                    const isField = store.fields.some((f) => f.id === val);
+                    const isField = fields.some((f) => f.id === val);
                     if (isField) {
-                      store.setActiveField(val);
-                      store.focusActiveField();
+                      setActiveField(val);
+                      focusActiveField();
                       // Navegar para o mapa ao selecionar talhão
                       navigate('/app/dashboard');
                     } else {
-                      store.setActiveFarm(val);
-                      store.setActiveField(null);
+                      setActiveFarm(val);
+                      setActiveField(null);
                     }
                   }}
                 >

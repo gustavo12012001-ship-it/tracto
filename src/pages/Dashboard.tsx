@@ -40,7 +40,7 @@ const ALERT_COLORS: Record<Alert['type'], { accent: string; text: string; border
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { fields, weatherCache, alerts } = useAppStore();
+  const { fields, weatherCache, alerts, activeFieldId, focusActiveField } = useAppStore();
   const [market, setMarket] = useState<MarketData>({
     soja: { price: 'Atualizando...', change: '—', up: true },
   });
@@ -49,9 +49,21 @@ export default function Dashboard() {
   const [analysisResult, setAnalysisResult] = useState<FieldAnalysisResult | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  const activeField = activeFieldId
+    ? fields.find((field) => field.id === activeFieldId) ?? null
+    : null;
+  const activeFieldArea = activeField?.areaHa
+    ?? (activeField?.boundaries && activeField.boundaries.length >= 3 ? polygonAreaHa(activeField.boundaries) : null);
+
+  useEffect(() => {
+    // Evita exibir resultado de análise de um talhão antigo ao trocar seleção.
+    setAnalysisResult(null);
+    setAnalysisError(null);
+  }, [activeFieldId]);
+
   const handleAnalyze = async () => {
-    if (fields.length === 0) return;
-    const loc = fields[0];
+    if (!activeField) return;
+    const loc = activeField;
     
     setAnalyzing(true);
     setAnalysisError(null);
@@ -97,7 +109,7 @@ export default function Dashboard() {
   }, 0);
 
   const areaDisplay = fields.length === 0
-    ? 'N/D'
+    ? 'Sem dados'
     : totalAreaHa >= 1000
       ? `${(totalAreaHa / 1000).toFixed(2)}k`
       : totalAreaHa.toFixed(1);
@@ -119,7 +131,7 @@ export default function Dashboard() {
 
   const METRICS = [
     {
-      label: 'Área Total',
+      label: 'Área Monitorada',
       value: areaDisplay,
       unit: areaUnit,
       trend: fields.length > 0 ? `${fields.length} talhão${fields.length > 1 ? 'ões' : ''}` : 'Sem talhões',
@@ -128,9 +140,11 @@ export default function Dashboard() {
     },
     {
       label: 'NDVI Médio',
-      value: analysisResult ? analysisResult.ndvi_analysis.ndvi_medio.toFixed(2) : 'N/D',
+      value: analysisResult ? analysisResult.ndvi_analysis.ndvi_medio.toFixed(2) : 'Sem análise',
       unit: '',
-      trend: analysisResult ? 'Análise de satélite' : 'Aguardando análise',
+      trend: activeField
+        ? (analysisResult ? 'Última análise do talhão ativo' : 'Disponível após primeira análise')
+        : 'Selecione um talhão para analisar',
       up: analysisResult ? (analysisResult.ndvi_analysis.ndvi_medio > 0.5) : false,
       color: '#60a5fa',
     },
@@ -144,9 +158,9 @@ export default function Dashboard() {
     },
     {
       label: 'Produtividade',
-      value: 'N/D',
+      value: 'Sem base',
       unit: '',
-      trend: 'Aguardando histórico',
+      trend: 'Sem histórico suficiente',
       up: false,
       color: '#64748b',
     },
@@ -167,6 +181,31 @@ export default function Dashboard() {
         <div className="p-4 flex flex-col gap-4">
 
           {/* Cards de Métricas */}
+          <div className="p-3 rounded-xl" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#f97316' }}>Talhão ativo</p>
+              <button
+                onClick={() => focusActiveField()}
+                disabled={!activeField}
+                className="text-[10px] font-bold px-2 py-1 rounded"
+                style={{ background: 'rgba(236,91,19,0.2)', color: '#f97316', opacity: activeField ? 1 : 0.5 }}
+              >
+                Focar no mapa
+              </button>
+            </div>
+            <p className="text-sm font-bold text-white">{activeField?.name ?? 'Selecione um talhão no mapa'}</p>
+            <p className="text-[11px]" style={{ color: '#cbd5e1' }}>
+              {activeField
+                ? `${activeFieldArea ? `${activeFieldArea.toFixed(2)} ha` : 'Área disponível após desenho'}${activeField.cultura ? ` · ${activeField.cultura}` : ' · Cultura não informada'}`
+                : 'Análise disponível após selecionar um talhão'}
+            </p>
+            <p className="text-[10px]" style={{ color: '#94a3b8' }}>
+              {activeField
+                ? (activeField.dataPlantio ? `Plantio: ${new Date(activeField.dataPlantio).toLocaleDateString('pt-BR')}` : 'Plantio não informado')
+                : 'Selecione na lista de talhões para começar'}
+            </p>
+          </div>
+
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 px-1" style={{ color: '#64748b' }}>Métricas da Fazenda</p>
             <div className="grid grid-cols-2 gap-2">
@@ -205,12 +244,12 @@ export default function Dashboard() {
           </div>
 
           {/* Análise Satélite */}
-          {fields.length > 0 && (
+          {activeField ? (
             <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-white flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[14px]">satellite_alt</span>
-                  Análise Satélite
+                  Análise do Talhão Ativo
                 </p>
                 {analysisResult && (
                   <div className="flex gap-1">
@@ -297,19 +336,19 @@ export default function Dashboard() {
                     <div className="p-2 rounded bg-black/20 border border-white/5">
                       <p className="text-[9px] text-slate-400">Janela Pulveriz.</p>
                       <p className={`text-[10px] font-bold ${analysisResult.engine_results?.spray_window?.color === 'green' ? 'text-green-400' : analysisResult.engine_results?.spray_window?.color === 'red' ? 'text-red-400' : 'text-amber-400'}`}>
-                        {analysisResult.engine_results?.spray_window?.label.toUpperCase() || 'N/D'}
+                        {analysisResult.engine_results?.spray_window?.label.toUpperCase() || 'Sem recomendação'}
                       </p>
                     </div>
                     <div className="p-2 rounded bg-black/20 border border-white/5">
                       <p className="text-[9px] text-slate-400">Risco Geada</p>
                       <p className={`text-[10px] font-bold ${analysisResult.engine_results?.frost_risk?.color === 'red' ? 'text-red-400' : 'text-white'}`}>
-                        {analysisResult.engine_results?.frost_risk?.label.toUpperCase() || 'N/D'}
+                        {analysisResult.engine_results?.frost_risk?.label.toUpperCase() || 'Sem risco relevante'}
                       </p>
                     </div>
                     <div className="p-2 rounded bg-black/20 border border-white/5">
                       <p className="text-[9px] text-slate-400">Estresse Hídrico</p>
                       <p className={`text-[10px] font-bold ${analysisResult.engine_results?.water_stress?.color === 'red' ? 'text-red-400' : 'text-white'}`}>
-                        {analysisResult.engine_results?.water_stress?.label.toUpperCase() || 'N/D'}
+                        {analysisResult.engine_results?.water_stress?.label.toUpperCase() || 'Sem estresse relevante'}
                       </p>
                     </div>
                   </div>
@@ -330,6 +369,17 @@ export default function Dashboard() {
                   </button>
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white flex items-center gap-1.5 mb-2">
+                <span className="material-symbols-outlined text-[14px]">satellite_alt</span>
+                Análise do Talhão Ativo
+              </p>
+              <div className="rounded-lg px-3 py-3" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.18)' }}>
+                <p className="text-xs font-semibold text-white">Selecione um talhão</p>
+                <p className="text-[11px] mt-1" style={{ color: '#cbd5e1' }}>A análise fica disponível após escolher o talhão ativo no mapa ou no seletor superior.</p>
+              </div>
             </div>
           )}
 
