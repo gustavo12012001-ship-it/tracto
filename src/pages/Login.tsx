@@ -178,7 +178,7 @@ export default function Login() {
                       onClick={async () => {
                         if (!email) { alert('Digite seu e-mail primeiro.'); return; }
                         await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: `${window.location.origin}/login`,
+                        redirectTo: `${window.location.origin}/reset-password`,
                         });
                         alert('Email de recuperação enviado! Verifique sua caixa de entrada.');
                       }}
