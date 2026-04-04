@@ -32,13 +32,14 @@ from models import (
     CheckoutRequest,
     PushSubscriptionCreate,
     WhatsAppWebhookPayload,
+    LatestSceneRequest,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image
+from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
 
@@ -287,6 +288,26 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
     except Exception as exc:
         logging.error("Erro na analise do mapa climatico: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao analisar o mapa climatico.") from exc
+
+
+@app.post("/api/sentinel/latest-scene")
+@limiter.limit("12/minute")
+async def latest_sentinel_scene_endpoint(
+    request: Request,
+    scene_req: LatestSceneRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        return get_latest_scene_metadata(
+            lat=scene_req.lat,
+            lng=scene_req.lng,
+            boundaries=scene_req.boundaries,
+            lookback_days=scene_req.lookback_days,
+            max_cloud_coverage=scene_req.max_cloud_coverage,
+        )
+    except Exception as exc:
+        logging.error("Erro ao buscar metadados de cena Sentinel-2: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar cena Sentinel-2 recente.") from exc
 
 
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)

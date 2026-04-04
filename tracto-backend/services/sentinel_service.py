@@ -5,6 +5,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1/search"
+
 def get_oauth_token():
     client_id = os.getenv("SENTINEL_CLIENT_ID")
     client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
@@ -254,3 +256,123 @@ def get_ndvi_image(lat: float, lng: float, boundaries: list[list[float]] | None 
             continue
             
     return None
+
+
+def get_latest_scene_metadata(
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    lookback_days: int = 21,
+    max_cloud_coverage: int = 40,
+):
+    """
+    Busca metadados da cena Sentinel-2 mais recente (Earth Search STAC).
+    Nao baixa tiles COG nem tenta montar XYZ a partir dos assets.
+    """
+    now_utc = datetime.utcnow()
+
+    def _build_intersects() -> Dict[str, Any]:
+        if boundaries and len(boundaries) >= 3:
+            ring: List[List[float]] = []
+            for p in boundaries:
+                if p is not None and len(p) >= 2:
+                    ring.append([float(p[1]), float(p[0])])
+            if len(ring) >= 3:
+                if ring[0] != ring[-1]:
+                    ring.append(ring[0])
+                return {"type": "Polygon", "coordinates": [ring]}
+        return {"type": "Point", "coordinates": [float(lng), float(lat)]}
+
+    def _search_scene(window_days: int, cloud_limit: int) -> Optional[Dict[str, Any]]:
+        start_utc = now_utc - timedelta(days=window_days)
+        payload = {
+            "collections": ["sentinel-2-l2a"],
+            "limit": 1,
+            "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+            "datetime": f"{start_utc.strftime('%Y-%m-%dT00:00:00Z')}/{now_utc.strftime('%Y-%m-%dT23:59:59Z')}",
+            "intersects": _build_intersects(),
+            "query": {"eo:cloud_cover": {"lte": cloud_limit}},
+        }
+
+        try:
+            with httpx.Client() as client:
+                res = client.post(EARTH_SEARCH_URL, json=payload, timeout=20.0)
+                res.raise_for_status()
+                features = res.json().get("features", [])
+                if features:
+                    return features[0]
+        except Exception as exc:
+            logging.warning("Erro ao consultar Earth Search STAC: %s", exc)
+        return None
+
+    feature = _search_scene(lookback_days, max_cloud_coverage) or _search_scene(45, 100)
+    if not feature:
+        return {
+            "status": "fallback",
+            "provider": "Earth Search STAC",
+            "display_mode": "fallback",
+            "scene_date": None,
+            "scene_date_br": None,
+            "scene_id": None,
+            "cloud_coverage": None,
+            "message": "Nenhuma cena Sentinel-2 encontrada na janela consultada.",
+        }
+
+    properties = feature.get("properties", {})
+    assets = feature.get("assets", {})
+    scene_id = feature.get("id")
+    scene_datetime = properties.get("datetime")
+    cloud_coverage = properties.get("eo:cloud_cover")
+
+    scene_date_iso = None
+    scene_date_br = None
+    if isinstance(scene_datetime, str):
+        try:
+            dt = datetime.fromisoformat(scene_datetime.replace("Z", "+00:00"))
+            scene_date_iso = dt.date().isoformat()
+            scene_date_br = dt.strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+
+    preview_url = None
+    for key in ("thumbnail", "preview", "rendered_preview"):
+        candidate = assets.get(key, {}).get("href") if isinstance(assets.get(key), dict) else None
+        if isinstance(candidate, str) and candidate.startswith("http"):
+            preview_url = candidate
+            break
+
+    instance_id = os.getenv("VITE_SENTINEL_INSTANCE_ID") or os.getenv("SENTINEL_INSTANCE_ID")
+    if instance_id:
+        time_param = scene_date_iso if scene_date_iso else now_utc.strftime("%Y-%m-%d")
+        return {
+            "status": "ok",
+            "provider": "Copernicus Data Space (ESA)",
+            "display_mode": "wms",
+            "scene_date": scene_date_iso,
+            "scene_date_br": scene_date_br,
+            "scene_id": scene_id,
+            "cloud_coverage": cloud_coverage,
+            "wms_url": f"https://sh.dataspace.copernicus.eu/ogc/wms/{instance_id}",
+            "wms_params": {
+                "layers": "TRUE_COLOR",
+                "format": "image/png",
+                "transparent": False,
+                "time": f"{time_param}/{time_param}",
+            },
+            "preview_url": preview_url,
+            "message": None,
+        }
+
+    return {
+        "status": "ok",
+        "provider": "Earth Search STAC (preview)",
+        "display_mode": "preview",
+        "scene_date": scene_date_iso,
+        "scene_date_br": scene_date_br,
+        "scene_id": scene_id,
+        "cloud_coverage": cloud_coverage,
+        "preview_url": preview_url,
+        "wms_url": None,
+        "wms_params": None,
+        "message": "Preview estatico da ultima cena (fallback ilustrativo). Nao georreferenciado com precisao.",
+    }

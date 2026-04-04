@@ -1,13 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   MapContainer, TileLayer, Marker, Popup,
-  Polygon, Polyline, useMapEvents, useMap,
+  Polygon, Polyline, useMapEvents, useMap, WMSTileLayer, ImageOverlay,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import useAppStore from '../store/useAppStore';
+import useAppStore, { type Location } from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
+import { API_URL } from '../services/api';
+import { supabase } from '../services/supabase';
 
 // Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -17,15 +19,45 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-// ── NASA GIBS date: use a recent stable date (D-10) to avoid broken tiles ────
-const gibsDate = (() => {
-  const d = new Date();
-  d.setDate(d.getDate() - 10);
-  return d.toISOString().slice(0, 10); // e.g. "2024-03-21"
-})();
-
 // ── Map Click Handler ─────────────────────────────────────────────────────────
 type DrawMode = 'none' | 'drawing';
+
+type SentinelSceneResponse = {
+  status: 'ok' | 'fallback';
+  provider: string;
+  display_mode: 'wms' | 'preview' | 'fallback';
+  scene_date: string | null;
+  scene_date_br: string | null;
+  scene_id?: string | null;
+  cloud_coverage?: number | null;
+  wms_url?: string | null;
+  wms_params?: {
+    layers: string;
+    format: string;
+    transparent: boolean;
+    time: string;
+  } | null;
+  preview_url?: string | null;
+  message?: string | null;
+};
+
+function getPreviewBounds(field: Location | undefined, center: [number, number]): [[number, number], [number, number]] {
+  if (field?.boundaries && field.boundaries.length >= 3) {
+    const lats = field.boundaries.map((p) => p[0]);
+    const lngs = field.boundaries.map((p) => p[1]);
+    return [
+      [Math.min(...lats), Math.min(...lngs)],
+      [Math.max(...lats), Math.max(...lngs)],
+    ];
+  }
+
+  const [lat, lng] = center;
+  const delta = 0.008;
+  return [
+    [lat - delta, lng - delta],
+    [lat + delta, lng + delta],
+  ];
+}
 
 function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; lng: number }) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng) });
@@ -142,10 +174,87 @@ export default function FieldMap() {
   const [customCultura, setCustomCultura] = useState('');
   const [fieldDataPlantio, setFieldDataPlantio] = useState('');
   const [fieldVariedade, setFieldVariedade] = useState('');
+  const [sentinelScene, setSentinelScene] = useState<SentinelSceneResponse | null>(null);
+  const [isLoadingScene, setIsLoadingScene] = useState(false);
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lat, currentLocation.lng]
     : [FALLBACK_LOCATION.lat, FALLBACK_LOCATION.lng];
+
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : undefined;
+  const requestLat = activeField?.lat ?? center[0];
+  const requestLng = activeField?.lng ?? center[1];
+  const activeBoundaries = activeField?.boundaries ?? null;
+
+  useEffect(() => {
+    if (activeMapLayer !== 'sentinel') return;
+
+    let isMounted = true;
+    const controller = new AbortController();
+
+    const loadScene = async () => {
+      try {
+        setIsLoadingScene(true);
+
+        const payload = {
+          lat: requestLat,
+          lng: requestLng,
+          boundaries: activeBoundaries,
+          lookback_days: 21,
+          max_cloud_coverage: 45,
+        };
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const authToken = session?.access_token;
+        if (!authToken) {
+          throw new Error('Sem sessao autenticada para consultar Sentinel-2.');
+        }
+
+        const response = await fetch(`${API_URL}/api/sentinel/latest-scene`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Erro HTTP ${response.status}`);
+        }
+
+        const data = (await response.json()) as SentinelSceneResponse;
+        if (isMounted) {
+          setSentinelScene(data);
+        }
+      } catch {
+        if (isMounted) {
+          setSentinelScene({
+            status: 'fallback',
+            provider: 'Fallback local',
+            display_mode: 'fallback',
+            scene_date: null,
+            scene_date_br: null,
+            message: 'Falha ao buscar metadados Sentinel-2. Exibindo Satelite Esri.',
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingScene(false);
+        }
+      }
+    };
+
+    void loadScene();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [activeMapLayer, requestLat, requestLng, activeBoundaries]);
 
   const handleMapClick = useCallback((latlng: { lat: number; lng: number }) => {
     if (drawMode !== 'drawing') return;
@@ -228,36 +337,43 @@ export default function FieldMap() {
         zoomControl={false}
       >
         <MapController />
-        {/* ── Base satellite layer (always visible) ── */}
-        <TileLayer
-          attribution="&copy; Esri"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={20}
-        />
-        {/* Hybrid labels */}
-        <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={20}
-          opacity={0.6}
-        />
-
-        {/* ── NDVI layer (NASA GIBS — MODIS Terra 8-day) ── */}
-        {activeMapLayer === 'ndvi' && (
+        {activeMapLayer === 'osm' ? (
           <TileLayer
-            url={`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${gibsDate}/GoogleMapsCompatible/{z}/{y}/{x}.jpg`}
-            attribution="NASA GIBS · MODIS Terra NDVI"
-            maxZoom={9}
-            opacity={0.85}
+            attribution="&copy; OpenStreetMap contributors"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={20}
+          />
+        ) : (
+          <>
+            <TileLayer
+              attribution="&copy; Esri"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+            />
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+              opacity={0.6}
+            />
+          </>
+        )}
+
+        {activeMapLayer === 'sentinel' && sentinelScene?.display_mode === 'wms' && sentinelScene.wms_url && sentinelScene.wms_params && (
+          <WMSTileLayer
+            url={`${sentinelScene.wms_url}?TIME=${encodeURIComponent(sentinelScene.wms_params.time)}`}
+            layers={sentinelScene.wms_params.layers}
+            format={sentinelScene.wms_params.format}
+            transparent={sentinelScene.wms_params.transparent}
+            opacity={0.95}
+            attribution="Copernicus Data Space (ESA)"
           />
         )}
 
-        {/* ── Moisture layer (NASA GIBS — MODIS Terra Land Surface Temp as proxy) ── */}
-        {activeMapLayer === 'moisture' && (
-          <TileLayer
-            url={`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_Land_Surface_Temp_Day/default/${gibsDate}/GoogleMapsCompatible/{z}/{y}/{x}.png`}
-            attribution="NASA GIBS · MODIS Terra LST"
-            maxZoom={9}
-            opacity={0.75}
+        {activeMapLayer === 'sentinel' && sentinelScene?.display_mode === 'preview' && sentinelScene.preview_url && (
+          <ImageOverlay
+            url={sentinelScene.preview_url}
+            bounds={getPreviewBounds(activeField, center)}
+            opacity={0.88}
           />
         )}
 
@@ -359,9 +475,9 @@ export default function FieldMap() {
           <p className="text-[9px] font-bold uppercase tracking-widest px-2" style={{ color: '#64748b' }}>Camadas</p>
           <div className="flex flex-col gap-1">
             {[
-              { id: 'satellite' as const, label: '🛰 Satélite', icon: 'satellite' },
-              { id: 'ndvi' as const, label: 'NDVI', icon: 'eco' },
-              { id: 'moisture' as const, label: 'Umidade', icon: 'water_drop' },
+              { id: 'osm' as const, label: 'OpenStreetMap', icon: 'map' },
+              { id: 'satellite' as const, label: 'Esri Satellite', icon: 'satellite' },
+              { id: 'sentinel' as const, label: 'Sentinel-2 Atualizado', icon: 'satellite_alt' },
             ].map(({ id, label, icon }) => (
               <button
                 key={id}
@@ -378,10 +494,21 @@ export default function FieldMap() {
               </button>
             ))}
           </div>
-          {activeMapLayer === 'ndvi' && (
+          {activeMapLayer === 'sentinel' && (
             <div className="mt-1.5 px-2 pb-1 text-[9px]" style={{ color: '#64748b', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
-              <p className="font-semibold mb-0.5">📅 Data: {gibsDate.split('-').reverse().join('/')}</p>
-              <p className="text-[8px]" style={{ color: '#475569' }}>Imagem composta (D-10)</p>
+              <p className="font-semibold mb-0.5">
+                Sentinel-2 · Ultima cena: {sentinelScene?.scene_date_br ?? 'N/D'}
+              </p>
+              {isLoadingScene && <p className="text-[8px]" style={{ color: '#475569' }}>Buscando cena mais recente...</p>}
+              {!isLoadingScene && sentinelScene?.display_mode === 'wms' && (
+                <p className="text-[8px]" style={{ color: '#475569' }}>Fonte: Copernicus Data Space (ESA) · WMS</p>
+              )}
+              {!isLoadingScene && sentinelScene?.display_mode === 'preview' && (
+                <p className="text-[8px]" style={{ color: '#fca5a5' }}>Preview estatico da ultima cena (ilustrativo, nao georreferenciado com precisao)</p>
+              )}
+              {!isLoadingScene && sentinelScene?.display_mode === 'fallback' && (
+                <p className="text-[8px]" style={{ color: '#fda4af' }}>Fallback em Esri Satellite</p>
+              )}
             </div>
           )}
         </div>
@@ -539,22 +666,30 @@ export default function FieldMap() {
         </div>
       )}
 
-      {/* NDVI legend */}
-      {activeMapLayer === 'ndvi' && (
+      {/* Sentinel scene status */}
+      {activeMapLayer === 'sentinel' && (
         <div
           className="absolute bottom-4 right-4 z-[500] p-3 rounded-xl pointer-events-none text-[10px]"
           style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)', maxWidth: '220px' }}
         >
-          <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>📊 NDVI — NASA GIBS</p>
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className="w-24 h-3 rounded-full" style={{ background: 'linear-gradient(to right, #a52a2a, #ffff00, #00aa00)' }} />
-          </div>
-          <div className="flex justify-between text-[9px] mb-1.5 text-slate-500">
-            <span>Baixo NDVI</span><span style={{ color: '#8b5cf6' }}>Alto NDVI</span>
-          </div>
+          <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Sentinel-2 Atualizado</p>
           <div className="text-[9px] p-1.5 rounded" style={{ background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.2)', color: '#f97316' }}>
-            <p className="font-semibold mb-0.5">📅 Data: {gibsDate.split('-').reverse().join('/')}</p>
-            <p className="text-[8px]" style={{ color: '#cbd5e1' }}>Imagem composta (D-10, não é ao vivo)</p>
+            <p className="font-semibold mb-0.5">Ultima cena: {sentinelScene?.scene_date_br ?? 'N/D'}</p>
+            <p className="text-[8px]" style={{ color: '#cbd5e1' }}>
+              {isLoadingScene
+                ? 'Consultando Earth Search STAC...'
+                : sentinelScene?.display_mode === 'wms'
+                  ? 'Exibicao WMS (Copernicus Data Space - ESA)'
+                  : sentinelScene?.display_mode === 'preview'
+                    ? 'Preview estatico da ultima cena (ilustrativo, sem georreferenciamento preciso)'
+                    : 'Fallback: Esri Satellite'}
+            </p>
+            {!!sentinelScene?.provider && (
+              <p className="text-[8px] mt-1" style={{ color: '#94a3b8' }}>Provider: {sentinelScene.provider}</p>
+            )}
+            {!!sentinelScene?.message && (
+              <p className="text-[8px] mt-1" style={{ color: '#fca5a5' }}>{sentinelScene.message}</p>
+            )}
           </div>
         </div>
       )}

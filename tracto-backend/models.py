@@ -42,6 +42,14 @@ class FieldAnalysisRequest(BaseModel):
     forecast_7d: str | None = None
 
 
+class LatestSceneRequest(BaseModel):
+    lat: float
+    lng: float
+    boundaries: list[list[float]] | None = None
+    lookback_days: int = 21
+    max_cloud_coverage: int = 40
+
+
 class FieldAnalysisResponse(BaseModel):
     field_name: str
     ndvi_image_base64: str | None

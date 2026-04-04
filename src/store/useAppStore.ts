@@ -30,7 +30,17 @@ export interface Farm {
   fields: Location[];
 }
 
-export type MapLayer = 'satellite' | 'ndvi' | 'moisture';
+export type MapLayer = 'osm' | 'satellite' | 'sentinel';
+
+function normalizeMapLayer(layer: unknown): MapLayer {
+  if (layer === 'osm' || layer === 'satellite' || layer === 'sentinel') {
+    return layer;
+  }
+  if (layer === 'ndvi' || layer === 'moisture') {
+    return 'sentinel';
+  }
+  return 'satellite';
+}
 
 export interface Alert {
   id: string;
@@ -188,7 +198,7 @@ export const useAppStore = create<AppState>()(
         }),
       focusActiveField: () =>
         set((state) => ({ activeFieldFocusToken: state.activeFieldFocusToken + 1 })),
-      setMapLayer: (layer) => set({ activeMapLayer: layer }),
+      setMapLayer: (layer) => set({ activeMapLayer: normalizeMapLayer(layer) }),
       setCurrentLocation: (loc) => set({ currentLocation: loc }),
       setLocationStatus: (status) => set({ locationStatus: status }),
 
@@ -382,7 +392,23 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'tracto-app-storage',
+      version: 2,
       storage: createJSONStorage(() => localStorage),
+      migrate: (persistedState, version) => {
+        const state = (persistedState ?? {}) as Partial<AppState>;
+
+        if (version < 2) {
+          return {
+            ...state,
+            activeMapLayer: normalizeMapLayer(state.activeMapLayer),
+          } as AppState;
+        }
+
+        return {
+          ...state,
+          activeMapLayer: normalizeMapLayer(state.activeMapLayer),
+        } as AppState;
+      },
       partialize: (state) => ({
         activeFarmId: state.activeFarmId,
         activeFieldId: state.activeFieldId,
