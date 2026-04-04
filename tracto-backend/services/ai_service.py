@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from typing import Any, Dict, List, Optional
 
 
-MODEL = "claude-3-5-sonnet-20241022"
+MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
 ALLOWED_ALERT_TYPES = {"critical", "warning", "info"}
 
 
