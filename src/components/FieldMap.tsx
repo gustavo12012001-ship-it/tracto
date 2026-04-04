@@ -359,6 +359,13 @@ export default function FieldMap() {
         return;
       }
 
+      if (response.status === 502 || response.status === 503) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        setGeoResult(null);
+        setGeoError(payload?.detail ?? 'Serviço de busca geográfica indisponível no momento.');
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Erro HTTP ${response.status}`);
       }

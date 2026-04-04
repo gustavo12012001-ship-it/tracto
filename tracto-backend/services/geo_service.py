@@ -11,6 +11,16 @@ _geo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _last_external_call_ts = 0.0
 
 
+class GeoNotFoundError(Exception):
+    pass
+
+
+class GeoProviderError(Exception):
+    def __init__(self, message: str, provider_status: int | None = None):
+        super().__init__(message)
+        self.provider_status = provider_status
+
+
 def _parse_bbox(raw_bbox: list[str] | None) -> dict[str, float] | None:
     if not raw_bbox or len(raw_bbox) != 4:
         return None
@@ -31,12 +41,12 @@ def _parse_bbox(raw_bbox: list[str] | None) -> dict[str, float] | None:
     }
 
 
-def search_location(query: str) -> dict[str, Any] | None:
+def search_location(query: str) -> dict[str, Any]:
     global _last_external_call_ts
 
     normalized = query.strip()
     if len(normalized) < 3:
-        return None
+        raise GeoNotFoundError("Consulta muito curta para busca geografica.")
 
     cache_key = normalized.lower()
     now = time.time()
@@ -76,11 +86,18 @@ def search_location(query: str) -> dict[str, Any] | None:
         if not results:
             results = _run_search({})
         _last_external_call_ts = time.time()
-    except Exception:
-        return None
+    except httpx.TimeoutException as exc:
+        raise GeoProviderError("Timeout ao consultar provedor de localizacao.") from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        raise GeoProviderError("Erro HTTP retornado pelo provedor de localizacao.", provider_status=status_code) from exc
+    except httpx.RequestError as exc:
+        raise GeoProviderError("Falha de rede ao consultar provedor de localizacao.") from exc
+    except Exception as exc:
+        raise GeoProviderError("Erro inesperado ao consultar provedor de localizacao.") from exc
 
     if not results:
-        return None
+        raise GeoNotFoundError("Local nao encontrado para a busca informada.")
 
     top = results[0]
     payload = {
