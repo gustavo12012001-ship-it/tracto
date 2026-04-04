@@ -5,6 +5,9 @@ from datetime import datetime
 
 import httpx
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -38,8 +41,6 @@ from services.cache_service import analysis_cache
 from services.sentinel_service import get_ndvi_image
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
-
-load_dotenv()
 
 # --- Security & Rate Limiting ---
 
