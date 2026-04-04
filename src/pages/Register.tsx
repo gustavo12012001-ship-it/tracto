@@ -2,13 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
-
-
 const maskPhone = (v: string) => {
   let val = v.replace(/\D/g, '');
   if (val.length > 11) val = val.slice(0, 11);

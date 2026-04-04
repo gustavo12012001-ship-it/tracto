@@ -3,12 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import useAppStore from '../store/useAppStore';
 import { supabase } from '../services/supabase';
 
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
-
 // ── Error messages ────────────────────────────────────────────────────────────
 function friendlyError(msg: string): string {
   if (msg.includes('Invalid login credentials')) return 'E-mail ou senha incorretos.';

@@ -72,7 +72,9 @@ export default function Reports() {
           if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
             initial[key] = parsed.data;
           }
-        } catch {}
+        } catch {
+          // Ignora cache inválido e segue com estado inicial vazio.
+        }
       }
     });
     setAnalysisResults(initial);
