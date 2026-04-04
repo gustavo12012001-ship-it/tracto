@@ -11,5 +11,12 @@ if (!isValidUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(
   isValidUrl ? supabaseUrl : 'https://placeholder.supabase.co',
-  supabaseAnonKey && supabaseAnonKey.length > 10 ? supabaseAnonKey : 'placeholder'
+  supabaseAnonKey && supabaseAnonKey.length > 10 ? supabaseAnonKey : 'placeholder',
+  {
+    auth: {
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  }
 );

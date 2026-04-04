@@ -1,6 +1,292 @@
-# Código Completo do Projeto Tracto
+# Código Completo do Projeto Tracto — Inteligência Agronômica
 
- Aqui estão todos os arquivos de configuração e código fonte do projeto.
+> **Data de atualização:** April 4, 2026  
+> **Versão:** 2.2.1  
+> **Status:** Produção  
+
+Documentação técnica completa contendo toda a estrutura, configurações, código-fonte e arquitetura do projeto Tracto.
+
+---
+
+## 📋 Índice
+1. [Estrutura do Projeto](#estrutura-do-projeto)
+2. [Configuração & Build](#configuração--build)
+3. [Frontend - React + TypeScript](#frontend---react--typescript)
+4. [Backend - FastAPI](#backend---fastapi)
+5. [Banco de Dados & Autenticação](#banco-de-dados--autenticação)
+6. [Variáveis de Ambiente](#variáveis-de-ambiente)
+
+---
+
+## 🗂️ Estrutura do Projeto
+
+```
+.
+├── src/                              # Frontend React + TypeScript
+│   ├── pages/
+│   │   ├── Dashboard.tsx             # Painel principal com mapa de talhões
+│   │   ├── Login.tsx                 # Autenticação
+│   │   ├── Register.tsx              # Cadastro de usuário
+│   │   ├── ResetPassword.tsx         # Recuperação de senha
+│   │   ├── LandingPage.tsx           # Página inicial
+│   │   ├── Weather.tsx               # Meteorologia/Clima
+│   │   ├── Chat.tsx                  # Chat IA Agronômico
+│   │   ├── Alerts.tsx                # Centro de alertas
+│   │   ├── Reports.tsx               # Relatórios
+│   │   ├── Market.tsx                # Mercado/Commodities
+│   │   └── Pricing.tsx               # Planos de preço
+│   ├── components/
+│   │   ├── Layout.tsx                # Sidebar e navegação
+│   │   ├── ProtectedRoute.tsx        # Autenticação de rotas
+│   │   ├── FieldMap.tsx              # Mapa interativo de talhões
+│   │   └── Skeleton.tsx              # Componentes de loading
+│   ├── services/
+│   │   ├── api.ts                    # Cliente HTTP para backend
+│   │   ├── supabase.ts               # Configuração Supabase Auth/DB
+│   │   ├── farm_service.ts           # Operações com fazendas/talhões
+│   │   ├── alertsAI.ts               # Processamento de alertas IA
+│   ├── store/
+│   │   └── useAppStore.ts            # Estado global (Zustand)
+│   ├── utils/
+│   │   ├── geo.ts                    # Utilitários de geometria
+│   │   └── geolocation.ts            # Localização do usuário
+│   ├── App.tsx                       # Router principal
+│   ├── main.tsx                      # Entry point
+│   ├── index.css                     # Estilos globais
+│   └── App.css                       # Estilos do App
+├── tracto-backend/
+│   ├── main.py                       # API FastAPI
+│   ├── models.py                     # Esquemas Pydantic
+│   ├── requirements.txt              # Dependências Python
+│   ├── services/
+│   │   ├── ai_service.py             # Integração Claude AI
+│   │   ├── auth_service.py           # Autenticação JWT
+│   │   ├── supabase_service.py       # Cliente Supabase
+│   │   ├── farm_service.py           # CRUD Fazendas/Talhões
+│   │   ├── weather_service.py        # Integração Weather API
+│   │   ├── sentinel_service.py       # Satellite imagery (NDVI)
+│   │   ├── agronomic_engine.py       # Motor determinístico
+│   │   ├── billing_service.py        # Cobrança e entitlements
+│   │   └── cache_service.py          # Cache em memória
+│   └── sql/
+│       ├── schema.sql                # DDL do banco de dados
+│       └── 02_commercial.sql         # Triggers e políticas RLS
+├── public/
+│   └── sw.js                         # Service Worker
+├── package.json                      # Dependências frontend
+├── tsconfig.json                     # Config TypeScript
+├── vite.config.ts                    # Config Vite
+├── eslint.config.js                  # Linting
+├── index.html                        # HTML raiz
+└── README.md                         # Documentação
+
+---
+
+## 🎨 Frontend - React 19 + TypeScript + Vite
+
+### `package.json`
+
+```json
+{
+  "name": "tracto",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
+    "@tailwindcss/vite": "^4.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.1",
+    "react-leaflet": "^5.0.0",
+    "leaflet": "^1.9.4",
+    "zustand": "^5.0.11",
+    "framer-motion": "^12.36.0",
+    "recharts": "^3.8.0",
+    "axios": "^1.13.6",
+    "uuid": "^13.0.0"
+  }
+}
+```
+
+### `src/App.tsx`
+
+```typescript
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import Weather from './pages/Weather';
+import Chat from './pages/Chat';
+import Alerts from './pages/Alerts';
+import Reports from './pages/Reports';
+import Market from './pages/Market';
+import Layout from './components/Layout';
+import LandingPage from './pages/LandingPage';
+import Register from './pages/Register';
+import ResetPassword from './pages/ResetPassword';
+import Pricing from './pages/Pricing';
+import ProtectedRoute from './components/ProtectedRoute';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route
+          path="/app"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="weather" element={<Weather />} />
+          <Route path="chat" element={<Chat />} />
+          <Route path="alerts" element={<Alerts />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="market" element={<Market />} />
+          <Route path="billing" element={<Pricing />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+```
+
+### `src/services/api.ts` (Cliente HTTP)
+
+```typescript
+import { supabase } from './supabase';
+
+export const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
+
+async function buildAuthHeaders() {
+  try {
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      const refreshed = await supabase.auth.refreshSession();
+      session = refreshed.data.session;
+    }
+    return session?.access_token 
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  } catch (error) {
+    console.warn('[API] Falha ao construir headers:', error);
+    return {};
+  }
+}
+
+export const apiFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+  if (!API_URL) throw new Error('Backend não configurado');
+  
+  const url = `${API_URL}${path}`;
+  const authHeaders = await buildAuthHeaders();
+  const headers = new Headers(options.headers ?? {});
+  
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  
+  Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
+
+  try {
+    const response = await fetch(url, { ...options, headers });
+    
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`[${response.status}] ${detail}`);
+    }
+
+    return await response.json() as T;
+  } catch (error) {
+    console.error('[API] Erro:', error);
+    throw error;
+  }
+};
+```
+
+### `src/store/useAppStore.ts` (Zustand State Management)
+
+```typescript
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+export interface Farm {
+  id: string;
+  name: string;
+  fields: Location[];
+}
+
+export interface Location {
+  id?: string;
+  lat: number;
+  lng: number;
+  name?: string;
+  boundaries?: [number, number][];
+  cultura?: string;
+  areaHa?: number;
+}
+
+export interface Alert {
+  id: string;
+  type: 'critical' | 'warning' | 'info';
+  title: string;
+  message: string;
+  timestamp: number;
+  dismissed: boolean;
+}
+
+interface AppState {
+  fields: Location[];
+  alerts: Alert[];
+  weatherCache: any | null;
+  setFields: (fields: Location[]) => void;
+  setAlerts: (alerts: Alert[]) => void;
+  appendAlert: (alert: Alert) => void;
+  dismissAlert: (id: string) => void;
+}
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      fields: [],
+      alerts: [],
+      weatherCache: null,
+      setFields: (fields) => set({ fields }),
+      setAlerts: (alerts) => set({ alerts }),
+      appendAlert: (alert) => {
+        const current = get().alerts;
+        set({ alerts: [alert, ...current] });
+      },
+      dismissAlert: (id) => {
+        const current = get().alerts;
+        set({ alerts: current.map((a) => a.id === id ? { ...a, dismissed: true } : a) });
+      },
+    }),
+    {
+      name: 'tracto-app-store',
+    }
+  )
+);
+
+export default useAppStore;
+```
+
+## ⚙️ Configuração & Build
 
 ### `eslint.config.js`
 ```js

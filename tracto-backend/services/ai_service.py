@@ -27,57 +27,58 @@ def generate_chat_response(
     image_mime_type: str = "image/jpeg",
     hourly_weather: dict | None = None,
 ) -> str:
-    system_parts = [
-        "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
-        "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
-        f"\nContexto da fazenda:\n{farm_context}",
-    ]
-    if ndvi_context:
-        system_parts.append(f"\nAnalise NDVI recente:\n{ndvi_context}")
-    if hourly_weather:
-        system_parts.append(
-            f"\nDados climaticos atuais:\n{json.dumps(hourly_weather, ensure_ascii=False)}"
-        )
-
-    anthropic_messages: list[dict[str, Any]] = []
-    # Iterate through all but the last message
-    # Use a manual loop to avoid slicing issues in the linter
-    count = len(messages)
-    for i in range(count - 1):
-        msg = messages[i]
-        role = "assistant" if msg.get("role") in ("model", "assistant") else "user"
-        anthropic_messages.append({"role": role, "content": msg.get("text", "")})
-
-    last_msg = messages[-1] if messages else None
-    last_text = last_msg.get("text", "") if last_msg else ""
-
-    if image_base64:
-        last_content: Any = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": image_mime_type,
-                    "data": image_base64,
-                },
-            },
-            {
-                "type": "text",
-                "text": (
-                    "O produtor enviou uma foto da lavoura. Analise visualmente e identifique "
-                    "pragas, doencas, deficiencias nutricionais, estadio fenologico e qualquer "
-                    "problema agronomico visivel. Seja especifico e traga recomendacao pratica.\n\n"
-                    f"Mensagem do produtor: {last_text}"
-                ).strip(),
-            },
-        ]
-    else:
-        last_content = last_text
-
-    anthropic_messages.append({"role": "user", "content": last_content})
-
     try:
         client = _get_client()
+
+        system_parts = [
+            "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
+            "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
+            f"\nContexto da fazenda:\n{farm_context}",
+        ]
+        if ndvi_context:
+            system_parts.append(f"\nAnalise NDVI recente:\n{ndvi_context}")
+        if hourly_weather:
+            system_parts.append(
+                f"\nDados climaticos atuais:\n{json.dumps(hourly_weather, ensure_ascii=False)}"
+            )
+
+        anthropic_messages: list[dict[str, Any]] = []
+        # Iterate through all but the last message
+        # Use a manual loop to avoid slicing issues in the linter
+        count = len(messages)
+        for i in range(count - 1):
+            msg = messages[i]
+            role = "assistant" if msg.get("role") in ("model", "assistant") else "user"
+            anthropic_messages.append({"role": role, "content": msg.get("text", "")})
+
+        last_msg = messages[-1] if messages else None
+        last_text = last_msg.get("text", "") if last_msg else ""
+
+        if image_base64:
+            last_content: Any = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_mime_type,
+                        "data": image_base64,
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "O produtor enviou uma foto da lavoura. Analise visualmente e identifique "
+                        "pragas, doencas, deficiencias nutricionais, estadio fenologico e qualquer "
+                        "problema agronomico visivel. Seja especifico e traga recomendacao pratica.\n\n"
+                        f"Mensagem do produtor: {last_text}"
+                    ).strip(),
+                },
+            ]
+        else:
+            last_content = last_text
+
+        anthropic_messages.append({"role": "user", "content": last_content})
+
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
@@ -86,9 +87,12 @@ def generate_chat_response(
             messages=anthropic_messages,
         )
         return response.content[0].text
+    except ValueError as exc:
+        logging.error("Erro de configuracao da IA (chat): %s", exc)
+        return "Desculpe, a IA esta indisponivel por configuracao do servidor (ANTHROPIC_API_KEY)."
     except Exception as exc:
         logging.error("Erro no chat Claude: %s", exc)
-        return "Desculpe, ocorreu um erro ao processar sua mensagem."
+        return "Desculpe, a IA esta indisponivel no momento (falha no provedor Anthropic)."
 
 
 def _clean_json_text(raw: str) -> str:
