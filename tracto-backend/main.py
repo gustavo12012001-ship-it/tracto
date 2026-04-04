@@ -80,12 +80,17 @@ async def structured_log_middleware(request: Request, call_next):
     return response
 
 
-# TODO: temporariamente aceitar todas as origens para teste CORS
+origins = [
+    "https://tracto-eta.vercel.app",       # seu domínio Vercel
+    "http://localhost:5173",            # dev local
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
