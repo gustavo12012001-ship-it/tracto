@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import useAppStore from '../store/useAppStore';
 import { generateAlerts } from '../services/alertsAI';
 import type { Alert } from '../store/useAppStore';
@@ -43,6 +43,7 @@ export default function Alerts() {
   const { currentLocation, fields, weatherCache, alerts, setAlerts, dismissAlert } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const didAutoLoad = useRef(false);
   
 
   const loc = fields.length > 0
@@ -74,7 +75,7 @@ export default function Alerts() {
   };
   const localAlerts = getLocalAlerts();
 
-  const loadAlerts = async () => {
+  const loadAlerts = useCallback(async () => {
     if (fields.length === 0 && !weatherCache) return;
     setLoading(true);
     setError(null);
@@ -86,14 +87,17 @@ export default function Alerts() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fields, weatherCache, setAlerts]);
 
   // Auto-load when mounting if no alerts yet
   useEffect(() => {
+    if (didAutoLoad.current) return;
+
     if (alerts.length === 0 && fields.length > 0 && weatherCache) {
-      loadAlerts();
+      didAutoLoad.current = true;
+      void loadAlerts();
     }
-  }, []);
+  }, [alerts.length, fields.length, weatherCache, loadAlerts]);
 
   return (
     <>

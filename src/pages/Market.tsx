@@ -38,6 +38,20 @@ interface NewsItem {
   image?: string;
 }
 
+interface RssItem {
+  guid?: string;
+  title?: string;
+  pubDate?: string;
+  link?: string;
+  thumbnail?: string;
+  enclosure?: { link?: string };
+}
+
+interface RssResponse {
+  status?: string;
+  items?: RssItem[];
+}
+
 
 
 // Valores de commodities ref (já que HG/Awesome não cobrem gratuitamente commodities físicas BR)
@@ -90,16 +104,16 @@ export default function Market() {
     try {
       const rssUrl = 'https://www.canalrural.com.br/feed/';
       const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
-      const data = await res.json();
-      if (data.status === 'ok') {
-        const formattedNews = data.items.slice(0, 5).map((item: any) => ({
-          id: item.guid,
-          title: item.title,
+      const data = await res.json() as RssResponse;
+      if (data.status === 'ok' && data.items) {
+        const formattedNews = data.items.slice(0, 5).map((item, index) => ({
+          id: item.guid ?? `${item.link ?? 'news'}-${index}`,
+          title: item.title ?? 'Sem título',
           source: 'Canal Rural',
-          time: timeAgo(item.pubDate),
-          url: item.link,
+          time: timeAgo(item.pubDate ?? ''),
+          url: item.link ?? '#',
           // A API rss2json costuma extrair thumbnail/enclosure
-          image: item.thumbnail || item.enclosure?.link || null
+          image: item.thumbnail || item.enclosure?.link || undefined
         }));
         setNews(formattedNews);
         setLastUpdate(new Date());
@@ -112,12 +126,19 @@ export default function Market() {
 
 
   useEffect(() => {
-    fetchNews();
+    const initialFetch = window.setTimeout(() => {
+      void fetchNews();
+    }, 0);
     
     // Updates
-    const inv1 = setInterval(fetchNews, 5 * 60 * 1000); // 5 mins
+    const inv1 = window.setInterval(() => {
+      void fetchNews();
+    }, 5 * 60 * 1000); // 5 mins
     
-    return () => { clearInterval(inv1); };
+    return () => {
+      window.clearTimeout(initialFetch);
+      window.clearInterval(inv1);
+    };
   }, []);
 
   const topNews = news[0];

@@ -43,8 +43,8 @@ export default function Pricing() {
       });
       setMessage(res.message + " (Integração estrutural pronta. Aguardando chaves do Gateway).");
       // MOCK: Em produção, window.location.href = res.checkout_url;
-    } catch (e: any) {
-      setMessage(e.message);
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Erro ao iniciar checkout.');
     } finally {
       setLoading(false);
     }
@@ -90,9 +90,10 @@ export default function Pricing() {
       });
 
       setMessage('Aparelho registrado com sucesso para notificações Push da Tracto!');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setMessage(`Erro na Inscrição Push: ${err.message}`);
+      const pushErrorMessage = err instanceof Error ? err.message : 'Erro desconhecido na inscrição push.';
+      setMessage(`Erro na Inscrição Push: ${pushErrorMessage}`);
     }
   };
 

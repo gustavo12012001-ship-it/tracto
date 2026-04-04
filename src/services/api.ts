@@ -151,7 +151,12 @@ export interface FieldAnalysisResult {
   is_mock: boolean;
   analyzed_at: string;
   confidence: number;
-  engine_results: Record<string, any>;
+  engine_results: Record<string, {
+    color: string;
+    label: string;
+    level: number;
+    [key: string]: unknown;
+  }>;
   source: string;
 }
 

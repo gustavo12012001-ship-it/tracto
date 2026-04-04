@@ -75,7 +75,7 @@ async function fetchOpenMeteo(lat: number, lng: number): Promise<WeatherCache> {
 export default function Weather() {
   const navigate = useNavigate();
   const { currentLocation, fields, weatherCache, setWeatherCache } = useAppStore();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windyOverlay, setWindyOverlay] = useState<'temp' | 'rain' | 'humidity' | 'wind' | 'clouds'>('temp');
 
@@ -91,16 +91,28 @@ export default function Weather() {
       Date.now() - weatherCache.fetchedAt < CACHE_TTL_MS;
 
     if (isCacheValid) {
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    fetchOpenMeteo(loc.lat, loc.lng)
-      .then((cache) => setWeatherCache(cache))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Erro desconhecido'))
-      .finally(() => setLoading(false));
+    let mounted = true;
+    const loadWeather = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const cache = await fetchOpenMeteo(loc.lat, loc.lng);
+        if (mounted) setWeatherCache(cache);
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : 'Erro desconhecido');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void loadWeather();
+
+    return () => {
+      mounted = false;
+    };
   }, [loc.lat, loc.lng]);
 
   const w = weatherCache;
