@@ -246,17 +246,17 @@ def _is_production() -> bool:
 
 @app.post("/api/chat")
 @limiter.limit("5/minute")
-async def chat_endpoint(request: ChatRequest, _request: Request, _user: AuthenticatedUser = Depends(get_current_user)):
+async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        if not request.messages:
+        if not chat_req.messages:
             raise HTTPException(status_code=400, detail="O historico de mensagens esta vazio.")
 
         reply = generate_chat_response(
-            messages=[message.model_dump() for message in request.messages],
-            farm_context=request.farm_context,
-            image_base64=request.image_base64,
-            image_mime_type=request.image_mime_type or "image/jpeg",
-            hourly_weather=request.hourly_weather,
+            messages=[message.model_dump() for message in chat_req.messages],
+            farm_context=chat_req.farm_context,
+            image_base64=chat_req.image_base64,
+            image_mime_type=chat_req.image_mime_type or "image/jpeg",
+            hourly_weather=chat_req.hourly_weather,
         )
         return {"reply": reply}
     except HTTPException:
@@ -285,12 +285,12 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
 
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)
 @limiter.limit("3/minute")
-async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Request, _user: AuthenticatedUser = Depends(get_current_user)):
+async def analyze_field_endpoint(request: Request, field_req: FieldAnalysisRequest, _user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        effective_crop_type = request.crop_type or "NÃ£o informada"
+        effective_crop_type = field_req.crop_type or "NÃ£o informada"
         # Cache key based on location, crop and current date (24h validity semantic)
         date_str = datetime.now().strftime("%Y%m%d")
-        cache_key = f"{request.lat:.4f}_{request.lng:.4f}_{effective_crop_type}_{date_str}"
+        cache_key = f"{field_req.lat:.4f}_{field_req.lng:.4f}_{effective_crop_type}_{date_str}"
         cached_result = analysis_cache.get(cache_key)
 
         if cached_result:
@@ -299,19 +299,19 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
             return FieldAnalysisResponse(**data)
 
         is_mock_weather = False
-        weather_data = extract_weather_snapshot(request.hourly_weather, request.forecast_7d)
+        weather_data = extract_weather_snapshot(field_req.hourly_weather, field_req.forecast_7d)
         if not weather_data:
-            weather_data = await fetch_weather_snapshot(request.lat, request.lng)
+            weather_data = await fetch_weather_snapshot(field_req.lat, field_req.lng)
         if not weather_data:
-            weather_data = _get_mock_weather(request.lat, request.lng)
+            weather_data = _get_mock_weather(field_req.lat, field_req.lng)
             is_mock_weather = True
 
         season = _get_season()
         now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
         weather_summary = _build_weather_summary(weather_data, season, now_str)
-        forecast_str = request.forecast_7d or weather_data.get("forecast_7d") or season
+        forecast_str = field_req.forecast_7d or weather_data.get("forecast_7d") or season
 
-        sentinel_data = get_ndvi_image(request.lat, request.lng, request.boundaries, request.date_range_days)
+        sentinel_data = get_ndvi_image(field_req.lat, field_req.lng, field_req.boundaries, field_req.date_range_days)
 
         ndvi_analysis = None
         image_base64 = None
@@ -342,7 +342,7 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
         confidence = engine.calculate_confidence(
             sat_data=sentinel_data is not None,
             weather_data=not is_mock_weather,
-            boundaries_data=request.boundaries is not None and len(request.boundaries) >= 3
+            boundaries_data=field_req.boundaries is not None and len(field_req.boundaries) >= 3
         )
 
         engine_results = {
@@ -355,10 +355,10 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
         if sentinel_data:
             ndvi_analysis = analyze_ndvi_image(
                 image_base64=image_base64,
-                field_name=request.field_name,
+                field_name=field_req.field_name,
                 crop_type=effective_crop_type,
                 weather_context=weather_summary,
-                hourly_weather=request.hourly_weather,
+                hourly_weather=field_req.hourly_weather,
                 forecast_7d=forecast_str,
                 ndvi_stats=stats,
                 engine_results=engine_results
@@ -371,11 +371,11 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
             wind_speed = weather_data["wind_speed"]
             crop_type = effective_crop_type
             et0 = weather_data.get("et0")
-            fields = [{"name": request.field_name, "crop": request.crop_type, "lat": request.lat, "lng": request.lng}]
+            fields = [{"name": field_req.field_name, "crop": field_req.crop_type, "lat": field_req.lat, "lng": field_req.lng}]
             weather_forecast = forecast_str
             engine_results = [engine_results]
 
-        alerts = generate_alerts_claude(AlertLike(), {request.field_name: ndvi_analysis} if ndvi_analysis else {})
+        alerts = generate_alerts_claude(AlertLike(), {field_req.field_name: ndvi_analysis} if ndvi_analysis else {})
 
         try:
             client = _get_client()
@@ -383,7 +383,7 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
                 model=MODEL,
                 max_tokens=800,
                 temperature=0.3,
-                messages=[{"role": "user", "content": _build_report_prompt(request, now_str, season, weather_summary, forecast_str, ndvi_analysis)}],
+                messages=[{"role": "user", "content": _build_report_prompt(field_req, now_str, season, weather_summary, forecast_str, ndvi_analysis)}],
             )
             ai_report = response.content[0].text
         except Exception as exc:
@@ -391,7 +391,7 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
             ai_report = "Relatorio nao disponivel no momento."
 
         result = {
-            "field_name": request.field_name,
+            "field_name": field_req.field_name,
             "ndvi_image_base64": image_base64,
             "date_acquired": date_acquired,
             "cloud_coverage": cloud_coverage,
