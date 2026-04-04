@@ -47,7 +47,8 @@ const INITIAL_MSG = (time: string): Message => ({
 
 function buildFarmContext(
   fields: ReturnType<typeof useAppStore.getState>['fields'],
-  activeFieldId: string | null
+  activeFieldId: string | null,
+  hasImageInPayload: boolean
 ): string {
   if (fields.length === 0) {
     return [
@@ -86,7 +87,11 @@ function buildFarmContext(
     ? `Demais talhões cadastrados:\n${otherFields.map((field, index) => `- ${buildFieldLine(field, index)}`).join('\n')}`
     : 'Demais talhões cadastrados: Nenhum.';
 
-  return `${activeSection}\n${othersSection}`;
+  const imageSection = hasImageInPayload
+    ? 'Imagem: anexada nesta mensagem (disponivel para analise agora).'
+    : 'Imagem: nenhuma imagem anexada nesta mensagem. Se quiser analise visual, reenvie a foto.';
+
+  return `${activeSection}\n${othersSection}\n${imageSection}`;
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -184,7 +189,7 @@ export default function Chat() {
                 role: m.role === 'assistant' ? 'model' : 'user',
                 text: m.text,
               })),
-              farm_context: buildFarmContext(fields, activeFieldId),
+              farm_context: buildFarmContext(fields, activeFieldId, false),
               created_at: createdAt,
               updated_at: nowISO(),
             }),
@@ -306,7 +311,7 @@ export default function Chat() {
         { role: 'user', text: userMsg.text },
       ];
 
-      const farm_context = buildFarmContext(fields, activeFieldId);
+      const farm_context = buildFarmContext(fields, activeFieldId, Boolean(imageBase64));
       const hourly_weather = weatherCache
         ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
         : null;
@@ -499,7 +504,9 @@ export default function Chat() {
               <h2 className="text-sm font-bold text-white">Tracto IA</h2>
               <p className="text-[10px] flex items-center gap-1.5" style={{ color: '#64748b' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
-                Analista Agronômica · Claude Sonnet · Visão Ativa
+                {pendingImage
+                  ? 'Analista Agronômica · Claude Sonnet · Visão ativa nesta mensagem'
+                  : 'Analista Agronômica · Claude Sonnet · Sem imagem anexada'}
               </p>
             </div>
           </div>
@@ -647,7 +654,7 @@ export default function Chat() {
                   <span className="material-symbols-outlined text-xs align-middle mr-0.5">
                     visibility
                   </span>
-                  Pronto para análise visual
+                  Válida para esta mensagem
                 </p>
               </div>
             </div>
@@ -706,6 +713,9 @@ export default function Chat() {
           </div>
           <p className="text-center text-[10px] mt-2" style={{ color: '#1e293b' }}>
             Tracto IA · Claude Sonnet 4.6 · JPG · PNG · WEBP até 5MB
+          </p>
+          <p className="text-center text-[10px] mt-1" style={{ color: '#334155' }}>
+            A foto enviada vale para a mensagem atual. Para novo diagnóstico visual, envie a imagem novamente.
           </p>
         </div>
       </div>

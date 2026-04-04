@@ -114,6 +114,7 @@ interface AppState {
   weatherCache: WeatherCache | null;
   activeFarmId: string | null;
   activeFieldId: string | null;
+  activeFieldFocusToken: number;
   activeMapLayer: MapLayer;
   currentLocation: Location | null;
   locationStatus: LocationStatus;
@@ -124,6 +125,7 @@ interface AppState {
   setFarms: (farms: Farm[]) => void;
   setActiveFarm: (id: string | null) => void;
   setActiveField: (id: string | null) => void;
+  focusActiveField: () => void;
   setMapLayer: (layer: MapLayer) => void;
   setCurrentLocation: (loc: Location | null) => void;
   setLocationStatus: (status: LocationStatus) => void;
@@ -154,6 +156,7 @@ export const useAppStore = create<AppState>()(
       weatherCache: null,
       activeFarmId: null,
       activeFieldId: null,
+      activeFieldFocusToken: 0,
       activeMapLayer: 'satellite',
       currentLocation: null,
       locationStatus: 'loading',
@@ -183,6 +186,8 @@ export const useAppStore = create<AppState>()(
             activeFarmId: selectedField?.farm_id ?? state.activeFarmId,
           };
         }),
+      focusActiveField: () =>
+        set((state) => ({ activeFieldFocusToken: state.activeFieldFocusToken + 1 })),
       setMapLayer: (layer) => set({ activeMapLayer: layer }),
       setCurrentLocation: (loc) => set({ currentLocation: loc }),
       setLocationStatus: (status) => set({ locationStatus: status }),
@@ -367,6 +372,7 @@ export const useAppStore = create<AppState>()(
           weatherCache: null,
           activeFarmId: null,
           activeFieldId: null,
+          activeFieldFocusToken: 0,
           currentLocation: null,
           locationStatus: 'loading',
           syncError: null,
@@ -380,6 +386,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         activeFarmId: state.activeFarmId,
         activeFieldId: state.activeFieldId,
+        activeFieldFocusToken: state.activeFieldFocusToken,
         activeMapLayer: state.activeMapLayer,
         currentLocation: state.currentLocation,
         locationStatus: state.locationStatus,

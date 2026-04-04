@@ -10,6 +10,16 @@ from typing import Any, Dict, List, Optional
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
 ALLOWED_ALERT_TYPES = {"critical", "warning", "info"}
+IMAGE_FOLLOW_UP_KEYWORDS = {
+    "foto",
+    "imagem",
+    "print",
+    "anexo",
+    "anexei",
+    "mandei",
+    "essa imagem",
+    "essa foto",
+}
 
 
 def _get_client() -> anthropic.Anthropic:
@@ -17,6 +27,13 @@ def _get_client() -> anthropic.Anthropic:
     if not key:
         raise ValueError("ANTHROPIC_API_KEY nao configurada.")
     return anthropic.Anthropic(api_key=key)
+
+
+def _looks_like_image_follow_up(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return False
+    return any(keyword in normalized for keyword in IMAGE_FOLLOW_UP_KEYWORDS)
 
 
 def generate_chat_response(
@@ -27,6 +44,16 @@ def generate_chat_response(
     image_mime_type: str = "image/jpeg",
     hourly_weather: dict | None = None,
 ) -> str:
+    last_msg = messages[-1] if messages else None
+    last_text = last_msg.get("text", "") if last_msg else ""
+
+    if not image_base64 and _looks_like_image_follow_up(last_text):
+        return (
+            "Nao recebi uma imagem nesta mensagem. "
+            "Consigo analisar foto apenas quando ela e enviada junto com a pergunta atual. "
+            "Reenvie a imagem para eu fazer a analise visual com precisao."
+        )
+
     try:
         client = _get_client()
 
@@ -50,9 +77,6 @@ def generate_chat_response(
             msg = messages[i]
             role = "assistant" if msg.get("role") in ("model", "assistant") else "user"
             anthropic_messages.append({"role": role, "content": msg.get("text", "")})
-
-        last_msg = messages[-1] if messages else None
-        last_text = last_msg.get("text", "") if last_msg else ""
 
         if image_base64:
             last_content: Any = [

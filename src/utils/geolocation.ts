@@ -8,7 +8,7 @@ export interface GeolocationResult {
   status: LocationStatus;
 }
 
-const FALLBACK_LOCATION: GeolocationResult = {
+export const FALLBACK_LOCATION: GeolocationResult = {
   lat: -18.9188,
   lng: -48.2768,
   name: 'Uberlândia, MG',

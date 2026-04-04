@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 
 
@@ -164,6 +165,7 @@ export default function Layout() {
     fields,
     activeFarmId,
     activeFieldId,
+    focusActiveField,
     currentLocation,
     resetStore,
     weatherCache,
@@ -182,7 +184,7 @@ export default function Layout() {
 
         // Trigger geolocation on mount if not already precise/denied
         const state = useAppStore.getState();
-        if (state.locationStatus === 'loading' || state.locationStatus === 'fallback') {
+        if (!state.currentLocation || state.locationStatus !== 'precise') {
           state.updateGeolocation();
         }
       }
@@ -191,6 +193,10 @@ export default function Layout() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         syncFromBackend();
+        const state = useAppStore.getState();
+        if (!state.currentLocation || state.locationStatus !== 'precise') {
+          state.updateGeolocation();
+        }
       }
     });
 
@@ -325,12 +331,29 @@ export default function Layout() {
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Sua LocalizaÃ§Ã£o</p>
                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[120px] md:max-w-none">
-                    {currentLocation?.name || 'Londrina, PR'}
+                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
                   </p>
                 </div>
               </div>
 
-              <div className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+              <button
+                type="button"
+                disabled={!activeField}
+                onClick={() => {
+                  if (!activeField?.id) return;
+                  useAppStore.getState().setActiveField(activeField.id);
+                  focusActiveField();
+                  navigate('/app/dashboard');
+                }}
+                title={activeField ? 'Ir para o talhão ativo no mapa' : 'Selecione um talhão para focar no mapa'}
+                className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl transition-all"
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border)',
+                  cursor: activeField ? 'pointer' : 'default',
+                  opacity: activeField ? 1 : 0.8,
+                }}
+              >
                 <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>pin_drop</span>
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>{activeContextTitle}</p>
@@ -338,7 +361,7 @@ export default function Layout() {
                     {activeContextLabel}
                   </p>
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* Right Section: Actions & Weather */}

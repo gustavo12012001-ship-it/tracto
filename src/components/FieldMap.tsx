@@ -7,6 +7,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 // Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -34,9 +35,10 @@ function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; l
 // ── Map Controller (Auto-centering & Status) ───────────────────────────────
 function MapController() {
   const map = useMap();
-  const { currentLocation, locationStatus, fields, activeFieldId } = useAppStore();
+  const { currentLocation, locationStatus, fields, activeFieldId, activeFieldFocusToken } = useAppStore();
   const hasCenteredInitial = useRef(false);
   const previousActiveFieldId = useRef<string | null>(null);
+  const previousFocusToken = useRef<number>(0);
 
   useEffect(() => {
     if (hasCenteredInitial.current) return;
@@ -67,12 +69,15 @@ function MapController() {
   }, [currentLocation, locationStatus, fields, activeFieldId, map]);
 
   useEffect(() => {
+    const hasManualFocusRequest = previousFocusToken.current !== activeFieldFocusToken;
+    previousFocusToken.current = activeFieldFocusToken;
+
     if (!activeFieldId) {
       previousActiveFieldId.current = null;
       return;
     }
 
-    if (previousActiveFieldId.current === activeFieldId) return;
+    if (previousActiveFieldId.current === activeFieldId && !hasManualFocusRequest) return;
 
     const field = fields.find((f) => f.id === activeFieldId);
     if (!field) return;
@@ -82,7 +87,7 @@ function MapController() {
       duration: 0.9,
     });
     previousActiveFieldId.current = activeFieldId;
-  }, [activeFieldId, fields, map]);
+  }, [activeFieldId, activeFieldFocusToken, fields, map]);
 
   return null;
 }
@@ -140,7 +145,7 @@ export default function FieldMap() {
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lat, currentLocation.lng]
-    : [-23.31028, -51.16278];
+    : [FALLBACK_LOCATION.lat, FALLBACK_LOCATION.lng];
 
   const handleMapClick = useCallback((latlng: { lat: number; lng: number }) => {
     if (drawMode !== 'drawing') return;
@@ -536,7 +541,7 @@ export default function FieldMap() {
           }}
         >
           <span className="material-symbols-outlined text-xs">location_off</span>
-          {locationStatus === 'denied' ? 'GPS Negado' : 'Usando Localização Padrão'}
+          {locationStatus === 'denied' ? 'GPS Negado' : 'Usando Localização de Fallback'}
           <button 
             onClick={() => window.location.reload()}
             className="ml-2 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
