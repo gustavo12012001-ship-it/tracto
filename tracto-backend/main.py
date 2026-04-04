@@ -5,6 +5,9 @@ from datetime import datetime
 
 import httpx
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -38,8 +41,6 @@ from services.cache_service import analysis_cache
 from services.sentinel_service import get_ndvi_image
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
-
-load_dotenv()
 
 # --- Security & Rate Limiting ---
 
@@ -98,9 +99,14 @@ else:
         "http://127.0.0.1:5176",
     ]
 
+# Matches all Vercel preview and production deployments for the tracto project
+# e.g. tracto-eta.vercel.app, tracto-git-main-abc123.vercel.app
+allow_origin_regex = os.getenv("ALLOWED_ORIGINS_REGEX", r"https://tracto[-a-z0-9]*\.vercel\.app")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

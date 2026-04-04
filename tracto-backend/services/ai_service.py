@@ -27,8 +27,6 @@ def generate_chat_response(
     image_mime_type: str = "image/jpeg",
     hourly_weather: dict | None = None,
 ) -> str:
-    client = _get_client()
-
     system_parts = [
         "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
         "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
@@ -79,6 +77,7 @@ def generate_chat_response(
     anthropic_messages.append({"role": "user", "content": last_content})
 
     try:
+        client = _get_client()
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
