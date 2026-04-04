@@ -99,9 +99,14 @@ else:
         "http://127.0.0.1:5176",
     ]
 
+# Matches all Vercel preview and production deployments for the tracto project
+# e.g. tracto-eta.vercel.app, tracto-git-main-abc123.vercel.app
+allow_origin_regex = os.getenv("ALLOWED_ORIGINS_REGEX", r"https://tracto[-a-z0-9]*\.vercel\.app")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
