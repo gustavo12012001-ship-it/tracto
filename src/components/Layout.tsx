@@ -210,8 +210,8 @@ export default function Layout() {
   };
 
   // Determine active farm/field for display
-  const temp = weatherCache ? `${Math.round(weatherCache.temperature)}Â°C` : 'â€”';
-  const humidity = weatherCache ? `${weatherCache.humidity}%` : 'â€”';
+  const temp = weatherCache ? `${Math.round(weatherCache.temperature)}°C` : '–';
+  const humidity = weatherCache ? `${weatherCache.humidity}%` : '–';
   const activeFarm = farms.find((farm) => farm.id === activeFarmId) ?? null;
   const activeField = fields.find((field) => field.id === activeFieldId) ?? null;
   const activeContextTitle = activeField ? 'Talhão ativo' : 'Fazenda ativa';
@@ -390,6 +390,7 @@ export default function Layout() {
                     const isField = store.fields.some((f) => f.id === val);
                     if (isField) {
                       store.setActiveField(val);
+                      store.focusActiveField();
                       // Navegar para o mapa ao selecionar talhão
                       navigate('/app/dashboard');
                     } else {

@@ -350,14 +350,42 @@ export default function FieldMap() {
 
       {/* ── Overlays (outside MapContainer) ── */}
 
-      {/* Layer selector pills â€” [ESCONDIDO TEMPORARIAMENTE] */}
-      {/* 
+      {/* Layer Switcher — Visible Control */}
       {drawMode === 'none' && (
-        <div ...>
-          ...
+        <div
+          className="absolute top-4 left-4 z-[500] flex flex-col gap-1.5 pointer-events-auto"
+          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px' }}
+        >
+          <p className="text-[9px] font-bold uppercase tracking-widest px-2" style={{ color: '#64748b' }}>Camadas</p>
+          <div className="flex flex-col gap-1">
+            {[
+              { id: 'satellite' as const, label: '🛰 Satélite', icon: 'satellite' },
+              { id: 'ndvi' as const, label: 'NDVI', icon: 'eco' },
+              { id: 'moisture' as const, label: 'Umidade', icon: 'water_drop' },
+            ].map(({ id, label, icon }) => (
+              <button
+                key={id}
+                onClick={() => useAppStore.getState().setMapLayer(id)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-left flex items-center gap-2"
+                style={{
+                  background: activeMapLayer === id ? 'rgba(236,91,19,0.2)' : 'rgba(255,255,255,0.04)',
+                  border: activeMapLayer === id ? '1px solid #ec5b13' : '1px solid rgba(255,255,255,0.08)',
+                  color: activeMapLayer === id ? '#ec5b13' : '#94a3b8',
+                }}
+              >
+                <span className="material-symbols-outlined text-base">{icon}</span>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          {activeMapLayer === 'ndvi' && (
+            <div className="mt-1.5 px-2 pb-1 text-[9px]" style={{ color: '#64748b', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+              <p className="font-semibold mb-0.5">📅 Data: {gibsDate.split('-').reverse().join('/')}</p>
+              <p className="text-[8px]" style={{ color: '#475569' }}>Imagem composta (D-10)</p>
+            </div>
+          )}
         </div>
-      )} 
-      */}
+      )}
 
       {/* Draw new field button */}
       {drawMode === 'none' && (
@@ -495,7 +523,7 @@ export default function FieldMap() {
       {drawMode === 'none' && fields.length > 0 && (
         <div
           className="absolute bottom-4 left-4 z-[500] p-3 rounded-xl pointer-events-none"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)' }}
+          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)', maxHeight: '200px', overflowY: 'auto' }}
         >
           <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Talhões</p>
           <div className="space-y-1">
@@ -514,19 +542,20 @@ export default function FieldMap() {
       {/* NDVI legend */}
       {activeMapLayer === 'ndvi' && (
         <div
-          className="absolute bottom-4 right-16 z-[500] p-3 rounded-xl pointer-events-none text-[10px]"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)' }}
+          className="absolute bottom-4 right-4 z-[500] p-3 rounded-xl pointer-events-none text-[10px]"
+          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)', maxWidth: '220px' }}
         >
-          <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>NDVI — NASA GIBS</p>
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-2 rounded-full" style={{ background: 'linear-gradient(to right, #a52a2a, #ffff00, #00aa00)' }} />
+          <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>📊 NDVI — NASA GIBS</p>
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-24 h-3 rounded-full" style={{ background: 'linear-gradient(to right, #a52a2a, #ffff00, #00aa00)' }} />
           </div>
-          <div className="flex justify-between text-[9px] mt-0.5 text-slate-500">
-            <span>Baixo</span><span>Alto</span>
+          <div className="flex justify-between text-[9px] mb-1.5 text-slate-500">
+            <span>Baixo NDVI</span><span style={{ color: '#8b5cf6' }}>Alto NDVI</span>
           </div>
-          <p className="mt-1 text-[9px]" style={{ color: '#475569' }}>
-            Data: {gibsDate.split('-').reverse().join('/')}
-          </p>
+          <div className="text-[9px] p-1.5 rounded" style={{ background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.2)', color: '#f97316' }}>
+            <p className="font-semibold mb-0.5">📅 Data: {gibsDate.split('-').reverse().join('/')}</p>
+            <p className="text-[8px]" style={{ color: '#cbd5e1' }}>Imagem composta (D-10, não é ao vivo)</p>
+          </div>
         </div>
       )}
       {/* Location Status Badge */}
