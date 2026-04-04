@@ -171,7 +171,18 @@ export const useAppStore = create<AppState>()(
           activeFieldId: null,
         }),
 
-      setActiveField: (id) => set({ activeFieldId: id }),
+      setActiveField: (id) =>
+        set((state) => {
+          if (!id) {
+            return { activeFieldId: null };
+          }
+
+          const selectedField = state.fields.find((field) => field.id === id);
+          return {
+            activeFieldId: id,
+            activeFarmId: selectedField?.farm_id ?? state.activeFarmId,
+          };
+        }),
       setMapLayer: (layer) => set({ activeMapLayer: layer }),
       setCurrentLocation: (loc) => set({ currentLocation: loc }),
       setLocationStatus: (status) => set({ locationStatus: status }),
@@ -211,7 +222,21 @@ export const useAppStore = create<AppState>()(
         }
 
         const mappedFields = (data ?? []).map(mapDbToField);
-        set({ fields: mappedFields });
+        const currentActiveFieldId = get().activeFieldId;
+        const activeField = currentActiveFieldId
+          ? mappedFields.find((field) => field.id === currentActiveFieldId) ?? null
+          : null;
+        const farms = get().farms;
+        const currentActiveFarmId = get().activeFarmId;
+
+        set({
+          fields: mappedFields,
+          activeFieldId: activeField?.id ?? null,
+          activeFarmId: activeField?.farm_id
+            ?? (currentActiveFarmId && farms.some((farm) => farm.id === currentActiveFarmId)
+              ? currentActiveFarmId
+              : farms[0]?.id ?? null),
+        });
       },
 
       // ── createField: insert no Supabase com validações obrigatórias ──────────
@@ -246,6 +271,8 @@ export const useAppStore = create<AppState>()(
         // Atualizar o estado local APENAS com a resposta confirmada do banco
         const mapped = mapDbToField(newField);
         set((state) => ({ fields: [...state.fields, mapped] }));
+        // Seleciona imediatamente o talhão criado e sincroniza fazenda ativa.
+        get().setActiveField(mapped.id ?? null);
       },
 
       // ── removeField: delete no Supabase + garantia de consistência ───────────

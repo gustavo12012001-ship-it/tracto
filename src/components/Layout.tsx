@@ -161,6 +161,10 @@ export default function Layout() {
 
   const {
     farms,
+    fields,
+    activeFarmId,
+    activeFieldId,
+    currentLocation,
     resetStore,
     weatherCache,
     syncFromBackend,
@@ -202,6 +206,14 @@ export default function Layout() {
   // Determine active farm/field for display
   const temp = weatherCache ? `${Math.round(weatherCache.temperature)}Â°C` : 'â€”';
   const humidity = weatherCache ? `${weatherCache.humidity}%` : 'â€”';
+  const activeFarm = farms.find((farm) => farm.id === activeFarmId) ?? null;
+  const activeField = fields.find((field) => field.id === activeFieldId) ?? null;
+  const activeContextTitle = activeField ? 'Talhão ativo' : 'Fazenda ativa';
+  const activeContextLabel = activeField
+    ? `${activeFarm?.name ?? 'Fazenda'} · ${activeField.name ?? 'Talhão'}`
+    : activeFarm
+      ? activeFarm.name
+      : 'Nenhuma fazenda selecionada';
 
 
   return (
@@ -313,7 +325,17 @@ export default function Layout() {
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Sua LocalizaÃ§Ã£o</p>
                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[120px] md:max-w-none">
-                    {useAppStore.getState().currentLocation?.name || 'Londrina, PR'}
+                    {currentLocation?.name || 'Londrina, PR'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>pin_drop</span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>{activeContextTitle}</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[220px]">
+                    {activeContextLabel}
                   </p>
                 </div>
               </div>
@@ -338,13 +360,11 @@ export default function Layout() {
                 <span className="material-symbols-outlined text-sm pl-3 pointer-events-none" style={{ color: 'var(--primary)' }}>agriculture</span>
                 <select
                   className="appearance-none bg-transparent border-none text-white text-[10px] font-bold py-2 pl-2 pr-8 focus:outline-none cursor-pointer"
-                  value={useAppStore.getState().activeFieldId || useAppStore.getState().activeFarmId || ''}
+                  value={activeFieldId || activeFarmId || ''}
                   onChange={(e) => {
                     const val = e.target.value;
                     const store = useAppStore.getState();
-                    // Verificar se é um field ou uma farm
-                    const allFields = store.farms.flatMap(f => f.fields || []);
-                    const isField = allFields.some(f => f.id === val);
+                    const isField = store.fields.some((f) => f.id === val);
                     if (isField) {
                       store.setActiveField(val);
                       // Navegar para o mapa ao selecionar talhão
@@ -360,10 +380,10 @@ export default function Layout() {
                   ) : (
                     farms.map((farm) => (
                       <optgroup key={farm.id} label={farm.name.toUpperCase()} style={{ background: '#0c0c0e' }}>
-                        {(farm.fields || []).length === 0 ? (
+                        {fields.filter((field) => field.farm_id === farm.id).length === 0 ? (
                           <option value={farm.id} style={{ background: '#0c0c0e' }}>Sem talhões cadastrados</option>
                         ) : (
-                          (farm.fields || []).map((field) => (
+                          fields.filter((field) => field.farm_id === farm.id).map((field) => (
                             <option key={field.id} value={field.id} style={{ background: '#0c0c0e' }}>
                               {field.name?.toUpperCase()}
                             </option>

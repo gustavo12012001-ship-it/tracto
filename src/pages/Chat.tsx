@@ -46,26 +46,47 @@ const INITIAL_MSG = (time: string): Message => ({
 });
 
 function buildFarmContext(
-  fields: ReturnType<typeof useAppStore.getState>['fields']
+  fields: ReturnType<typeof useAppStore.getState>['fields'],
+  activeFieldId: string | null
 ): string {
-  if (fields.length === 0) return 'Nenhum talhão cadastrado.';
-  return fields
-    .map((l, i) => {
-      const area = l.areaHa ? `${l.areaHa.toFixed(2)} ha` : 'Área N/D';
-      let ctx = `- ${l.name ?? `Talhão ${i + 1}`} (${area})`;
-      const cached = localStorage.getItem(`tracto-ndvi-${l.lat}-${l.lng}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            const ndvi = parsed.data.ndvi_analysis;
-            ctx += `\n  NDVI: ndvi_medio=${ndvi.ndvi_medio?.toFixed(2)}, zona_critica=${ndvi.zona_critica_pct}%, tendencia=${ndvi.tendencia}`;
-          }
-        } catch { /* ignore */ }
-      }
-      return ctx;
-    })
-    .join('\n');
+  if (fields.length === 0) {
+    return [
+      'Talhão atualmente selecionado: Nenhum.',
+      'Demais talhões cadastrados: Nenhum talhão cadastrado.',
+    ].join('\n');
+  }
+
+  const formatDate = (date?: string) => {
+    if (!date) return 'N/D';
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return date;
+    return parsed.toLocaleDateString('pt-BR');
+  };
+
+  const buildFieldLine = (field: (typeof fields)[number], index: number) => {
+    const name = field.name ?? `Talhão ${index + 1}`;
+    const area = field.areaHa != null ? `${field.areaHa.toFixed(1)} ha` : 'Área N/D';
+    const cultura = field.cultura || 'N/D';
+    return `${name} (${area}, ${cultura})`;
+  };
+
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : null;
+  const otherFields = activeField
+    ? fields.filter((field) => field.id !== activeField.id)
+    : fields;
+
+  const activeSection = activeField
+    ? [
+        `Talhão atualmente selecionado: ${activeField.name ?? 'Talhão sem nome'}`,
+        `Cultura: ${activeField.cultura || 'N/D'} | Área: ${activeField.areaHa != null ? `${activeField.areaHa.toFixed(1)} ha` : 'N/D'} | Plantio: ${formatDate(activeField.dataPlantio)} | Variedade: ${activeField.variedade || 'N/D'}`,
+      ].join('\n')
+    : 'Talhão atualmente selecionado: Nenhum.';
+
+  const othersSection = otherFields.length
+    ? `Demais talhões cadastrados:\n${otherFields.map((field, index) => `- ${buildFieldLine(field, index)}`).join('\n')}`
+    : 'Demais talhões cadastrados: Nenhum.';
+
+  return `${activeSection}\n${othersSection}`;
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -79,7 +100,7 @@ async function fileToBase64(file: File): Promise<string> {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function Chat() {
-  const { addMessage, clearChat, fields, weatherCache } = useAppStore();
+  const { addMessage, clearChat, fields, activeFieldId, weatherCache } = useAppStore();
 
   // Conversation state
   const [conversationId, setConversationId] = useState<string>(() => uuidv4());
@@ -163,7 +184,7 @@ export default function Chat() {
                 role: m.role === 'assistant' ? 'model' : 'user',
                 text: m.text,
               })),
-              farm_context: buildFarmContext(fields),
+              farm_context: buildFarmContext(fields, activeFieldId),
               created_at: createdAt,
               updated_at: nowISO(),
             }),
@@ -174,7 +195,7 @@ export default function Chat() {
         }
       }, 3000);
     },
-    [fields]
+    [fields, activeFieldId]
   );
 
   // ── Start new conversation ─────────────────────────────────────────────────
@@ -285,7 +306,7 @@ export default function Chat() {
         { role: 'user', text: userMsg.text },
       ];
 
-      const farm_context = buildFarmContext(fields);
+      const farm_context = buildFarmContext(fields, activeFieldId);
       const hourly_weather = weatherCache
         ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
         : null;

@@ -36,6 +36,7 @@ function MapController() {
   const map = useMap();
   const { currentLocation, locationStatus, fields, activeFieldId } = useAppStore();
   const hasCenteredInitial = useRef(false);
+  const previousActiveFieldId = useRef<string | null>(null);
 
   useEffect(() => {
     if (hasCenteredInitial.current) return;
@@ -65,8 +66,28 @@ function MapController() {
     }
   }, [currentLocation, locationStatus, fields, activeFieldId, map]);
 
+  useEffect(() => {
+    if (!activeFieldId) {
+      previousActiveFieldId.current = null;
+      return;
+    }
+
+    if (previousActiveFieldId.current === activeFieldId) return;
+
+    const field = fields.find((f) => f.id === activeFieldId);
+    if (!field) return;
+
+    map.flyTo([field.lat, field.lng], Math.max(map.getZoom(), 15), {
+      animate: true,
+      duration: 0.9,
+    });
+    previousActiveFieldId.current = activeFieldId;
+  }, [activeFieldId, fields, map]);
+
   return null;
 }
+const QUICK_CROPS = ['Soja', 'Milho', 'Sorgo', 'Algodão', 'Trigo', 'Cana-de-açúcar', 'Café'] as const;
+const OTHER_CROP_VALUE = '__other__';
 
 function ZoomControls() {
   const map = useMap();
@@ -102,6 +123,8 @@ export default function FieldMap() {
     fields,
     createField,
     removeField,
+    setActiveField,
+    activeFieldId,
     activeFarmId,
     activeMapLayer,
   } = useAppStore();
@@ -111,6 +134,7 @@ export default function FieldMap() {
   const [isSaving, setIsSaving] = useState(false);
   const [fieldName, setFieldName] = useState('');
   const [fieldCultura, setFieldCultura] = useState('');
+  const [customCultura, setCustomCultura] = useState('');
   const [fieldDataPlantio, setFieldDataPlantio] = useState('');
   const [fieldVariedade, setFieldVariedade] = useState('');
 
@@ -127,6 +151,7 @@ export default function FieldMap() {
     setDrawPoints([]);
     setFieldName('');
     setFieldCultura('');
+    setCustomCultura('');
     setFieldDataPlantio('');
     setFieldVariedade('');
     setDrawMode('none');
@@ -150,6 +175,8 @@ export default function FieldMap() {
     }
 
     const name = fieldName.trim() || `Talhão ${fields.length + 1}`;
+    const resolvedCultura =
+      fieldCultura === OTHER_CROP_VALUE ? customCultura.trim() : fieldCultura.trim();
     const centroid: [number, number] = [
       drawPoints.reduce((s, p) => s + p[0], 0) / drawPoints.length,
       drawPoints.reduce((s, p) => s + p[1], 0) / drawPoints.length,
@@ -160,7 +187,7 @@ export default function FieldMap() {
       lng: centroid[1],
       name,
       boundaries: drawPoints,
-      cultura: fieldCultura || undefined,
+      cultura: resolvedCultura || undefined,
       dataPlantio: fieldDataPlantio || undefined,
       variedade: fieldVariedade || undefined,
       areaHa,
@@ -240,6 +267,7 @@ export default function FieldMap() {
 
         {/* Fields from Supabase (single source of truth) */}
         {fields.map((loc, idx) => {
+          const isActive = loc.id != null && loc.id === activeFieldId;
           const color = FIELD_COLORS[idx % FIELD_COLORS.length];
           return (
             <Polygon
@@ -253,11 +281,22 @@ export default function FieldMap() {
                   [loc.lat + 0.003, loc.lng - 0.003],
                 ]
               }
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.25, weight: 2 }}
+              pathOptions={{
+                color: isActive ? '#f97316' : color,
+                fillColor: isActive ? '#f97316' : color,
+                fillOpacity: isActive ? 0.42 : 0.25,
+                weight: isActive ? 3 : 2,
+              }}
+              eventHandlers={{
+                click: () => {
+                  if (loc.id) setActiveField(loc.id);
+                },
+              }}
             >
               <Popup>
                 <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 160 }}>
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
+                  {isActive && <p style={{ fontSize: 10, color: '#ec5b13', marginBottom: 4, fontWeight: 700 }}>Talhão ativo</p>}
                   {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}</p>}
                   {loc.variedade && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🔬 {loc.variedade}</p>}
                   {loc.dataPlantio && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>📅 Plantio: {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}</p>}
@@ -362,19 +401,30 @@ export default function FieldMap() {
                 <p className="text-[10px] mb-1" style={{ color: '#64748b' }}>Cultura</p>
                 <select
                   value={fieldCultura}
-                  onChange={(e) => setFieldCultura(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFieldCultura(value);
+                    if (value !== OTHER_CROP_VALUE) setCustomCultura('');
+                  }}
                   className="w-full bg-transparent text-sm focus:outline-none text-white cursor-pointer"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 10px' }}
                 >
                   <option value="" style={{ background: '#0c0c0e' }}>Selecionar...</option>
-                  <option value="Soja" style={{ background: '#0c0c0e' }}>Soja</option>
-                  <option value="Milho" style={{ background: '#0c0c0e' }}>Milho</option>
-                  <option value="Algodão" style={{ background: '#0c0c0e' }}>Algodão</option>
-                  <option value="Trigo" style={{ background: '#0c0c0e' }}>Trigo</option>
-                  <option value="Cana-de-açúcar" style={{ background: '#0c0c0e' }}>Cana-de-açúcar</option>
-                  <option value="Café" style={{ background: '#0c0c0e' }}>Café</option>
-                  <option value="Outro" style={{ background: '#0c0c0e' }}>Outro</option>
+                  {QUICK_CROPS.map((crop) => (
+                    <option key={crop} value={crop} style={{ background: '#0c0c0e' }}>{crop}</option>
+                  ))}
+                  <option value={OTHER_CROP_VALUE} style={{ background: '#0c0c0e' }}>Outro...</option>
                 </select>
+                {fieldCultura === OTHER_CROP_VALUE && (
+                  <input
+                    type="text"
+                    placeholder="Digite a cultura personalizada"
+                    value={customCultura}
+                    onChange={(e) => setCustomCultura(e.target.value)}
+                    className="w-full mt-2 bg-transparent text-sm focus:outline-none text-white placeholder:text-slate-500"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 10px' }}
+                  />
+                )}
               </div>
               <div>
                 <p className="text-[10px] mb-1" style={{ color: '#64748b' }}>Data de plantio</p>
@@ -424,7 +474,7 @@ export default function FieldMap() {
                 )}
               </button>
               <button
-                onClick={() => { setDrawPoints([]); setFieldName(''); setFieldCultura(''); setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none'); }}
+                onClick={() => { setDrawPoints([]); setFieldName(''); setFieldCultura(''); setCustomCultura(''); setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none'); }}
                 disabled={isSaving}
                 className="px-3 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-30"
                 style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
@@ -447,7 +497,9 @@ export default function FieldMap() {
             {fields.map((loc, i) => (
               <div key={loc.id} className="flex items-center gap-2 text-xs text-white">
                 <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: FIELD_COLORS[i % FIELD_COLORS.length] }} />
-                {loc.name ?? `Talhão ${i + 1}`}
+                <span style={{ color: loc.id && loc.id === activeFieldId ? '#f97316' : '#ffffff', fontWeight: loc.id && loc.id === activeFieldId ? 700 : 500 }}>
+                  {loc.name ?? `Talhão ${i + 1}`}{loc.id && loc.id === activeFieldId ? ' (ativo)' : ''}
+                </span>
               </div>
             ))}
           </div>
