@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 import os
 from datetime import datetime
@@ -45,8 +45,8 @@ load_dotenv()
 
 # --- Security & Rate Limiting ---
 
-# O limitador usa IP (get_remote_address) como chave primária para governança econômica.
-# A identidade do usuário (context_user_id) é usada apenas para contexto em logs.
+# O limitador usa IP (get_remote_address) como chave primÃ¡ria para governanÃ§a econÃ´mica.
+# A identidade do usuÃ¡rio (context_user_id) Ã© usada apenas para contexto em logs.
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", version="2.2.1")
 app.state.limiter = limiter
@@ -58,7 +58,7 @@ async def structured_log_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.time()
     
-    # Extração leve do sub_claim para contexto (nao confiavel ate verificado pelo auth_service)
+    # ExtraÃ§Ã£o leve do sub_claim para contexto (nao confiavel ate verificado pelo auth_service)
     unverified_uid = get_unverified_user_id_from_header(request.headers.get("Authorization")) or "anonymous"
 
     response = await call_next(request)
@@ -80,17 +80,29 @@ async def structured_log_middleware(request: Request, call_next):
     return response
 
 
-origins = [
-    "https://tracto-eta.vercel.app",       # seu domínio Vercel
-    "http://localhost:5173",            # dev local
-    "http://localhost:3000",
-]
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    allow_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+else:
+    allow_origins = [
+        "https://tracto-eta.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "http://127.0.0.1:5176",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allow_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -107,13 +119,13 @@ async def get_entitlements(user: AuthenticatedUser = Depends(get_current_user)):
 
 @app.post("/api/billing/checkout")
 async def create_checkout(req: CheckoutRequest, user: AuthenticatedUser = Depends(get_current_user)):
-    # MOCK ESTRUTURAL: Nenhum gateway real está conectado (Stripe/Asaas).
+    # MOCK ESTRUTURAL: Nenhum gateway real estÃ¡ conectado (Stripe/Asaas).
     if req.plan_id not in ["pro", "premium"]:
         raise HTTPException(status_code=400, detail="Plano invalido")
     
     return {
         "checkout_url": "https://sandbox.gateway.com/pay/mock_123",
-        "message": f"MOCK: Checkout do plano {req.plan_id} via {req.payment_method}. Pagamento não efetuado na realidade."
+        "message": f"MOCK: Checkout do plano {req.plan_id} via {req.payment_method}. Pagamento nÃ£o efetuado na realidade."
     }
 
 @app.post("/api/push/subscribe")
@@ -145,12 +157,12 @@ async def whatsapp_webhook(request: Request):
         
     user_id = contact_res.data[0]["user_id"]
     
-    # Buscar contexto agronômico do usuário
+    # Buscar contexto agronÃ´mico do usuÃ¡rio
     farms_res = billing_service.supabase.table("farms").select("id, name").eq("user_id", user_id).execute()
     farm_context = f"Fazendas do produtor: {[f['name'] for f in (farms_res.data or [])]}"
     
     # Repassar para ai_service passando o contexto
-    # Neste mock completo, a resposta seria enviada de volta à API do WhatsApp/Twilio
+    # Neste mock completo, a resposta seria enviada de volta Ã  API do WhatsApp/Twilio
     try:
         reply = generate_chat_response(
             message=body,
@@ -159,9 +171,9 @@ async def whatsapp_webhook(request: Request):
         )
     except Exception as e:
         reply = f"Erro na Tracto AI: {str(e)}"
-    # MOCK ESTRUTURAL DE SAÍDA:
-    # A Tracto AI roda perfeitamente o contexto, mas a resposta NÃO é devolvida
-    # pois não temos a API do WhatsApp/Twilio configurada e tokenizada.
+    # MOCK ESTRUTURAL DE SAÃDA:
+    # A Tracto AI roda perfeitamente o contexto, mas a resposta NÃƒO Ã© devolvida
+    # pois nÃ£o temos a API do WhatsApp/Twilio configurada e tokenizada.
     # O despache morre em um logger seguro.
     print(f"[WHATSAPP OUT] (MOCK DE ENVIO) Para: {phone} | Msg: {reply}")
     return {"status": "ok", "message": "Recebido e processado no backend Tracto AI. Retorno para Meta bloqueado intencionalmente (Sem Provedor)."}
@@ -275,7 +287,7 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
 @limiter.limit("3/minute")
 async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Request, _user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        effective_crop_type = request.crop_type or "Não informada"
+        effective_crop_type = request.crop_type or "NÃ£o informada"
         # Cache key based on location, crop and current date (24h validity semantic)
         date_str = datetime.now().strftime("%Y%m%d")
         cache_key = f"{request.lat:.4f}_{request.lng:.4f}_{effective_crop_type}_{date_str}"
@@ -414,7 +426,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
         engine = AgronomicEngine()
         fields_context = []
         
-        # Se nao houver campos, usamos os dados genéricos da request
+        # Se nao houver campos, usamos os dados genÃ©ricos da request
         if not request.fields:
         # Fallback para dados globais da fazenda na request
             et0_global = getattr(request, 'et0', None)
@@ -431,7 +443,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
             for f in request.fields:
                 lat = f.get("lat")
                 lng = f.get("lng")
-                item_crop = f.get("crop") or request.crop_type or "Não informada"
+                item_crop = f.get("crop") or request.crop_type or "NÃ£o informada"
                 et0_field = getattr(request, 'et0', None)
                 
                 engine_res = {
@@ -452,7 +464,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
             date_str = datetime.now().strftime("%Y%m%d")
             for field in request.fields:
                 if "lat" in field and "lng" in field:
-                    item_crop = field.get("crop") or request.crop_type or "Não informada"
+                    item_crop = field.get("crop") or request.crop_type or "NÃ£o informada"
                     cache_key = f"{field['lat']:.4f}_{field['lng']:.4f}_{item_crop}_{date_str}"
                     cached = analysis_cache.get(cache_key)
                     if cached and cached.get("ndvi_analysis"):
@@ -502,8 +514,8 @@ async def delete_conversation_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
-    Remove uma conversa garantindo que pertença ao usuário autenticado.
-    Retorna 404 se a conversa não existir ou não pertencer ao usuário.
+    Remove uma conversa garantindo que pertenÃ§a ao usuÃ¡rio autenticado.
+    Retorna 404 se a conversa nÃ£o existir ou nÃ£o pertencer ao usuÃ¡rio.
     """
     try:
         success = supabase_service.delete_conversation(conversation_id, user_id=user.id)
@@ -530,7 +542,7 @@ async def get_farms_endpoint(user: AuthenticatedUser = Depends(get_current_user)
 @app.post("/api/farms/bootstrap")
 async def bootstrap_farm_endpoint(user: AuthenticatedUser = Depends(get_current_user)):
     """
-    Endpoint explícito para garantir a criação da fazenda padrão (idempotente).
+    Endpoint explÃ­cito para garantir a criaÃ§Ã£o da fazenda padrÃ£o (idempotente).
     """
     try:
         return farm_service.ensure_default_farm(user.id)
@@ -641,3 +653,4 @@ async def verify_recaptcha(request: RecaptchaRequest):
     except Exception as exc:
         logging.error("Erro na verificacao do reCAPTCHA: %s", exc)
         raise HTTPException(status_code=500, detail="Erro interno na verificacao de seguranca.") from exc
+

@@ -114,7 +114,7 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
   } catch (err) {
     console.error('[API] fetch error:', url, err);
     if (err instanceof TypeError && err.message === 'Failed to fetch') {
-      throw new Error(`O servidor Backend/API não está acessível em ${url}. Possível CORS ou URL incorreta. Detalhes: ${err.message}`);
+      throw new Error(`Falha de conexão com o backend em ${url}. Verifique se o servidor está online, se a URL/API está correta e se o CORS está configurado corretamente.`);
     }
     if (err instanceof Error) {
       throw new Error(`Erro de requisição para ${url}: ${err.message}`);
