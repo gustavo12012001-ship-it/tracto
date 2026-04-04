@@ -34,7 +34,7 @@ export default defineConfig([
 ### `index.html`
 ```html
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -114,9 +114,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    chunkSizeWarningLimit: 1000,
+  },
+  server: {
+    port: 5174,
+  }
 })
 
 ```
@@ -1273,7 +1278,7 @@ import { supabase } from '../services/supabase';
 const NAV_ITEMS = [
   {
     to: '/app/dashboard',
-    label: 'Mapa / TalhÃµes',
+    label: 'Mapa / Talhões',
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
@@ -1310,7 +1315,7 @@ const NAV_ITEMS = [
   },
   {
     to: '/app/reports',
-    label: 'RelatÃ³rios',
+    label: 'Relatórios',
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
@@ -1332,13 +1337,13 @@ const NAV_ITEMS = [
 function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void, handleLogout: () => Promise<void> }) {
   const { alerts } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
-  const [userName, setUserName] = useState('UsuÃ¡rio');
+  const [userName, setUserName] = useState('Usuário');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       const name = data.user?.user_metadata?.full_name
         || data.user?.email?.split('@')[0]
-        || 'UsuÃ¡rio';
+        || 'Usuário';
       setUserName(name);
     });
   }, []);
@@ -1353,7 +1358,7 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
-        <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>NavegaÃ§Ã£o</p>
+        <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Navegação</p>
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
@@ -1388,7 +1393,7 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-white truncate">{userName}</p>
             <p className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>
-              {userName === 'UsuÃ¡rio' ? 'Carregando...' : 'Administrador'}
+              {userName === 'Usuário' ? 'Carregando...' : 'Administrador'}
             </p>
           </div>
           <button className="text-slate-600 hover:text-white transition-colors flex-shrink-0">
@@ -1426,7 +1431,6 @@ export default function Layout() {
 
   const {
     farms,
-    activeFarmId,
     resetStore,
     weatherCache,
     syncFromBackend,
@@ -1435,7 +1439,13 @@ export default function Layout() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        syncFromBackend();
+        // Timeout: se backend demorar mais de 5s, continua sem sync
+        const timeout = setTimeout(() => {
+          useAppStore.setState({ isSyncing: false });
+        }, 5000);
+        
+        syncFromBackend().finally(() => clearTimeout(timeout));
+
         // Trigger geolocation on mount if not already precise/denied
         const state = useAppStore.getState();
         if (state.locationStatus === 'loading' || state.locationStatus === 'fallback') {
@@ -1593,40 +1603,48 @@ export default function Layout() {
                 </span>
               </div>
 
-              {/* Farm select â€” desktop only */}
+              {/* Seletor unificado: Fazenda → Talhão */}
               <div className="relative hidden md:flex items-center rounded-lg overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-sm pl-3 pointer-events-none" style={{ color: 'var(--primary)' }}>agriculture</span>
                 <select
-                  className="appearance-none bg-transparent border-none text-white text-[10px] font-bold py-2 pl-3 pr-8 focus:outline-none cursor-pointer"
-                  value={activeFarmId || ''}
-                  onChange={(e) => useAppStore.getState().setActiveFarm(e.target.value)}
+                  className="appearance-none bg-transparent border-none text-white text-[10px] font-bold py-2 pl-2 pr-8 focus:outline-none cursor-pointer"
+                  value={useAppStore.getState().activeFieldId || useAppStore.getState().activeFarmId || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const store = useAppStore.getState();
+                    // Verificar se é um field ou uma farm
+                    const allFields = store.farms.flatMap(f => f.fields || []);
+                    const isField = allFields.some(f => f.id === val);
+                    if (isField) {
+                      store.setActiveField(val);
+                      // Navegar para o mapa ao selecionar talhão
+                      navigate('/app/dashboard');
+                    } else {
+                      store.setActiveFarm(val);
+                      store.setActiveField(null);
+                    }
+                  }}
                 >
-                  {farms.length > 0 ? farms.map((f) => (
-                    <option key={f.id} style={{ background: '#0c0c0e' }} value={f.id}>{f.name.toUpperCase()}</option>
-                  )) : (
-                    <option style={{ background: '#0c0c0e' }} disabled value="">FAZENDA...</option>
+                  {farms.length === 0 ? (
+                    <option value="" disabled>NENHUMA FAZENDA</option>
+                  ) : (
+                    farms.map((farm) => (
+                      <optgroup key={farm.id} label={farm.name.toUpperCase()} style={{ background: '#0c0c0e' }}>
+                        {(farm.fields || []).length === 0 ? (
+                          <option value={farm.id} style={{ background: '#0c0c0e' }}>Sem talhões cadastrados</option>
+                        ) : (
+                          (farm.fields || []).map((field) => (
+                            <option key={field.id} value={field.id} style={{ background: '#0c0c0e' }}>
+                              {field.name?.toUpperCase()}
+                            </option>
+                          ))
+                        )}
+                      </optgroup>
+                    ))
                   )}
                 </select>
                 <span className="material-symbols-outlined absolute right-2 pointer-events-none text-base" style={{ color: 'var(--muted)' }}>expand_more</span>
               </div>
-
-              {/* Field select â€” desktop only */}
-              {activeFarmId && (
-                <div className="relative hidden md:flex items-center rounded-lg overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <select
-                    className="appearance-none bg-transparent border-none text-white text-[10px] font-bold py-2 pl-3 pr-8 focus:outline-none cursor-pointer"
-                    value={useAppStore.getState().activeFieldId || ''}
-                    onChange={(e) => useAppStore.getState().setActiveField(e.target.value)}
-                  >
-                    <option style={{ background: '#0c0c0e' }} value="">SELECIONAR TALHÃO...</option>
-                    {farms.find(f => f.id === activeFarmId)?.fields?.map((field) => (
-                      <option key={field.id} style={{ background: '#0c0c0e' }} value={field.id}>
-                        {field.name?.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-2 pointer-events-none text-base" style={{ color: 'var(--muted)' }}>expand_more</span>
-                </div>
-              )}
 
               {/* Notifications */}
               <button className="relative p-2 rounded-lg transition-all" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -1960,6 +1978,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { supabase } from './services/supabase'
+
+// Detectar sessão OAuth do URL hash ao iniciar
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('[Auth] Event:', event, '| User:', session?.user?.email ?? 'none')
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -2018,22 +2042,6 @@ export default function Alerts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const hasNdviCache = () => {
-    if (fields.length === 0) return false;
-    for (const loc of fields) {
-      if (!loc.lat || !loc.lng) continue;
-      const cached = localStorage.getItem(`tracto-ndvi-${loc.lat}-${loc.lng}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if ((Date.now() - parsed.timestamp) < 24 * 60 * 60 * 1000) return true;
-        } catch {
-          // ignore parsing error
-        }
-      }
-    }
-    return false;
-  };
 
   const loc = fields.length > 0
     ? fields[fields.length - 1]
@@ -3942,7 +3950,7 @@ export default function Login() {
                       onClick={async () => {
                         if (!email) { alert('Digite seu e-mail primeiro.'); return; }
                         await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: `${window.location.origin}/login`,
+                          redirectTo: `${window.location.origin}/reset-password`,
                         });
                         alert('Email de recuperação enviado! Verifique sua caixa de entrada.');
                       }}
@@ -5298,25 +5306,245 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
+type Stage = 'loading' | 'form' | 'success' | 'invalid';
+
+function friendlyError(msg: string): string {
+  if (msg.includes('Password should be')) return 'A senha deve ter pelo menos 6 caracteres.';
+  if (msg.includes('same password')) return 'A nova senha não pode ser igual à atual.';
+  if (msg.includes('expired')) return 'Link expirado. Solicite um novo e-mail de recuperação.';
+  return 'Erro ao atualizar senha. Tente novamente.';
+}
+
 export default function ResetPassword() {
   const navigate = useNavigate();
+  const [stage, setStage] = useState<Stage>('loading');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Verifica se estamos em um fluxo de reset (veio pelo link do email)
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        // Se nÃ£o tiver sessÃ£o ativa (vinda do link de reset), redireciona
-        console.warn('Nenhuma sessÃ£o de recuperaÃ§Ã£o encontrada.');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setStage('form');
       }
-    };
-    checkSession();
+    });
+
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery') || hash.includes('access_token')) {
+      setStage('form');
+    } else {
+      const timer = setTimeout(() => {
+        setStage((s) => s === 'loading' ? 'invalid' : s);
+      }, 2000);
+      return () => {
+        clearTimeout(timer);
+        subscription.unsubscribe();
+      };
+    }
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (password !== confirm) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw new Error(updateError.message);
+      setStage('success');
+    } catch (err: unknown) {
+      setError(friendlyError(err instanceof Error ? err.message : 'Erro desconhecido'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        .login-body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .glass-dark-login {
+          background: rgba(15, 23, 42, 0.6);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+      `}</style>
+
+      <div className="login-body relative min-h-screen flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          <img
+            alt="Vista aérea de fazenda"
+            className="w-full h-full object-cover object-center"
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBo6DW0mlLl01OpM-nNE6jQApM60H56OazuG6Jtp3sxsgX6lAo1LXOyu_JttoOmPNlnMpgPlQbJpAhDq5VeEUUNcLV1jFe1hEPDKudX7NGU0WVSgc3hERq2HUeSt2HkNDWoWQWwlF30I75vq_BKHkhbJDufw2QngU4jQT4SKPEY6rJ2YTZCTaurJg1CQHmynwgKTdRDiYH-fzqvecmgKWHx6wg-nag-tpEWL2lg4lJTopW21OF_MzEnn1Du38qJ0r4Pkbpcsrxwp90"
+          />
+          <div className="absolute inset-0 bg-slate-950/60" />
+        </div>
+
+        <div className="relative z-10 w-full max-w-md px-6">
+          <div className="glass-dark-login p-10 md:p-12 rounded-[2rem] border border-white/10 shadow-2xl">
+            <div className="text-center mb-10">
+              <span className="text-2xl font-bold tracking-[0.4em] text-white uppercase block mb-2">Tracto</span>
+              <p className="text-slate-400 text-[10px] uppercase tracking-[0.2em] font-medium">Redefinição de Senha</p>
+            </div>
+
+            {stage === 'loading' && (
+              <div className="flex flex-col items-center gap-4 py-8">
+                <span className="material-symbols-outlined text-orange-400 text-4xl animate-spin">refresh</span>
+                <p className="text-slate-400 text-sm">Validando link de recuperação...</p>
+              </div>
+            )}
+
+            {stage === 'invalid' && (
+              <div className="flex flex-col items-center gap-6 py-4">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <span className="material-symbols-outlined text-red-400 text-3xl">link_off</span>
+                </div>
+                <div className="text-center">
+                  <p className="text-white font-medium mb-2">Link inválido ou expirado</p>
+                  <p className="text-slate-400 text-sm">Solicite um novo e-mail de recuperação na tela de login.</p>
+                </div>
+                <button
+                  onClick={() => navigate('/login')}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-full text-xs font-bold uppercase tracking-[0.3em] transition-all hover:shadow-[0_0_30px_rgba(249,115,22,0.3)] active:scale-95"
+                >
+                  Ir para o Login
+                </button>
+              </div>
+            )}
+
+            {stage === 'form' && (
+              <form className="space-y-6" onSubmit={handleSubmit}>
+                <p className="text-slate-400 text-sm text-center -mt-4 mb-2">
+                  Escolha uma nova senha para sua conta.
+                </p>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Nova Senha</label>
+                  <div className="relative">
+                    <input
+                      type={showPass ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-400/50 transition-colors text-sm font-light pr-12"
+                      placeholder="Mínimo 6 caracteres"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass(!showPass)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {showPass ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Confirmar Senha</label>
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-400/50 transition-colors text-sm font-light"
+                    placeholder="Repita a nova senha"
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+
+                {password.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex gap-1">
+                      {[1,2,3,4].map((n) => (
+                        <div key={n} className="h-1 flex-1 rounded-full transition-all" style={{
+                          background: password.length >= n * 3
+                            ? n <= 1 ? '#ef4444' : n <= 2 ? '#f97316' : n <= 3 ? '#eab308' : '#22c55e'
+                            : 'rgba(255,255,255,0.1)'
+                        }} />
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-500 ml-1">
+                      {password.length < 4 ? 'Muito fraca' : password.length < 7 ? 'Fraca' : password.length < 10 ? 'Razoável' : 'Forte'}
+                    </p>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-medium text-red-300" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                    <span className="material-symbols-outlined text-sm text-red-400">error</span>
+                    {error}
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white py-5 rounded-full text-xs font-bold uppercase tracking-[0.3em] transition-all hover:shadow-[0_0_30px_rgba(249,115,22,0.3)] active:scale-95 shadow-xl shadow-orange-500/20 disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
+                        Salvando...
+                      </>
+                    ) : 'Redefinir Senha'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {stage === 'success' && (
+              <div className="flex flex-col items-center gap-6 py-4">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                  <span className="material-symbols-outlined text-green-400 text-3xl">check_circle</span>
+                </div>
+                <div className="text-center">
+                  <p className="text-white font-medium mb-2">Senha atualizada!</p>
+                  <p className="text-slate-400 text-sm">Sua senha foi redefinida com sucesso. Faça login com a nova senha.</p>
+                </div>
+                <button
+                  onClick={() => navigate('/login')}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-full text-xs font-bold uppercase tracking-[0.3em] transition-all hover:shadow-[0_0_30px_rgba(249,115,22,0.3)] active:scale-95"
+                >
+                  Ir para o Login
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8 text-center">
+            <button
+              className="text-slate-400 hover:text-white transition-colors text-[9px] uppercase tracking-[0.4em] flex items-center justify-center gap-2 cursor-pointer mx-auto"
+              onClick={() => navigate('/login')}
+            >
+              <span className="material-symbols-outlined text-sm">arrow_back</span>
+              Voltar para o login
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+```
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -5948,13 +6176,21 @@ export async function generateAlerts(
 import type { WeatherCache } from '../store/useAppStore';
 import { supabase } from './supabase';
 
-export const API_URL = import.meta.env.VITE_API_URL || '';
+export const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
 
 async function buildAuthHeaders() {
   try {
-    const {
+    let {
       data: { session },
     } = await supabase.auth.getSession();
+
+    if (!session) {
+      const refreshed = await supabase.auth.refreshSession();
+      session = refreshed.data.session;
+    }
+
+    console.log('[API] Token:', session?.access_token ? 'presente' : 'AUSENTE');
+    console.log('[API] User:', session?.user?.email ?? 'nenhum');
 
     if (!session?.access_token) {
       return {};
@@ -5963,7 +6199,8 @@ async function buildAuthHeaders() {
     return {
       Authorization: `Bearer ${session.access_token}`,
     };
-  } catch {
+  } catch (error) {
+    console.warn('[API] Falha ao construir headers de autentição:', error);
     return {};
   }
 }
@@ -6002,6 +6239,9 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
     throw new Error('Backend não configurado. Defina VITE_API_URL no .env');
   }
   const url = `${API_URL}${path}`;
+  console.log('[API] API_URL:', API_URL);
+  console.log('[API] Chamando:', url);
+
   const authHeaders = await buildAuthHeaders();
   const headers = new Headers(options.headers ?? {});
 
@@ -6047,8 +6287,12 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
 
     return response.json();
   } catch (err) {
+    console.error('[API] fetch error:', url, err);
     if (err instanceof TypeError && err.message === 'Failed to fetch') {
-      throw new Error(`O servidor Backend/API não está acessível em ${API_URL}. Verifique se ele está rodando.`);
+      throw new Error(`O servidor Backend/API não está acessível em ${url}. Possível CORS ou URL incorreta. Detalhes: ${err.message}`);
+    }
+    if (err instanceof Error) {
+      throw new Error(`Erro de requisição para ${url}: ${err.message}`);
     }
     throw err;
   }
@@ -6270,7 +6514,14 @@ if (!isValidUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(
   isValidUrl ? supabaseUrl : 'https://placeholder.supabase.co',
-  supabaseAnonKey && supabaseAnonKey.length > 10 ? supabaseAnonKey : 'placeholder'
+  supabaseAnonKey && supabaseAnonKey.length > 10 ? supabaseAnonKey : 'placeholder',
+  {
+    auth: {
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  }
 );
 
 ```
@@ -6689,9 +6940,9 @@ export interface GeolocationResult {
 }
 
 const FALLBACK_LOCATION: GeolocationResult = {
-  lat: -23.31028,
-  lng: -51.16278,
-  name: 'Londrina, PR',
+  lat: -18.9188,
+  lng: -48.2768,
+  name: 'Uberlândia, MG',
   status: 'fallback'
 };
 
@@ -6923,21 +7174,17 @@ async def structured_log_middleware(request: Request, call_next):
     return response
 
 
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
-if allowed_origins_env:
-    allow_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
-else:
-    allow_origins = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-    ]
+origins = [
+    "https://tracto-eta.vercel.app",       # seu domínio Vercel
+    "http://localhost:5173",            # dev local
+    "http://localhost:3000",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -7874,7 +8121,7 @@ from fastapi import HTTPException
 from typing import Any, Dict, List, Optional
 
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-3-5-sonnet-20241022"
 ALLOWED_ALERT_TYPES = {"critical", "warning", "info"}
 
 
