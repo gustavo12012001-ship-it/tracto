@@ -69,7 +69,7 @@ function MapController() {
   const map = useMap();
   const { currentLocation, locationStatus, fields, activeFieldId, activeFieldFocusToken } = useAppStore();
   const hasCenteredInitial = useRef(false);
-  const previousActiveFieldId = useRef<string | null>(null);
+  const prevActiveFieldId = useRef<string | null>(null);
   const previousFocusToken = useRef<number>(0);
 
   useEffect(() => {
@@ -103,13 +103,14 @@ function MapController() {
   useEffect(() => {
     const hasManualFocusRequest = previousFocusToken.current !== activeFieldFocusToken;
     previousFocusToken.current = activeFieldFocusToken;
+    const hasFieldChanged = prevActiveFieldId.current !== activeFieldId;
 
     if (!activeFieldId) {
-      previousActiveFieldId.current = null;
+      prevActiveFieldId.current = null;
       return;
     }
 
-    if (previousActiveFieldId.current === activeFieldId && !hasManualFocusRequest) return;
+    if (!hasFieldChanged && !hasManualFocusRequest) return;
 
     const field = fields.find((f) => f.id === activeFieldId);
     if (!field) return;
@@ -128,7 +129,7 @@ function MapController() {
         duration: 0.9,
       });
     }
-    previousActiveFieldId.current = activeFieldId;
+    prevActiveFieldId.current = activeFieldId;
   }, [activeFieldId, activeFieldFocusToken, fields, map]);
 
   return null;
