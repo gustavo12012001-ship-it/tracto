@@ -50,6 +50,10 @@ class LatestSceneRequest(BaseModel):
     max_cloud_coverage: int = 40
 
 
+class GeoSearchRequest(BaseModel):
+    q: str
+
+
 class FieldAnalysisResponse(BaseModel):
     field_name: str
     ndvi_image_base64: str | None

@@ -41,6 +41,18 @@ type SentinelSceneResponse = {
   message?: string | null;
 };
 
+type GeoSearchResult = {
+  name: string;
+  lat: number;
+  lng: number;
+  bbox: {
+    south: number;
+    north: number;
+    west: number;
+    east: number;
+  } | null;
+};
+
 function getPreviewBounds(field: Location | undefined, center: [number, number]): [[number, number], [number, number]] {
   if (field?.boundaries && field.boundaries.length >= 3) {
     const lats = field.boundaries.map((p) => p[0]);
@@ -61,6 +73,37 @@ function getPreviewBounds(field: Location | undefined, center: [number, number])
 
 function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; lng: number }) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng) });
+  return null;
+}
+
+function GeoSearchNavigator({ target }: { target: GeoSearchResult | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!target) return;
+
+    if (target.bbox) {
+      map.flyToBounds(
+        [
+          [target.bbox.south, target.bbox.west],
+          [target.bbox.north, target.bbox.east],
+        ],
+        {
+          padding: [48, 48],
+          maxZoom: 12,
+          animate: true,
+          duration: 1,
+        },
+      );
+      return;
+    }
+
+    map.flyTo([target.lat, target.lng], 12, {
+      animate: true,
+      duration: 1,
+    });
+  }, [target, map]);
+
   return null;
 }
 
@@ -191,6 +234,10 @@ export default function FieldMap() {
   const [isLoadingScene, setIsLoadingScene] = useState(false);
   const [layerControlOpen, setLayerControlOpen] = useState(false);
   const [savedFieldName, setSavedFieldName] = useState<string | null>(null);
+  const [geoQuery, setGeoQuery] = useState('');
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoResult, setGeoResult] = useState<GeoSearchResult | null>(null);
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lat, currentLocation.lng]
@@ -278,6 +325,54 @@ export default function FieldMap() {
     setDrawPoints((prev) => [...prev, [latlng.lat, latlng.lng]]);
   }, [drawMode]);
 
+  const handleGeoSearch = useCallback(async () => {
+    const normalized = geoQuery.trim();
+    if (normalized.length < 3) {
+      setGeoError('Digite pelo menos 3 caracteres para buscar.');
+      return;
+    }
+
+    try {
+      setGeoLoading(true);
+      setGeoError(null);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+      if (!authToken) {
+        throw new Error('Sessao expirada. Faça login novamente.');
+      }
+
+      const response = await fetch(`${API_URL}/api/geo/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ q: normalized }),
+      });
+
+      if (response.status === 404) {
+        setGeoResult(null);
+        setGeoError('Local não encontrado. Tente outra busca.');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Erro HTTP ${response.status}`);
+      }
+
+      const data = (await response.json()) as GeoSearchResult;
+      setGeoResult(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao buscar local.';
+      setGeoError(message);
+    } finally {
+      setGeoLoading(false);
+    }
+  }, [geoQuery]);
+
   const resetForm = () => {
     setDrawPoints([]);
     setFieldName('');
@@ -357,6 +452,7 @@ export default function FieldMap() {
         zoomControl={false}
       >
         <MapController />
+        <GeoSearchNavigator target={geoResult} />
         {activeMapLayer === 'osm' ? (
           <TileLayer
             attribution="&copy; OpenStreetMap contributors"
@@ -403,6 +499,12 @@ export default function FieldMap() {
         {currentLocation && locationStatus === 'precise' && !fields.some((s) => s.lat === currentLocation.lat) && (
           <Marker position={[currentLocation.lat, currentLocation.lng]}>
             <Popup>📍 Sua localização atual</Popup>
+          </Marker>
+        )}
+
+        {geoResult && (
+          <Marker position={[geoResult.lat, geoResult.lng]}>
+            <Popup>🔎 {geoResult.name}</Popup>
           </Marker>
         )}
 
@@ -577,6 +679,47 @@ export default function FieldMap() {
             </div>
           )}
         </div>
+      )}
+
+      {drawMode === 'none' && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleGeoSearch();
+          }}
+          className="absolute top-16 left-4 z-[500] pointer-events-auto w-[min(92vw,360px)]"
+        >
+          <div
+            className="px-2 py-2 rounded-xl"
+            style={{ background: 'rgba(8,8,9,0.9)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)' }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-base" style={{ color: '#94a3b8' }}>travel_explore</span>
+              <input
+                type="text"
+                value={geoQuery}
+                onChange={(e) => {
+                  setGeoQuery(e.target.value);
+                  if (geoError) setGeoError(null);
+                }}
+                placeholder="Buscar cidade, município ou local"
+                className="flex-1 bg-transparent text-xs text-white placeholder:text-slate-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={geoLoading}
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold"
+                style={{ background: 'rgba(236,91,19,0.18)', border: '1px solid rgba(236,91,19,0.35)', color: '#f97316', opacity: geoLoading ? 0.7 : 1 }}
+              >
+                {geoLoading ? 'Buscando...' : 'Ir'}
+              </button>
+            </div>
+            {!!geoError && <p className="text-[10px] mt-1.5" style={{ color: '#fca5a5' }}>{geoError}</p>}
+            {!!geoResult && !geoError && (
+              <p className="text-[10px] mt-1.5 truncate" style={{ color: '#94a3b8' }}>Resultado: {geoResult.name}</p>
+            )}
+          </div>
+        </form>
       )}
 
       {/* Draw new field button */}

@@ -33,6 +33,7 @@ from models import (
     PushSubscriptionCreate,
     WhatsAppWebhookPayload,
     LatestSceneRequest,
+    GeoSearchRequest,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -40,6 +41,7 @@ from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
 from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
+from services.geo_service import search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
 
@@ -308,6 +310,25 @@ async def latest_sentinel_scene_endpoint(
     except Exception as exc:
         logging.error("Erro ao buscar metadados de cena Sentinel-2: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar cena Sentinel-2 recente.") from exc
+
+
+@app.post("/api/geo/search")
+@limiter.limit("20/minute")
+async def geo_search_endpoint(
+    request: Request,
+    geo_req: GeoSearchRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        result = search_location(geo_req.q)
+        if not result:
+            raise HTTPException(status_code=404, detail="Local nao encontrado para a busca informada.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("Erro na busca geografica: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar localizacao geografica.") from exc
 
 
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)
