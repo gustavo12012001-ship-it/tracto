@@ -474,17 +474,13 @@ export default function FieldMap() {
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
-  console.log('[Sentinel] activeMapLayer:', activeMapLayer);
-  console.log('[Sentinel] API_URL:', API_URL);
-
-
-
   return (
     <div
       className="relative w-full h-full overflow-hidden"
       style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}
     >
       <MapContainer
+        key={activeMapLayer}
         center={center}
         zoom={13}
         style={{ height: '100%', width: '100%', background: '#080809' }}
@@ -492,15 +488,18 @@ export default function FieldMap() {
       >
         <MapController />
         <GeoSearchNavigator target={geoResult} />
+
+        {/* OSM */}
         {activeMapLayer === 'osm' && (
           <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
+            attribution="&copy; OpenStreetMap"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
           />
         )}
 
-        {(activeMapLayer === 'satellite' || activeMapLayer === 'sentinel') && (
+        {/* Esri Satellite */}
+        {activeMapLayer === 'satellite' && (
           <TileLayer
             attribution="&copy; Esri"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -508,22 +507,16 @@ export default function FieldMap() {
           />
         )}
 
-        {activeMapLayer === 'satellite' && (
-          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={20}
-            opacity={0.6}
-          />
-        )}
-
+        {/* Sentinel-2 — Esri base + proxy por cima */}
         {activeMapLayer === 'sentinel' && (
           <>
-            {(() => {
-              console.log('[Sentinel TileLayer] renderizando proxy');
-              return null;
-            })()}
             <TileLayer
-              key="sentinel-proxy-layer"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              attribution="&copy; Esri"
+              maxZoom={20}
+            />
+            <TileLayer
+              key="sentinel-proxy"
               url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
               attribution="&copy; Copernicus Data Space (ESA)"
               maxZoom={18}
