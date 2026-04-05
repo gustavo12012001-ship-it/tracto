@@ -91,6 +91,37 @@ function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; l
   return null;
 }
 
+function parseDMS(input: string): { lat: number; lng: number } | null {
+  const dmsRegex =
+    /^\s*(\d{1,2})[°º]\s*(\d{1,2})['’′]\s*(\d{1,2}(?:\.\d+)?)['"”″]?\s*([NS])\s+(\d{1,3})[°º]\s*(\d{1,2})['’′]\s*(\d{1,2}(?:\.\d+)?)['"”″]?\s*([EW])\s*$/i;
+  const match = input.trim().match(dmsRegex);
+  if (!match) return null;
+
+  const latDeg = Number(match[1]);
+  const latMin = Number(match[2]);
+  const latSec = Number(match[3]);
+  const latHemisphere = match[4].toUpperCase();
+
+  const lngDeg = Number(match[5]);
+  const lngMin = Number(match[6]);
+  const lngSec = Number(match[7]);
+  const lngHemisphere = match[8].toUpperCase();
+
+  if (
+    latMin >= 60 || latSec >= 60 || lngMin >= 60 || lngSec >= 60
+    || latDeg > 90 || lngDeg > 180
+  ) {
+    return null;
+  }
+
+  const lat = (latDeg + latMin / 60 + latSec / 3600)
+    * (latHemisphere === 'S' ? -1 : 1);
+  const lng = (lngDeg + lngMin / 60 + lngSec / 3600)
+    * (lngHemisphere === 'W' ? -1 : 1);
+
+  return { lat, lng };
+}
+
 function parseCoordinateSearch(rawValue: string): { lat: number; lng: number } | null {
   const match = rawValue.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!match) return null;
@@ -434,6 +465,19 @@ export default function FieldMap() {
     const normalized = geoQuery.trim();
     if (normalized.length < 3) {
       setGeoError('Digite pelo menos 3 caracteres para buscar.');
+      return;
+    }
+
+    const dmsTarget = parseDMS(normalized);
+    if (dmsTarget) {
+      setGeoError(null);
+      setGeoResult({
+        name: `${dmsTarget.lat.toFixed(6)}, ${dmsTarget.lng.toFixed(6)}`,
+        lat: dmsTarget.lat,
+        lng: dmsTarget.lng,
+        zoom: 15,
+        bbox: null,
+      });
       return;
     }
 
