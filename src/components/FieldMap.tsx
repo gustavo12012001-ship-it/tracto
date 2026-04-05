@@ -247,8 +247,8 @@ function ZoomDisplay() {
     <div
       style={{
         position: 'absolute',
-        bottom: '60px',
-        left: '10px',
+        bottom: '10px',
+        right: '80px',
         zIndex: 1000,
         background: 'rgba(0,0,0,0.8)',
         color: '#ec5b13',
