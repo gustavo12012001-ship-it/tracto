@@ -257,9 +257,18 @@ function ZoomLocker({ active }: { active: boolean }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!active) return;
+    if (active) {
+      map.setZoom(18, { animate: true });
+      map.setMinZoom(18);
+      map.setMaxZoom(18);
+    } else {
+      map.setMinZoom(3);
+      map.setMaxZoom(20);
+    }
+  }, [active, map]);
 
-    map.setZoom(18, { animate: false });
+  useEffect(() => {
+    if (!active) return;
 
     const lock = () => {
       if (map.getZoom() !== 18) {
@@ -268,11 +277,8 @@ function ZoomLocker({ active }: { active: boolean }) {
     };
 
     map.on('zoomend', lock);
-    map.on('zoom', lock);
-
     return () => {
       map.off('zoomend', lock);
-      map.off('zoom', lock);
     };
   }, [active, map]);
 
@@ -565,11 +571,10 @@ export default function FieldMap() {
       style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}
     >
       <MapContainer
-        key={activeMapLayer}
         center={center}
         zoom={activeMapLayer === 'sentinel' ? 18 : 13}
-        minZoom={activeMapLayer === 'sentinel' ? 18 : 3}
-        maxZoom={activeMapLayer === 'sentinel' ? 18 : 20}
+        minZoom={3}
+        maxZoom={20}
         scrollWheelZoom={activeMapLayer !== 'sentinel'}
         doubleClickZoom={activeMapLayer !== 'sentinel'}
         touchZoom={activeMapLayer !== 'sentinel'}
