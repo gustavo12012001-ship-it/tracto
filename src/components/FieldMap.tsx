@@ -501,7 +501,7 @@ export default function FieldMap() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={20}
           />
-        ) : (
+        ) : activeMapLayer === 'satellite' ? (
           <>
             <TileLayer
               attribution="&copy; Esri"
@@ -514,6 +514,12 @@ export default function FieldMap() {
               opacity={0.6}
             />
           </>
+        ) : (
+          <TileLayer
+            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            maxZoom={20}
+          />
         )}
 
         {activeMapLayer === 'sentinel' && sentinelScene?.display_mode === 'wms' && sentinelScene.wms_url && sentinelScene.wms_params && (
@@ -681,7 +687,7 @@ export default function FieldMap() {
 
       {/* Layer Switcher — Compact Control */}
       {drawMode === 'none' && (
-        <div className="absolute top-4 left-4 z-[500] pointer-events-auto">
+        <div className="absolute top-4 left-4 z-[510] pointer-events-auto">
           <button
             onClick={() => setLayerControlOpen((open) => !open)}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold"
@@ -699,10 +705,10 @@ export default function FieldMap() {
             >
               <div className="flex flex-col gap-1">
                 {[
-                  { id: 'osm' as const, label: 'OpenStreetMap', icon: 'map' },
-                  { id: 'satellite' as const, label: 'Esri Satellite', icon: 'satellite' },
-                  { id: 'sentinel' as const, label: 'Sentinel-2 Atualizado', icon: 'satellite_alt' },
-                ].map(({ id, label, icon }) => (
+                  { id: 'osm' as const, label: 'OpenStreetMap', icon: 'map', subtitle: '' },
+                  { id: 'satellite' as const, label: 'Mapa Base (Alta Resolução)', icon: 'satellite', subtitle: 'Útil para desenhar talhões com precisão' },
+                  { id: 'sentinel' as const, label: 'Sentinel-2 Atualizado', icon: 'satellite_alt', subtitle: '' },
+                ].map(({ id, label, icon, subtitle }) => (
                   <button
                     key={id}
                     onClick={() => setMapLayer(id)}
@@ -714,7 +720,10 @@ export default function FieldMap() {
                     }}
                   >
                     <span className="material-symbols-outlined text-base">{icon}</span>
-                    <span>{label}</span>
+                    <div className="flex flex-col">
+                      <span>{label}</span>
+                      {subtitle && <span className="text-[9px] font-normal opacity-60 leading-tight">{subtitle}</span>}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -930,6 +939,32 @@ export default function FieldMap() {
               </button>
             ))}
           </div>
+          {activeMapLayer !== 'osm' && (
+            <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              {activeMapLayer === 'satellite' && (
+                <p className="text-[9px] font-semibold" style={{ color: '#f59e0b' }}>⚠ Imagem de referência · Sem garantia de data atual</p>
+              )}
+              {activeMapLayer === 'sentinel' && (
+                <p className="text-[9px] font-semibold" style={{ color: '#4ade80' }}>✓ Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '–'} · Copernicus Data Space</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Layer badge — standalone when no fields */}
+      {drawMode === 'none' && fields.length === 0 && activeMapLayer !== 'osm' && (
+        <div
+          className="absolute bottom-4 left-4 z-[495] pointer-events-none px-3 py-2 rounded-xl text-[9px] font-semibold"
+          style={
+            activeMapLayer === 'satellite'
+              ? { background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b', backdropFilter: 'blur(10px)' }
+              : { background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', backdropFilter: 'blur(10px)' }
+          }
+        >
+          {activeMapLayer === 'satellite'
+            ? 'Imagem de referência geográfica · Sem garantia de data atual'
+            : <>Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '–'} · Copernicus Data Space</>}
         </div>
       )}
 

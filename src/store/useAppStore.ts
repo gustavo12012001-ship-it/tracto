@@ -40,7 +40,7 @@ function normalizeMapLayer(layer: unknown): MapLayer {
   if (layer === 'ndvi' || layer === 'moisture') {
     return 'sentinel';
   }
-  return 'satellite';
+  return 'sentinel';
 }
 
 export interface Alert {
@@ -176,7 +176,7 @@ export const useAppStore = create<AppState>()(
       activeFarmId: null,
       activeFieldId: null,
       activeFieldFocusToken: 0,
-      activeMapLayer: 'satellite',
+      activeMapLayer: 'sentinel',
       currentLocation: null,
       locationStatus: 'loading',
       isSyncing: false,
