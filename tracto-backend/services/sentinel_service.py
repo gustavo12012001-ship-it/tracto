@@ -31,7 +31,7 @@ def get_oauth_token():
         logging.error(f"Error getting Sentinel OAuth token: {str(e)}")
         return None
 
-def get_bbox_from_boundaries(boundaries: list[list[float]] | None, lat: float, lng: float) -> list[float]:
+def get_bbox_from_boundaries(boundaries: Optional[List[List[float]]], lat: float, lng: float) -> list[float]:
     """
     Calcula o BBox [min_lng, min_lat, max_lng, max_lat] a partir das boundaries.
     Caso nao existam boundaries, usa um offset de 0.005 (~500m).
@@ -55,7 +55,7 @@ def get_bbox_from_boundaries(boundaries: list[list[float]] | None, lat: float, l
         max(lats) + margin
     ]
 
-def get_ndvi_stats(bbox: list[float], boundaries: list[list[float]] | None = None):
+def get_ndvi_stats(bbox: list[float], boundaries: Optional[List[List[float]]] = None):
     """
     Obtem estatisticas reais de NDVI via Sentinel Hub Statistics API.
     Retorna media, classes e cobertura de nuvens deterministica.
@@ -161,7 +161,7 @@ def get_ndvi_stats(bbox: list[float], boundaries: list[list[float]] | None = Non
         logging.warning(f"Erro ao buscar estatisticas Sentinel: {str(e)}")
         return None
 
-def get_ndvi_image(lat: float, lng: float, boundaries: list[list[float]] | None = None, date_range_days: int = 15):
+def get_ndvi_image(lat: float, lng: float, boundaries: Optional[List[List[float]]] = None, date_range_days: int = 15):
     token = get_oauth_token()
     if not token:
         return None
@@ -261,7 +261,7 @@ def get_ndvi_image(lat: float, lng: float, boundaries: list[list[float]] | None 
 def get_latest_scene_metadata(
     lat: float,
     lng: float,
-    boundaries: list[list[float]] | None = None,
+    boundaries: Optional[List[List[float]]] = None,
     lookback_days: int = 21,
     max_cloud_coverage: int = 40,
 ):
