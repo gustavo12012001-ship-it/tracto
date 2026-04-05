@@ -535,8 +535,11 @@ export default function FieldMap() {
         key={activeMapLayer}
         center={center}
         zoom={activeMapLayer === 'sentinel' ? 14 : 13}
-        minZoom={activeMapLayer === 'sentinel' ? 13 : 3}
-        maxZoom={activeMapLayer === 'sentinel' ? 16 : 20}
+        minZoom={activeMapLayer === 'sentinel' ? 14 : 3}
+        maxZoom={activeMapLayer === 'sentinel' ? 14 : 20}
+        scrollWheelZoom={activeMapLayer !== 'sentinel'}
+        doubleClickZoom={activeMapLayer !== 'sentinel'}
+        touchZoom={activeMapLayer !== 'sentinel'}
         style={{ height: '100%', width: '100%', background: '#080809' }}
         zoomControl={false}
       >
@@ -546,22 +549,21 @@ export default function FieldMap() {
         {activeMapLayer === 'sentinel' && <ZoomBadge />}
         <GeoSearchNavigator target={geoResult} />
 
+        {/* Esri base - sempre visivel no satellite e sentinel */}
+        {(activeMapLayer === 'satellite' || activeMapLayer === 'sentinel') && (
+          <TileLayer
+            attribution="© Esri"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={20}
+          />
+        )}
+
         {/* OSM */}
         {activeMapLayer === 'osm' && (
           <TileLayer
             attribution="© OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
-          />
-        )}
-
-        {/* Esri — quando satellite OU como base para Sentinel */}
-        {(activeMapLayer === 'satellite' || activeMapLayer === 'sentinel') && (
-          <TileLayer
-            attribution="© Esri"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={20}
-            zIndex={activeMapLayer === 'sentinel' ? 0 : 1}
           />
         )}
 
@@ -574,14 +576,14 @@ export default function FieldMap() {
           />
         )}
 
-        {/* Sentinel-2 proxy */}
+        {/* Sentinel proxy por cima do Esri */}
         {activeMapLayer === 'sentinel' && (
           <TileLayer
             key="sentinel-proxy"
             url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}`}
             attribution="© Copernicus Data Space (ESA)"
-            minZoom={11}
-            maxZoom={20}
+            minZoom={14}
+            maxZoom={14}
             maxNativeZoom={14}
             opacity={1}
             tms={false}
