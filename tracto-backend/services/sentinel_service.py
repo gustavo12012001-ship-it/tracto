@@ -1,4 +1,5 @@
 import os
+import sys
 import httpx
 import logging
 import json
@@ -353,6 +354,13 @@ def get_latest_scene_metadata(
         instance_id if instance_id else None,
         type(instance_id).__name__,
         "wms" if instance_id else "preview",
+    )
+    print(
+        f"[Sentinel WMS] INSTANCE_ID={os.getenv('SENTINEL_INSTANCE_ID')!r}"
+        f" resolved={instance_id!r} type={type(instance_id).__name__}"
+        f" display_mode={'wms' if instance_id else 'preview'}",
+        flush=True,
+        file=sys.stdout,
     )
     if instance_id and isinstance(instance_id, str) and len(instance_id) > 0:
         time_param = scene_date_iso if scene_date_iso else now_utc.strftime("%Y-%m-%d")
