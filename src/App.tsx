@@ -7,6 +7,7 @@ import Alerts from './pages/Alerts';
 import Reports from './pages/Reports';
 import Market from './pages/Market';
 import Layout from './components/Layout';
+import LandingPage from './pages/LandingPage';
 import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
@@ -16,7 +17,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<ResetPassword />} />

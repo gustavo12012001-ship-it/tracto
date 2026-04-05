@@ -1,7 +1,33 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../services/supabase';
 
 export default function LandingPage() {
     const navigate = useNavigate();
+
+    useEffect(() => {
+        let mounted = true;
+
+        const syncSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (mounted && session) {
+                navigate('/app', { replace: true });
+            }
+        };
+
+        void syncSession();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session) {
+                navigate('/app', { replace: true });
+            }
+        });
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [navigate]);
 
     return (
         <>
