@@ -235,43 +235,14 @@ function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   return null;
 }
 
-function ZoomDisplay() {
-  const map = useMap();
-  const [zoom, setZoom] = useState(map.getZoom());
-
-  useMapEvents({
-    zoomend: () => setZoom(map.getZoom()),
-  });
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        bottom: '10px',
-        right: '80px',
-        zIndex: 1000,
-        background: 'rgba(0,0,0,0.8)',
-        color: '#ec5b13',
-        padding: '6px 12px',
-        borderRadius: '8px',
-        fontSize: '14px',
-        fontWeight: 'bold',
-        pointerEvents: 'none',
-      }}
-    >
-      Zoom: {zoom}
-    </div>
-  );
-}
-
 function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 'satellite' | 'sentinel' }) {
   const map = useMap();
 
   useEffect(() => {
     if (activeMapLayer !== 'sentinel') return;
-    // Ao entrar em Sentinel, sempre força zoom 14
+    // Ao entrar em Sentinel, sempre força zoom 18
     // e gera remontagem via key={activeMapLayer} no MapContainer
-    map.setZoom(14);
+    map.setZoom(18);
   }, [activeMapLayer, map]);
 
   return null;
@@ -539,9 +510,9 @@ export default function FieldMap() {
       <MapContainer
         key={activeMapLayer}
         center={center}
-        zoom={activeMapLayer === 'sentinel' ? 14 : 13}
-        minZoom={activeMapLayer === 'sentinel' ? 14 : 3}
-        maxZoom={activeMapLayer === 'sentinel' ? 14 : 20}
+        zoom={activeMapLayer === 'sentinel' ? 18 : 13}
+        minZoom={activeMapLayer === 'sentinel' ? 18 : 3}
+        maxZoom={activeMapLayer === 'sentinel' ? 18 : 20}
         scrollWheelZoom={activeMapLayer !== 'sentinel'}
         doubleClickZoom={activeMapLayer !== 'sentinel'}
         touchZoom={activeMapLayer !== 'sentinel'}
@@ -551,7 +522,6 @@ export default function FieldMap() {
         <MapController />
         <SentinelZoomController activeMapLayer={activeMapLayer} />
         <ZoomWatcher onZoomChange={setCurrentZoom} />
-        <ZoomDisplay />
         <GeoSearchNavigator target={geoResult} />
 
         {/* Esri base - sempre visivel no satellite e sentinel */}
@@ -587,9 +557,9 @@ export default function FieldMap() {
             key="sentinel-proxy"
             url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}`}
             attribution="© Copernicus Data Space (ESA)"
-            minZoom={14}
-            maxZoom={14}
-            maxNativeZoom={14}
+            minZoom={18}
+            maxZoom={18}
+            maxNativeZoom={18}
             opacity={1}
             tms={false}
             crossOrigin="anonymous"
