@@ -529,42 +529,37 @@ export default function FieldMap() {
           />
         )}
 
-        {/* Esri Satellite — Mapa Base */}
-        {activeMapLayer === 'satellite' && (
-          <>
-            <TileLayer
-              attribution="© Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={20}
-            />
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={20}
-              opacity={0.6}
-            />
-          </>
+        {/* Esri — só quando NÃO for sentinel */}
+        {activeMapLayer !== 'sentinel' && activeMapLayer !== 'osm' && (
+          <TileLayer
+            attribution="© Esri"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={20}
+          />
         )}
 
-        {/* Sentinel-2 — Esri base + proxy por cima */}
+        {/* Labels Esri — só no satellite */}
+        {activeMapLayer === 'satellite' && (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={20}
+            opacity={0.6}
+          />
+        )}
+
+        {/* Sentinel-2 proxy */}
         {activeMapLayer === 'sentinel' && (
-          <>
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution="© Esri"
-              maxZoom={20}
-            />
-            <TileLayer
-              key="sentinel-proxy-layer"
-              url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
-              attribution="© Copernicus Data Space (ESA)"
-              minZoom={12}
-              maxZoom={18}
-              maxNativeZoom={14}
-              opacity={1}
-              tms={false}
-              crossOrigin="anonymous"
-            />
-          </>
+          <TileLayer
+            key="sentinel-proxy"
+            url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}`}
+            attribution="© Copernicus Data Space (ESA)"
+            minZoom={11}
+            maxZoom={20}
+            maxNativeZoom={14}
+            opacity={1}
+            tms={false}
+            crossOrigin="anonymous"
+          />
         )}
 
         <MapClickHandler onMapClick={handleMapClick} />
