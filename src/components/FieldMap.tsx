@@ -256,13 +256,25 @@ function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void })
 function ZoomLocker({ active }: { active: boolean }) {
   const map = useMap();
 
-  useMapEvents({
-    zoom: () => {
-      if (active && map.getZoom() !== 18) {
+  useEffect(() => {
+    if (!active) return;
+
+    map.setZoom(18, { animate: false });
+
+    const lock = () => {
+      if (map.getZoom() !== 18) {
         map.setZoom(18, { animate: false });
       }
-    },
-  });
+    };
+
+    map.on('zoomend', lock);
+    map.on('zoom', lock);
+
+    return () => {
+      map.off('zoomend', lock);
+      map.off('zoom', lock);
+    };
+  }, [active, map]);
 
   return null;
 }
