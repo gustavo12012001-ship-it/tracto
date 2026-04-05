@@ -463,6 +463,9 @@ export default function FieldMap() {
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
+  console.log('[Sentinel] activeMapLayer:', activeMapLayer);
+  console.log('[Sentinel] API_URL:', API_URL);
+
 
 
   return (
