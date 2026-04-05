@@ -222,6 +222,19 @@ function ZoomControls() {
   );
 }
 
+function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+  const map = useMap();
+  useMapEvents({
+    zoomend: () => onZoomChange(map.getZoom()),
+  });
+
+  useEffect(() => {
+    onZoomChange(map.getZoom());
+  }, [map, onZoomChange]);
+
+  return null;
+}
+
 function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 'satellite' | 'sentinel' }) {
   const map = useMap();
 
@@ -267,6 +280,7 @@ export default function FieldMap() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [geoResult, setGeoResult] = useState<GeoSearchResult | null>(null);
+  const [currentZoom, setCurrentZoom] = useState(13);
   const lastSentinelSceneRequestKeyRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation
@@ -486,6 +500,7 @@ export default function FieldMap() {
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
   const API_URL = import.meta.env.VITE_API_URL
     || 'https://tracto-production.up.railway.app';
+  const sentinelNeedsZoomHint = activeMapLayer === 'sentinel' && currentZoom < 13;
 
   return (
     <div
@@ -501,6 +516,7 @@ export default function FieldMap() {
       >
         <MapController />
         <SentinelZoomController activeMapLayer={activeMapLayer} />
+        <ZoomWatcher onZoomChange={setCurrentZoom} />
         <GeoSearchNavigator target={geoResult} />
 
         {/* OSM */}
@@ -537,9 +553,10 @@ export default function FieldMap() {
               maxZoom={20}
             />
             <TileLayer
+              key="sentinel-proxy-layer"
               url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
               attribution="© Copernicus Data Space (ESA)"
-              minZoom={1}
+              minZoom={10}
               maxZoom={18}
               maxNativeZoom={14}
               opacity={1}
@@ -781,6 +798,34 @@ export default function FieldMap() {
         </form>
       )}
 
+      {/* Layer selector pills */}
+      {drawMode === 'none' && (
+        <div className="absolute top-4 left-4 z-[499] flex flex-col gap-2 pointer-events-auto">
+          <div className="flex items-center gap-1.5 p-1.5 rounded-xl" style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {[
+              { id: 'osm', label: 'OpenStreetMap', icon: 'map' },
+              { id: 'satellite', label: 'Mapa Base (Alta Resolução)', icon: 'satellite_alt' },
+              { id: 'sentinel', label: 'Sentinel-2 Atualizado', icon: 'location_searching' },
+            ].map(({ id, label, icon }) => (
+              <button
+                key={id}
+                onClick={() => setMapLayer(id as 'osm' | 'satellite' | 'sentinel')}
+                title={label}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150"
+                style={{
+                  background: activeMapLayer === id ? 'rgba(236,91,19,0.25)' : 'rgba(255,255,255,0.05)',
+                  border: activeMapLayer === id ? '1px solid rgba(236,91,19,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                  color: activeMapLayer === id ? '#f97316' : '#94a3b8',
+                }}
+              >
+                <span className="material-symbols-outlined text-sm">{icon}</span>
+                <span className="hidden md:inline text-xs">{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Draw new field button */}
       {drawMode === 'none' && (
         <button
@@ -952,27 +997,33 @@ export default function FieldMap() {
               {activeMapLayer === 'satellite' && (
                 <p className="text-[9px] font-semibold" style={{ color: '#f59e0b' }}>Mapa Base (Alta Resolução)</p>
               )}
-              {activeMapLayer === 'sentinel' && (
-                <p className="text-[9px] font-semibold" style={{ color: '#4ade80' }}>Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '03/04/2026'} · Copernicus</p>
-              )}
             </div>
           )}
         </div>
       )}
 
       {/* Layer badge — standalone when no fields */}
-      {drawMode === 'none' && fields.length === 0 && activeMapLayer !== 'osm' && (
+      {drawMode === 'none' && fields.length === 0 && activeMapLayer === 'satellite' && (
         <div
           className="absolute bottom-4 left-4 z-[495] pointer-events-none px-3 py-2 rounded-xl text-[9px] font-semibold"
+          style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b', backdropFilter: 'blur(10px)' }}
+        >
+          Mapa Base (Alta Resolução)
+        </div>
+      )}
+
+      {drawMode === 'none' && activeMapLayer === 'sentinel' && (
+        <div
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[505] pointer-events-none px-3.5 py-2 rounded-xl text-[10px] font-semibold"
           style={
-            activeMapLayer === 'satellite'
-              ? { background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#f59e0b', backdropFilter: 'blur(10px)' }
-              : { background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80', backdropFilter: 'blur(10px)' }
+            sentinelNeedsZoomHint
+              ? { background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b', backdropFilter: 'blur(10px)' }
+              : { background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#4ade80', backdropFilter: 'blur(10px)' }
           }
         >
-          {activeMapLayer === 'satellite'
-            ? 'Mapa Base (Alta Resolução)'
-            : <>Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '03/04/2026'} · Copernicus</>}
+          {sentinelNeedsZoomHint
+            ? '🔍 Aproxime o mapa para ver as imagens do Sentinel-2'
+            : `Sentinel-2 · Última cena: ${sentinelScene?.scene_date_br ?? 'Sem cena recente'}`}
         </div>
       )}
 
