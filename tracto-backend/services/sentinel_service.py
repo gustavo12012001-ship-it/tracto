@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1/search"
-SENTINEL_OAUTH_URL = "https://services.sentinel-hub.com/oauth/token"
+SENTINEL_OAUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 SENTINEL_WMS_BASE = "https://sh.dataspace.copernicus.eu/ogc/wms"
 TOKEN_TTL_MINUTES = 55
 
