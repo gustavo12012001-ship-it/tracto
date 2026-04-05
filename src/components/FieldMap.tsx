@@ -505,6 +505,15 @@ export default function FieldMap() {
           />
         )}
 
+        {activeMapLayer === 'sentinel' && (
+          <TileLayer
+            attribution="Sentinel-2 Proxy (Tracto)"
+            url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}${sentinelScene?.scene_date ? `?date=${encodeURIComponent(sentinelScene.scene_date)}` : ''}`}
+            maxZoom={20}
+            opacity={0.92}
+          />
+        )}
+
         <MapClickHandler onMapClick={handleMapClick} />
 
         {/* Current location marker */}
@@ -944,11 +953,7 @@ export default function FieldMap() {
             <p className="text-[8px]" style={{ color: '#cbd5e1' }}>
               {isLoadingScene
                 ? 'Consultando Earth Search STAC...'
-                : sentinelScene?.display_mode === 'wms'
-                  ? 'Exibicao WMS (Copernicus Data Space - ESA)'
-                  : sentinelScene?.display_mode === 'preview'
-                    ? 'Preview estatico da ultima cena (ilustrativo, sem georreferenciamento preciso)'
-                    : 'Fallback: Esri Satellite'}
+                : 'Proxy de tiles Sentinel ativo (autenticado via backend Tracto)'}
             </p>
             {!!sentinelScene?.provider && (
               <p className="text-[8px] mt-1.5" style={{ color: '#94a3b8' }}>Fonte: {sentinelScene.provider}</p>

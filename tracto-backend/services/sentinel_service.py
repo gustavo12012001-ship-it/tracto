@@ -7,19 +7,66 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1/search"
+SENTINEL_OAUTH_URL = "https://services.sentinel-hub.com/oauth/token"
+SENTINEL_WMS_BASE = "https://sh.dataspace.copernicus.eu/ogc/wms"
+TOKEN_TTL_MINUTES = 55
 
-def get_oauth_token():
+_TOKEN_CACHE: Optional[str] = None
+_TOKEN_CACHE_EXPIRES_AT: Optional[datetime] = None
+
+
+def _resolve_instance_id() -> Optional[str]:
+    instance_id = (
+        (os.getenv("SENTINEL_INSTANCE_ID") or "").strip()
+        or (os.getenv("SENTINEL_HUB_INSTANCE_ID") or "").strip()
+        or (os.getenv("SH_INSTANCE_ID") or "").strip()
+        or (os.getenv("VITE_SENTINEL_INSTANCE_ID") or "").strip()
+    )
+    return instance_id or None
+
+
+def _tile_bbox_epsg_3857(z: int, x: int, y: int) -> str:
+    if z < 0:
+        raise ValueError("Zoom invalido para tile Sentinel.")
+
+    tiles_per_axis = 2 ** z
+    if x < 0 or y < 0 or x >= tiles_per_axis or y >= tiles_per_axis:
+        raise ValueError("Coordenadas x/y invalidas para o zoom informado.")
+
+    origin_shift = 20037508.342789244
+    tile_size = (2 * origin_shift) / tiles_per_axis
+
+    min_x = -origin_shift + (x * tile_size)
+    max_x = -origin_shift + ((x + 1) * tile_size)
+    max_y = origin_shift - (y * tile_size)
+    min_y = origin_shift - ((y + 1) * tile_size)
+
+    return f"{min_x},{min_y},{max_x},{max_y}"
+
+
+def get_oauth_token(force_refresh: bool = False):
+    global _TOKEN_CACHE, _TOKEN_CACHE_EXPIRES_AT
+
     client_id = os.getenv("SENTINEL_CLIENT_ID")
     client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
-    
+
     if not client_id or not client_secret:
         logging.error("SENTINEL credentials not configured.")
         return None
+
+    now_utc = datetime.utcnow()
+    if (
+        not force_refresh
+        and _TOKEN_CACHE
+        and _TOKEN_CACHE_EXPIRES_AT
+        and now_utc < _TOKEN_CACHE_EXPIRES_AT
+    ):
+        return _TOKEN_CACHE
         
     try:
         with httpx.Client() as client:
             response = client.post(
-                "https://services.sentinel-hub.com/oauth/token",
+                SENTINEL_OAUTH_URL,
                 data={
                     "grant_type": "client_credentials",
                     "client_id": client_id,
@@ -27,10 +74,58 @@ def get_oauth_token():
                 }
             )
             response.raise_for_status()
-            return response.json().get("access_token")
+            token = response.json().get("access_token")
+            if not token:
+                logging.error("Sentinel OAuth respondeu sem access_token.")
+                return None
+
+            _TOKEN_CACHE = token
+            _TOKEN_CACHE_EXPIRES_AT = now_utc + timedelta(minutes=TOKEN_TTL_MINUTES)
+            return token
     except Exception as e:
         logging.error(f"Error getting Sentinel OAuth token: {str(e)}")
         return None
+
+
+def get_sentinel_tile_jpeg(z: int, x: int, y: int, scene_date: Optional[str] = None) -> bytes:
+    instance_id = _resolve_instance_id()
+    if not instance_id:
+        raise ValueError("Sentinel nao configurado: SENTINEL_INSTANCE_ID ausente no backend.")
+
+    token = get_oauth_token()
+    if not token:
+        raise ValueError("Nao foi possivel obter token OAuth do Sentinel.")
+
+    date_value = (scene_date or datetime.utcnow().strftime("%Y-%m-%d")).strip()
+    wms_url = f"{SENTINEL_WMS_BASE}/{instance_id}"
+
+    params = {
+        "SERVICE": "WMS",
+        "VERSION": "1.3.0",
+        "REQUEST": "GetMap",
+        "LAYERS": "TRUE-COLOR-S2L2A",
+        "FORMAT": "image/jpeg",
+        "TRANSPARENT": "false",
+        "WIDTH": "256",
+        "HEIGHT": "256",
+        "CRS": "EPSG:3857",
+        "BBOX": _tile_bbox_epsg_3857(z, x, y),
+        "TIME": f"{date_value}/{date_value}",
+    }
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with httpx.Client() as client:
+        response = client.get(wms_url, params=params, headers=headers, timeout=30.0)
+        if response.status_code == 401:
+            refreshed_token = get_oauth_token(force_refresh=True)
+            if not refreshed_token:
+                raise ValueError("Token Sentinel expirado e falha ao renovar OAuth.")
+            headers = {"Authorization": f"Bearer {refreshed_token}"}
+            response = client.get(wms_url, params=params, headers=headers, timeout=30.0)
+
+        response.raise_for_status()
+        return response.content
 
 def get_bbox_from_boundaries(boundaries: Optional[List[List[float]]], lat: float, lng: float) -> list[float]:
     """
@@ -342,12 +437,7 @@ def get_latest_scene_metadata(
             preview_url = candidate
             break
 
-    instance_id = (
-        (os.getenv("SENTINEL_INSTANCE_ID") or "").strip()
-        or (os.getenv("SENTINEL_HUB_INSTANCE_ID") or "").strip()
-        or (os.getenv("SH_INSTANCE_ID") or "").strip()
-        or (os.getenv("VITE_SENTINEL_INSTANCE_ID") or "").strip()
-    )
+    instance_id = _resolve_instance_id()
     logging.warning(
         "[Sentinel WMS] SENTINEL_INSTANCE_ID=%r, resolved=%r (type: %s), display_mode=%s",
         os.getenv("SENTINEL_INSTANCE_ID"),

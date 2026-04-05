@@ -5,10 +5,11 @@ from datetime import datetime
 
 import httpx
 from dotenv import load_dotenv
+from typing import Optional
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -41,7 +42,7 @@ from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
+from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata, get_sentinel_tile_jpeg
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -319,6 +320,38 @@ async def latest_sentinel_scene_endpoint(
     except Exception as exc:
         logging.error("Erro ao buscar metadados de cena Sentinel-2: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar cena Sentinel-2 recente.") from exc
+
+
+@app.get("/api/sentinel/tile/{z}/{x}/{y}")
+@limiter.limit("100/minute")
+async def sentinel_tile_proxy_endpoint(
+    request: Request,
+    z: int,
+    x: int,
+    y: int,
+    date: Optional[str] = Query(default=None),
+):
+    try:
+        tile_data = get_sentinel_tile_jpeg(z=z, x=x, y=y, scene_date=date)
+        return Response(
+            content=tile_data,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        logging.error(
+            "Erro HTTP ao buscar tile Sentinel proxy z=%s x=%s y=%s status=%s",
+            z,
+            x,
+            y,
+            exc.response.status_code if exc.response else "unknown",
+        )
+        raise HTTPException(status_code=502, detail="Falha ao consultar tile Sentinel.") from exc
+    except Exception as exc:
+        logging.error("Erro no proxy de tile Sentinel z=%s x=%s y=%s: %s", z, x, y, exc)
+        raise HTTPException(status_code=500, detail="Erro interno no proxy de tile Sentinel.") from exc
 
 
 @app.post("/api/geo/search")
