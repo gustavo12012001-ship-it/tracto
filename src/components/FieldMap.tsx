@@ -264,9 +264,9 @@ function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 's
 
   useEffect(() => {
     if (activeMapLayer !== 'sentinel') return;
-    // Ao entrar em Sentinel, sempre força zoom 14
+    // Ao entrar em Sentinel, sempre força zoom 16
     // e gera remontagem via key={activeMapLayer} no MapContainer
-    map.setZoom(14);
+    map.setZoom(16);
   }, [activeMapLayer, map]);
 
   return null;
@@ -534,9 +534,9 @@ export default function FieldMap() {
       <MapContainer
         key={activeMapLayer}
         center={center}
-        zoom={activeMapLayer === 'sentinel' ? 2 : 13}
-        minZoom={activeMapLayer === 'sentinel' ? 2 : 3}
-        maxZoom={activeMapLayer === 'sentinel' ? 2 : 20}
+        zoom={activeMapLayer === 'sentinel' ? 16 : 13}
+        minZoom={activeMapLayer === 'sentinel' ? 16 : 3}
+        maxZoom={activeMapLayer === 'sentinel' ? 16 : 20}
         scrollWheelZoom={activeMapLayer !== 'sentinel'}
         doubleClickZoom={activeMapLayer !== 'sentinel'}
         touchZoom={activeMapLayer !== 'sentinel'}
@@ -582,9 +582,9 @@ export default function FieldMap() {
             key="sentinel-proxy"
             url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}`}
             attribution="© Copernicus Data Space (ESA)"
-            minZoom={2}
-            maxZoom={2}
-            maxNativeZoom={14}
+            minZoom={16}
+            maxZoom={16}
+            maxNativeZoom={16}
             opacity={1}
             tms={false}
             crossOrigin="anonymous"
