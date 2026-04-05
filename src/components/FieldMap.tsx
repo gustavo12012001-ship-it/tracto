@@ -210,7 +210,7 @@ function MapController() {
 const QUICK_CROPS = ['Soja', 'Milho', 'Sorgo', 'Algodão', 'Trigo', 'Cana-de-açúcar', 'Café'] as const;
 const OTHER_CROP_VALUE = '__other__';
 
-function ZoomControls() {
+function ZoomControls({ zoomLocked }: { zoomLocked: boolean }) {
   const map = useMap();
   return (
     <div className="absolute bottom-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
@@ -220,13 +220,17 @@ function ZoomControls() {
       ].map(({ s, action }) => (
         <button
           key={s}
-          onClick={action}
+          onClick={() => {
+            if (zoomLocked) return;
+            action();
+          }}
           className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
           style={{
             background: 'rgba(8,8,9,0.85)',
             backdropFilter: 'blur(12px)',
             border: '1px solid rgba(255,255,255,0.08)',
-            color: '#94a3b8',
+            color: zoomLocked ? '#64748b' : '#94a3b8',
+            opacity: zoomLocked ? 0.55 : 1,
           }}
         >
           {s}
@@ -245,6 +249,20 @@ function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   useEffect(() => {
     onZoomChange(map.getZoom());
   }, [map, onZoomChange]);
+
+  return null;
+}
+
+function ZoomLocker({ active }: { active: boolean }) {
+  const map = useMap();
+
+  useMapEvents({
+    zoom: () => {
+      if (active && map.getZoom() !== 18) {
+        map.setZoom(18, { animate: false });
+      }
+    },
+  });
 
   return null;
 }
@@ -543,11 +561,13 @@ export default function FieldMap() {
         scrollWheelZoom={activeMapLayer !== 'sentinel'}
         doubleClickZoom={activeMapLayer !== 'sentinel'}
         touchZoom={activeMapLayer !== 'sentinel'}
+        keyboard={activeMapLayer !== 'sentinel'}
         style={{ height: '100%', width: '100%', background: '#080809' }}
         zoomControl={false}
       >
         <MapController />
         <SentinelZoomController activeMapLayer={activeMapLayer} />
+        <ZoomLocker active={activeMapLayer === 'sentinel'} />
         <ZoomWatcher onZoomChange={setCurrentZoom} />
         <GeoSearchNavigator target={geoResult} />
 
@@ -684,7 +704,7 @@ export default function FieldMap() {
         )}
 
         {/* Functional zoom controls inside map */}
-        <ZoomControls />
+        <ZoomControls zoomLocked={activeMapLayer === 'sentinel'} />
       </MapContainer>
 
       {/* ── Overlays (outside MapContainer) ── */}
