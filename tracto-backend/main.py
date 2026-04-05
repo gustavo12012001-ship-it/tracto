@@ -42,7 +42,7 @@ from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
 from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
-from services.geo_service import GeoNotFoundError, GeoProviderError, search_location
+from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
 from services.field_intelligence_service import build_field_intelligence_snapshot
@@ -322,38 +322,30 @@ async def latest_sentinel_scene_endpoint(
 
 
 @app.post("/api/geo/search")
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def geo_search_endpoint(
     request: Request,
-    geo_req: GeoSearchRequest,
+    body: GeoSearchRequest,
     _user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
-        return search_location(geo_req.q)
-    except GeoNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Local nao encontrado para a busca informada.") from exc
+        result = await search_location(body.query)
+        if not result:
+            raise HTTPException(status_code=404, detail="Local nao encontrado para a busca informada.")
+        return result
+    except HTTPException:
+        raise
     except GeoProviderError as exc:
-        provider_status = exc.provider_status
-        logging.warning(
-            "Falha no provedor de geocoding. query=%s provider_status=%s erro=%s",
-            geo_req.q,
-            provider_status,
-            str(exc),
-        )
-
-        if provider_status == 403:
-            raise HTTPException(
-                status_code=502,
-                detail="Erro temporario ao consultar o provedor de localizacao.",
-            ) from exc
-
+        logging.warning("Falha no provedor de geocoding. query=%s erro=%s", body.query, str(exc))
         raise HTTPException(
-            status_code=503,
-            detail="Servico de busca geografica indisponivel no momento.",
+            status_code=502,
+            detail="Erro temporario ao consultar o provedor de localizacao.",
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Local nao encontrado para a busca informada.") from exc
     except Exception as exc:
         logging.error("Erro na busca geografica: %s", exc)
-        raise HTTPException(status_code=500, detail="Erro ao buscar localizacao geografica.") from exc
+        raise HTTPException(status_code=502, detail="Erro temporario ao consultar o provedor de localizacao.") from exc
 
 
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)

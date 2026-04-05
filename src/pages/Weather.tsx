@@ -251,6 +251,62 @@ export default function Weather() {
           />
         </div>
 
+        {/* ── Talhões monitorados (referência no Windy) ── */}
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}>
+          <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+            <h2 className="text-sm font-bold text-white">Talhões monitorados</h2>
+            <span className="text-[10px]" style={{ color: '#94a3b8' }}>
+              {fields.length} talhão{fields.length !== 1 ? 'ões' : ''}
+            </span>
+          </div>
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fields.length === 0 && (
+              <div className="p-4 rounded-xl text-xs" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#94a3b8' }}>
+                Nenhum talhão cadastrado. Cadastre no mapa para acompanhar no contexto meteorológico.
+              </div>
+            )}
+
+            {fields.map((field, index) => {
+              const isActive = Boolean(activeFieldId && field.id === activeFieldId);
+              const windyLink = `https://www.windy.com/-${field.lat},${field.lng}?${field.lat},${field.lng},10`;
+
+              return (
+                <div
+                  key={field.id ?? `${field.lat}-${field.lng}-${index}`}
+                  className="p-4 rounded-xl"
+                  style={{
+                    background: isActive ? 'rgba(236,91,19,0.08)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${isActive ? 'rgba(236,91,19,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-bold text-white">{field.name ?? `Talhão ${index + 1}`}</p>
+                    {isActive && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(236,91,19,0.2)', color: '#ec5b13' }}>
+                        ATIVO
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs" style={{ color: '#94a3b8' }}>Lat {field.lat.toFixed(5)} · Lng {field.lng.toFixed(5)}</p>
+                  <p className="text-xs mt-1" style={{ color: '#cbd5e1' }}>
+                    Temperatura: {Math.round(displayTemperature)}° · Vento: {Math.round(displayWindSpeed)} km/h · Chuva hoje: {(w?.daily.precipSum[0] ?? 0).toFixed(1)} mm
+                  </p>
+                  <a
+                    href={windyLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 mt-3 text-xs font-semibold"
+                    style={{ color: '#60a5fa' }}
+                  >
+                    <span className="material-symbols-outlined text-sm">open_in_new</span>
+                    Abrir no Windy
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* ── First Load Loading Skeleton ── */}
         {!w && loading && (
           <div className="space-y-4">

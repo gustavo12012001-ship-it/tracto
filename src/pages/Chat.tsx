@@ -52,7 +52,7 @@ function buildFarmContext(
 ): string {
   if (fields.length === 0) {
     return [
-      'Talhão atualmente selecionado: Nenhum.',
+      'Nenhum talhão selecionado no momento.',
       'Demais talhões cadastrados: Nenhum talhão cadastrado.',
     ].join('\n');
   }
@@ -78,10 +78,10 @@ function buildFarmContext(
 
   const activeSection = activeField
     ? [
-        `Talhão atualmente selecionado: ${activeField.name ?? 'Talhão sem nome'}`,
-        `Cultura: ${activeField.cultura || 'N/D'} | Área: ${activeField.areaHa != null ? `${activeField.areaHa.toFixed(1)} ha` : 'N/D'} | Plantio: ${formatDate(activeField.dataPlantio)} | Variedade: ${activeField.variedade || 'N/D'}`,
+        `TALHÃO ATIVO: ${activeField.name ?? 'Talhão sem nome'} | ${activeField.cultura || 'N/D'} | ${activeField.areaHa != null ? `${activeField.areaHa.toFixed(1)} ha` : 'Área N/D'} | ${formatDate(activeField.dataPlantio)}`,
+        `Variedade: ${activeField.variedade || 'N/D'}`,
       ].join('\n')
-    : 'Talhão atualmente selecionado: Nenhum.';
+    : 'Nenhum talhão selecionado no momento.';
 
   const othersSection = otherFields.length
     ? `Demais talhões cadastrados:\n${otherFields.map((field, index) => `- ${buildFieldLine(field, index)}`).join('\n')}`
@@ -119,8 +119,8 @@ function buildFarmContextFromSnapshot(snapshot: FieldIntelligenceSnapshot): stri
     : [];
 
   return [
-    `Talhão ativo: ${snapshot.field_name}`,
-    `Cultura: ${safe(snapshot.crop_type)} | Área: ${snapshot.area_ha != null ? `${Number(snapshot.area_ha).toFixed(1)} ha` : 'N/D'} | Plantio: ${safe(snapshot.planting_date)} | Variedade: ${safe(snapshot.variety)}`,
+    `TALHÃO ATIVO: ${snapshot.field_name} | ${safe(snapshot.crop_type)} | ${snapshot.area_ha != null ? `${Number(snapshot.area_ha).toFixed(1)} ha` : 'Área N/D'} | ${safe(snapshot.planting_date)}`,
+    `Variedade: ${safe(snapshot.variety)}`,
     `Clima atual: Temp ${safe((weather as Record<string, unknown>).temperature)}C, Umidade ${safe((weather as Record<string, unknown>).humidity)}%, Vento ${safe((weather as Record<string, unknown>).wind_speed)} km/h`,
     `Previsão resumida: ${safe((weather as Record<string, unknown>).forecast_7d, 'Previsão indisponível')}`,
     `Última cena Sentinel: ${safe((satellite as Record<string, unknown>).scene_date_br)} | Nuvens: ${safe((satellite as Record<string, unknown>).cloud_coverage)}`,

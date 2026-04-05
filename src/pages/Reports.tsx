@@ -9,7 +9,10 @@ import { polygonAreaHa } from '../utils/geo';
 
 
 // ── PDF export ────────────────────────────────────────────────────────────────
-function exportPDF(fields: ReturnType<typeof useAppStore.getState>['fields']) {
+function exportPDF(
+  fields: ReturnType<typeof useAppStore.getState>['fields'],
+  activeFieldName?: string | null
+) {
   const doc = new jsPDF();
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
@@ -20,7 +23,12 @@ function exportPDF(fields: ReturnType<typeof useAppStore.getState>['fields']) {
   doc.setTextColor(100, 116, 139);
   doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 15, 28);
 
-  let y = 40;
+  if (activeFieldName) {
+    doc.setTextColor(236, 91, 19);
+    doc.text(`Talhão ativo em destaque: ${activeFieldName}`, 15, 34);
+  }
+
+  let y = activeFieldName ? 44 : 40;
   fields.forEach((f, i) => {
     const area = f.boundaries ? polygonAreaHa(f.boundaries) : 0;
     const name = f.name ?? `Talhão ${i + 1}`;
@@ -58,6 +66,7 @@ export default function Reports() {
   const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
+  const activeField = fields.find((field) => field.id === activeFieldId) || fields[0] || null;
 
   const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
     const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
@@ -191,9 +200,14 @@ export default function Reports() {
             <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
               {hasFields ? `${fields.length} talhão${fields.length > 1 ? 'ões' : ''} · Relatórios Determinísticos` : 'Cadastre talhões para gerar relatórios'}
             </p>
+            {activeField && (
+              <p className="text-xs mt-1" style={{ color: '#ec5b13' }}>
+                Talhão em análise: {activeField.name ?? 'Talhão sem nome'}
+              </p>
+            )}
           </div>
           <button
-            onClick={() => exportPDF(fields)}
+            onClick={() => exportPDF(fields, activeField?.name ?? null)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
             style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.28)' }}
           >
@@ -428,7 +442,7 @@ export default function Reports() {
                       </td>
                       <td className="px-5 py-3">
                         <button
-                          onClick={() => exportPDF([fields[i]])}
+                          onClick={() => exportPDF([fields[i]], activeField?.name ?? null)}
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
                           style={{ background: 'rgba(236,91,19,0.1)', color: '#ec5b13', border: '1px solid rgba(236,91,19,0.15)' }}
                         >

@@ -1,57 +1,40 @@
 # Código Completo do Projeto Tracto — Inteligência Agronômica
 
-> **Data de atualização:** April 4, 2026  
-> **Versão:** 2.2.1  
+> **Data de atualização:** April 5, 2026  
+> **Versão:** 2.3.0  
 > **Status:** Produção  
 
 Documentação técnica completa contendo toda a estrutura, configurações, código-fonte e arquitetura do projeto Tracto.
 
-## ✅ Últimas Atualizações Aplicadas (April 4, 2026)
+## ✅ Últimas Atualizações Aplicadas (April 5, 2026)
 
-### Mapa Sentinel e Foco entre Talhões
-- Troca de talhão no mapa agora dispara refoco real de navegação com `fitBounds` quando houver polígono e `flyTo` como fallback.
-- Fluxo de foco mantém `hasCenteredInitial` para o primeiro carregamento e usa `prevActiveFieldId` para garantir refoco entre talhões distantes.
+### Snapshot de Inteligência do Talhão (Arquitetura Canônica)
+- Novo contrato canônico no backend para consolidar clima, satélite, análise, alertas e resumo textual por talhão.
+- Novo endpoint autenticado `GET /api/fields/{field_id}/intelligence` com resposta tipada (`FieldIntelligenceSnapshot`).
+- Novo serviço dedicado `field_intelligence_service.py` com orquestração de fontes e fallback por bloco.
 
-### Busca Geográfica no Mapa (Cidade/Município)
-- Adicionado campo de busca no mapa com navegação automática por local.
-- Novo endpoint backend `POST /api/geo/search` (proxy Nominatim) com autenticação e rate limit.
-- Busca prioriza Brasil (`countrycodes=br`) e retorna `name`, `lat`, `lng` e `bbox` quando disponível.
-- Navegação no frontend usa `fitBounds` com `bbox` e `flyTo` quando houver apenas ponto.
+### Resiliência por Fonte (Timeout + Fallback)
+- Cada fonte (weather, satellite, analysis, ai summary) possui status explícito: `ok`, `fallback` ou `unavailable`.
+- Snapshot permanece útil mesmo com indisponibilidade parcial de uma ou mais fontes.
+- Leitura de cache consolidado adicionada antes da recomputação para reduzir chamadas externas.
 
-### Erros de Busca Geográfica (UX Honesta)
-- Backend agora diferencia corretamente:
-  - `404`: local realmente não encontrado
-  - `502/503`: falha temporária do provedor de geocoding
-- Frontend exibe mensagem coerente para cada caso, sem culpar o usuário por indisponibilidade externa.
+### Cache Consolidado do Snapshot
+- Cache de snapshot por talhão com short-circuit no backend.
+- Logs de observabilidade para `cache hit` e `cache miss`.
+- TTL do snapshot consolidado ajustado para 30 minutos (`ttl_hours=0.5`).
 
-### Commits de Referência (main)
-- `1f29d8c` — correção de refoco real ao trocar talhão ativo no mapa
-- `073620a` — busca geográfica por cidade via backend proxy + navegação automática no mapa
+### Frontend Unificado pelo Talhão Ativo
+- Store global passou a manter cache de snapshot por `activeFieldId`.
+- `Chat`, `Weather`, `Alerts` e `Reports` priorizam o snapshot canônico do talhão ativo.
+- Fluxos híbridos foram removidos dos pontos críticos para reduzir divergência entre páginas.
 
-### Fluxo de Talhão Ativo (Frontend)
-- Seleção de talhão sincroniza `activeFieldId` e `activeFarmId` no store.
-- Talhão recém-criado vira ativo automaticamente após `createField` com sucesso.
-- Bloco de contexto no topo mostra semântica correta (`Talhão ativo` ou `Fazenda ativa`).
-- Bloco do talhão ativo no topo ficou clicável para ir ao dashboard e recentralizar no talhão ativo.
-
-### Mapa e Foco no Talhão
-- `FieldMap` mantém centralização inicial e suporta refoco explícito via `activeFieldFocusToken`.
-- Clique no talhão ativo no topo dispara foco no mapa mesmo quando o usuário está fora da tela do mapa.
-
-### Chat IA e Imagem
-- Contexto do chat passou a explicitar se há imagem anexada na mensagem atual.
-- UX deixa claro que a imagem vale apenas para a mensagem atual.
-- Backend responde de forma honesta em follow-up sem imagem no payload atual (não finge análise visual).
-
-### Geolocalização
-- Removido fallback visual hardcoded de Londrina nos fluxos principais.
-- Fallback unificado via `FALLBACK_LOCATION` em `utils/geolocation.ts`.
-- Geolocalização agora é tentada no mount e também no `onAuthStateChange` quando a sessão é restaurada.
-- UI indica fallback de forma explícita quando não há localização precisa.
+### Fechamento Cirúrgico de Pendências
+- `Alerts`: reset do autoload ao trocar talhão e remoção de fallback hardcoded de Londrina.
+- `Chat`: autosave agora persiste exatamente o mesmo `farm_context` usado no envio da mensagem.
+- `Weather`: estratégia explícita snapshot-first para clima atual, com fallback Open-Meteo.
 
 ### Commits de Referência (main)
-- `74d10c0` — fechamento do fluxo de talhão ativo (topo + mapa + chat + criação)
-- `e7407d8` — chat com imagem honesta + re-tentativa de geolocalização por sessão
+- `728c9c2` — unificação do fluxo de inteligência de talhão (snapshot backend + consumo frontend)
 
 ---
 
@@ -113,6 +96,7 @@ Documentação técnica completa contendo toda a estrutura, configurações, có
 │   │   ├── weather_service.py        # Integração Weather API
 │   │   ├── sentinel_service.py       # Satellite imagery (NDVI)
 │   │   ├── agronomic_engine.py       # Motor determinístico
+│   │   ├── field_intelligence_service.py # Snapshot canônico por talhão
 │   │   ├── billing_service.py        # Cobrança e entitlements
 │   │   └── cache_service.py          # Cache em memória
 │   └── sql/

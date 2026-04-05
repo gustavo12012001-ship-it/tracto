@@ -83,8 +83,9 @@ export default function Alerts() {
     : null;
 
   const loc = activeField
-    ? activeField
-    : (currentLocation || FALLBACK_LOCATION);
+    || fields[fields.length - 1]
+    || currentLocation
+    || FALLBACK_LOCATION;
   const snapshot = activeFieldId ? fieldIntelligenceById[activeFieldId] : null;
 
   const visibleAlerts = (alerts as AlertExtra[]).filter((a) => !a.dismissed);

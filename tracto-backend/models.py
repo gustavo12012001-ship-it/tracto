@@ -51,7 +51,7 @@ class LatestSceneRequest(BaseModel):
 
 
 class GeoSearchRequest(BaseModel):
-    q: str
+    query: str = Field(validation_alias=AliasChoices("query", "q"))
 
 
 class FieldAnalysisResponse(BaseModel):
