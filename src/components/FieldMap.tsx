@@ -235,23 +235,28 @@ function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   return null;
 }
 
-function ZoomBadge() {
+function ZoomDisplay() {
   const map = useMap();
-  const [zoom, setZoom] = useState<number>(Math.round(map.getZoom()));
+  const [zoom, setZoom] = useState(map.getZoom());
 
   useMapEvents({
-    zoom: () => setZoom(Math.round(map.getZoom())),
-    zoomend: () => setZoom(Math.round(map.getZoom())),
+    zoomend: () => setZoom(map.getZoom()),
   });
 
   return (
     <div
-      className="absolute bottom-16 right-4 z-[520] px-2 py-1 rounded-md text-xs font-medium pointer-events-none"
       style={{
-        background: 'rgba(8,8,9,0.88)',
-        border: '1px solid rgba(255,255,255,0.12)',
-        color: '#cbd5e1',
-        backdropFilter: 'blur(8px)',
+        position: 'absolute',
+        bottom: '60px',
+        left: '10px',
+        zIndex: 1000,
+        background: 'rgba(0,0,0,0.8)',
+        color: '#ec5b13',
+        padding: '6px 12px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 'bold',
+        pointerEvents: 'none',
       }}
     >
       Zoom: {zoom}
@@ -546,7 +551,7 @@ export default function FieldMap() {
         <MapController />
         <SentinelZoomController activeMapLayer={activeMapLayer} />
         <ZoomWatcher onZoomChange={setCurrentZoom} />
-        {activeMapLayer === 'sentinel' && <ZoomBadge />}
+        <ZoomDisplay />
         <GeoSearchNavigator target={geoResult} />
 
         {/* Esri base - sempre visivel no satellite e sentinel */}
