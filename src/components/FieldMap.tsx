@@ -8,8 +8,9 @@ import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
-import { API_URL } from '../services/api';
 import { supabase } from '../services/supabase';
+
+const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
 
 // Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -477,27 +478,15 @@ export default function FieldMap() {
       >
         <MapController />
         <GeoSearchNavigator target={geoResult} />
-        {activeMapLayer === 'osm' ? (
+        {activeMapLayer === 'osm' && (
           <TileLayer
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={20}
+            maxZoom={19}
           />
-        ) : activeMapLayer === 'satellite' ? (
-          <>
-            <TileLayer
-              attribution="&copy; Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={20}
-            />
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={20}
-              opacity={0.6}
-            />
-          </>
-        ) : (
-          // Sentinel mode: usa base satelital Esri diretamente.
+        )}
+
+        {(activeMapLayer === 'satellite' || activeMapLayer === 'sentinel') && (
           <TileLayer
             attribution="&copy; Esri"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -505,12 +494,23 @@ export default function FieldMap() {
           />
         )}
 
+        {activeMapLayer === 'satellite' && (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={20}
+            opacity={0.6}
+          />
+        )}
+
         {activeMapLayer === 'sentinel' && (
           <TileLayer
-            attribution="Sentinel-2 Proxy (Tracto)"
-            url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}${sentinelScene?.scene_date ? `?date=${encodeURIComponent(sentinelScene.scene_date)}` : ''}`}
-            maxZoom={20}
-            opacity={0.92}
+            url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
+            attribution="&copy; Copernicus Data Space (ESA)"
+            maxZoom={18}
+            maxNativeZoom={14}
+            opacity={1}
+            tms={false}
+            crossOrigin="anonymous"
           />
         )}
 
