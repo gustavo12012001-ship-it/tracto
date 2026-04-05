@@ -5,7 +5,7 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import useAppStore, { type Location } from '../store/useAppStore';
+import useAppStore from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
 import { API_URL } from '../services/api';
