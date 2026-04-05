@@ -262,8 +262,9 @@ function ZoomLocker({ active }: { active: boolean }) {
       map.setMinZoom(18);
       map.setMaxZoom(18);
     } else {
-      map.setMinZoom(3);
+      map.setMinZoom(1);
       map.setMaxZoom(20);
+      map.invalidateSize();
     }
   }, [active, map]);
 
