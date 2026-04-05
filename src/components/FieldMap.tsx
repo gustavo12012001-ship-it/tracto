@@ -235,6 +235,30 @@ function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   return null;
 }
 
+function ZoomBadge() {
+  const map = useMap();
+  const [zoom, setZoom] = useState<number>(Math.round(map.getZoom()));
+
+  useMapEvents({
+    zoom: () => setZoom(Math.round(map.getZoom())),
+    zoomend: () => setZoom(Math.round(map.getZoom())),
+  });
+
+  return (
+    <div
+      className="absolute bottom-16 right-4 z-[520] px-2 py-1 rounded-md text-xs font-medium pointer-events-none"
+      style={{
+        background: 'rgba(8,8,9,0.88)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        color: '#cbd5e1',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      Zoom: {zoom}
+    </div>
+  );
+}
+
 function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 'satellite' | 'sentinel' }) {
   const map = useMap();
 
@@ -519,6 +543,7 @@ export default function FieldMap() {
         <MapController />
         <SentinelZoomController activeMapLayer={activeMapLayer} />
         <ZoomWatcher onZoomChange={setCurrentZoom} />
+        {activeMapLayer === 'sentinel' && <ZoomBadge />}
         <GeoSearchNavigator target={geoResult} />
 
         {/* OSM */}
