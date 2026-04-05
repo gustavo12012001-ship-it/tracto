@@ -10,8 +10,6 @@ import { polygonAreaHa } from '../utils/geo';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
 import { supabase } from '../services/supabase';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
-
 // Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -486,6 +484,8 @@ export default function FieldMap() {
   };
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
+  const API_URL = import.meta.env.VITE_API_URL
+    || 'https://tracto-production.up.railway.app';
 
   return (
     <div
@@ -506,19 +506,26 @@ export default function FieldMap() {
         {/* OSM */}
         {activeMapLayer === 'osm' && (
           <TileLayer
-            attribution="&copy; OpenStreetMap"
+            attribution="© OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
           />
         )}
 
-        {/* Esri Satellite */}
+        {/* Esri Satellite — Mapa Base */}
         {activeMapLayer === 'satellite' && (
-          <TileLayer
-            attribution="&copy; Esri"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={20}
-          />
+          <>
+            <TileLayer
+              attribution="© Esri"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+            />
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+              opacity={0.6}
+            />
+          </>
         )}
 
         {/* Sentinel-2 — Esri base + proxy por cima */}
@@ -526,14 +533,13 @@ export default function FieldMap() {
           <>
             <TileLayer
               url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution="&copy; Esri"
+              attribution="© Esri"
               maxZoom={20}
             />
             <TileLayer
-              key="sentinel-proxy"
               url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
-              attribution="&copy; Copernicus Data Space (ESA)"
-              minZoom={10}
+              attribution="© Copernicus Data Space (ESA)"
+              minZoom={1}
               maxZoom={18}
               maxNativeZoom={14}
               opacity={1}
