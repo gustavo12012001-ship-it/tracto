@@ -534,9 +534,9 @@ export default function FieldMap() {
       <MapContainer
         key={activeMapLayer}
         center={center}
-        zoom={activeMapLayer === 'sentinel' ? 14 : 13}
-        minZoom={activeMapLayer === 'sentinel' ? 14 : 3}
-        maxZoom={activeMapLayer === 'sentinel' ? 14 : 20}
+        zoom={activeMapLayer === 'sentinel' ? 2 : 13}
+        minZoom={activeMapLayer === 'sentinel' ? 2 : 3}
+        maxZoom={activeMapLayer === 'sentinel' ? 2 : 20}
         scrollWheelZoom={activeMapLayer !== 'sentinel'}
         doubleClickZoom={activeMapLayer !== 'sentinel'}
         touchZoom={activeMapLayer !== 'sentinel'}
@@ -582,8 +582,8 @@ export default function FieldMap() {
             key="sentinel-proxy"
             url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}`}
             attribution="© Copernicus Data Space (ESA)"
-            minZoom={14}
-            maxZoom={14}
+            minZoom={2}
+            maxZoom={2}
             maxNativeZoom={14}
             opacity={1}
             tms={false}
