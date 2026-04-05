@@ -339,19 +339,17 @@ async def sentinel_tile_proxy_endpoint(
             headers={"Cache-Control": "public, max-age=300"},
         )
     except ValueError as exc:
+        logging.error(f"[Sentinel Tile Proxy] ValueError z={z} x={x} y={y} -> {str(exc)}")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response else "unknown"
         logging.error(
-            "Erro HTTP ao buscar tile Sentinel proxy z=%s x=%s y=%s status=%s",
-            z,
-            x,
-            y,
-            exc.response.status_code if exc.response else "unknown",
+            f"[Sentinel Tile Proxy] HTTPStatusError z={z} x={x} y={y} status={status_code} -> {str(exc)}"
         )
-        raise HTTPException(status_code=502, detail="Falha ao consultar tile Sentinel.") from exc
+        raise HTTPException(status_code=502, detail=f"Erro HTTP {status_code} ao buscar tile Sentinel: {str(exc)}") from exc
     except Exception as exc:
-        logging.error("Erro no proxy de tile Sentinel z=%s x=%s y=%s: %s", z, x, y, exc)
-        raise HTTPException(status_code=500, detail="Erro interno no proxy de tile Sentinel.") from exc
+        logging.error(f"[Sentinel Tile Proxy] Erro real z={z} x={x} y={y} -> {str(exc)}")
+        raise HTTPException(status_code=502, detail=f"Erro ao buscar tile: {str(exc)}") from exc
 
 
 @app.post("/api/geo/search")

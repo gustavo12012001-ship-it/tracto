@@ -240,9 +240,9 @@ function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 's
 
   useEffect(() => {
     if (activeMapLayer !== 'sentinel') return;
-    if (map.getZoom() < 13) {
-      map.setZoom(13);
-    }
+    // Ao entrar em Sentinel, sempre força zoom 14
+    // e gera remontagem via key={activeMapLayer} no MapContainer
+    map.setZoom(14);
   }, [activeMapLayer, map]);
 
   return null;
@@ -511,7 +511,8 @@ export default function FieldMap() {
         key={activeMapLayer}
         center={center}
         zoom={activeMapLayer === 'sentinel' ? 14 : 13}
-        minZoom={activeMapLayer === 'sentinel' ? 12 : undefined}
+        minZoom={activeMapLayer === 'sentinel' ? 13 : 3}
+        maxZoom={activeMapLayer === 'sentinel' ? 16 : 20}
         style={{ height: '100%', width: '100%', background: '#080809' }}
         zoomControl={false}
       >
@@ -529,12 +530,13 @@ export default function FieldMap() {
           />
         )}
 
-        {/* Esri — só quando NÃO for sentinel */}
-        {activeMapLayer !== 'sentinel' && activeMapLayer !== 'osm' && (
+        {/* Esri — quando satellite OU como base para Sentinel */}
+        {(activeMapLayer === 'satellite' || activeMapLayer === 'sentinel') && (
           <TileLayer
             attribution="© Esri"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             maxZoom={20}
+            zIndex={activeMapLayer === 'sentinel' ? 0 : 1}
           />
         )}
 

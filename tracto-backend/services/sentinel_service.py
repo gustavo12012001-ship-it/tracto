@@ -88,44 +88,48 @@ def get_oauth_token(force_refresh: bool = False):
 
 
 def get_sentinel_tile_jpeg(z: int, x: int, y: int, scene_date: Optional[str] = None) -> bytes:
-    instance_id = _resolve_instance_id()
-    if not instance_id:
-        raise ValueError("Sentinel nao configurado: SENTINEL_INSTANCE_ID ausente no backend.")
+    try:
+        instance_id = _resolve_instance_id()
+        if not instance_id:
+            raise ValueError("Sentinel nao configurado: SENTINEL_INSTANCE_ID ausente no backend.")
 
-    token = get_oauth_token()
-    if not token:
-        raise ValueError("Nao foi possivel obter token OAuth do Sentinel.")
+        token = get_oauth_token()
+        if not token:
+            raise ValueError("Nao foi possivel obter token OAuth do Sentinel.")
 
-    date_value = (scene_date or datetime.utcnow().strftime("%Y-%m-%d")).strip()
-    wms_url = f"{SENTINEL_WMS_BASE}/{instance_id}"
+        wms_url = f"{SENTINEL_WMS_BASE}/{instance_id}"
 
-    params = {
-        "SERVICE": "WMS",
-        "VERSION": "1.3.0",
-        "REQUEST": "GetMap",
-        "LAYERS": "TRUE-COLOR-S2L2A",
-        "FORMAT": "image/jpeg",
-        "TRANSPARENT": "false",
-        "WIDTH": "256",
-        "HEIGHT": "256",
-        "CRS": "EPSG:3857",
-        "BBOX": _tile_bbox_epsg_3857(z, x, y),
-        "TIME": f"{date_value}/{date_value}",
-    }
+        params = {
+            "SERVICE": "WMS",
+            "VERSION": "1.3.0",
+            "REQUEST": "GetMap",
+            "LAYERS": "TRUE-COLOR-S2L2A",
+            "FORMAT": "image/jpeg",
+            "TRANSPARENT": "false",
+            "WIDTH": "256",
+            "HEIGHT": "256",
+            "CRS": "EPSG:3857",
+            "BBOX": _tile_bbox_epsg_3857(z, x, y),
+        }
+        # NÃO incluir "TIME" — deixar Copernicus retornar a imagem mais recente por padrão
+        # Isso evita erro se a variável de data não estiver disponível ou inválida
 
-    headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}"}
 
-    with httpx.Client() as client:
-        response = client.get(wms_url, params=params, headers=headers, timeout=30.0)
-        if response.status_code == 401:
-            refreshed_token = get_oauth_token(force_refresh=True)
-            if not refreshed_token:
-                raise ValueError("Token Sentinel expirado e falha ao renovar OAuth.")
-            headers = {"Authorization": f"Bearer {refreshed_token}"}
-            response = client.get(wms_url, params=params, headers=headers, timeout=30.0)
+        with httpx.Client() as client:
+            response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
+            if response.status_code == 401:
+                refreshed_token = get_oauth_token(force_refresh=True)
+                if not refreshed_token:
+                    raise ValueError("Token Sentinel expirado e falha ao renovar OAuth.")
+                headers = {"Authorization": f"Bearer {refreshed_token}"}
+                response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
 
-        response.raise_for_status()
-        return response.content
+            response.raise_for_status()
+            return response.content
+    except Exception as e:
+        logging.error(f"[Sentinel Tile] Erro real: z={z} x={x} y={y} -> {str(e)}")
+        raise
 
 def get_bbox_from_boundaries(boundaries: Optional[List[List[float]]], lat: float, lng: float) -> list[float]:
     """
