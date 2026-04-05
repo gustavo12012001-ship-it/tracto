@@ -44,6 +44,7 @@ type GeoSearchResult = {
   name: string;
   lat: number;
   lng: number;
+  zoom?: number;
   bbox: [number, number, number, number] | {
     south: number;
     north: number;
@@ -90,6 +91,19 @@ function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; l
   return null;
 }
 
+function parseCoordinateSearch(rawValue: string): { lat: number; lng: number } | null {
+  const match = rawValue.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!match) return null;
+
+  const lat = Number.parseFloat(match[1]);
+  const lng = Number.parseFloat(match[2]);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+  return { lat, lng };
+}
+
 function GeoSearchNavigator({ target }: { target: GeoSearchResult | null }) {
   const map = useMap();
 
@@ -114,7 +128,7 @@ function GeoSearchNavigator({ target }: { target: GeoSearchResult | null }) {
       return;
     }
 
-    map.flyTo([target.lat, target.lng], 12, {
+    map.flyTo([target.lat, target.lng], target.zoom ?? 12, {
       animate: true,
       duration: 1,
     });
@@ -383,6 +397,19 @@ export default function FieldMap() {
     const normalized = geoQuery.trim();
     if (normalized.length < 3) {
       setGeoError('Digite pelo menos 3 caracteres para buscar.');
+      return;
+    }
+
+    const coordinateTarget = parseCoordinateSearch(normalized);
+    if (coordinateTarget) {
+      setGeoError(null);
+      setGeoResult({
+        name: `${coordinateTarget.lat.toFixed(6)}, ${coordinateTarget.lng.toFixed(6)}`,
+        lat: coordinateTarget.lat,
+        lng: coordinateTarget.lng,
+        zoom: 15,
+        bbox: null,
+      });
       return;
     }
 
