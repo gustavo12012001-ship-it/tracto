@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import useAppStore from '../store/useAppStore';
-import { apiFetch } from '../services/api';
+import { apiFetch, type FieldIntelligenceSnapshot } from '../services/api';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../services/supabase';
 
@@ -94,6 +94,42 @@ function buildFarmContext(
   return `${activeSection}\n${othersSection}\n${imageSection}`;
 }
 
+function buildFarmContextFromSnapshot(snapshot: FieldIntelligenceSnapshot): string {
+  const weather = snapshot.weather || {};
+  const satellite = snapshot.satellite || {};
+  const analysis = snapshot.analysis || {};
+
+  const safe = (value: unknown, fallback = 'N/D') => {
+    if (value == null) return fallback;
+    const text = String(value).trim();
+    return text.length > 0 ? text : fallback;
+  };
+
+  const toRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+
+  const sprayWindow = toRecord(toRecord(analysis).spray_window).label;
+  const frostRisk = toRecord(toRecord(analysis).frost_risk).label;
+  const waterStress = toRecord(toRecord(analysis).water_stress).label;
+  const alertTitles = Array.isArray(snapshot.alerts)
+    ? snapshot.alerts
+        .map((item) => safe((item as Record<string, unknown>).title, '').trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+
+  return [
+    `Talhão ativo: ${snapshot.field_name}`,
+    `Cultura: ${safe(snapshot.crop_type)} | Área: ${snapshot.area_ha != null ? `${Number(snapshot.area_ha).toFixed(1)} ha` : 'N/D'} | Plantio: ${safe(snapshot.planting_date)} | Variedade: ${safe(snapshot.variety)}`,
+    `Clima atual: Temp ${safe((weather as Record<string, unknown>).temperature)}C, Umidade ${safe((weather as Record<string, unknown>).humidity)}%, Vento ${safe((weather as Record<string, unknown>).wind_speed)} km/h`,
+    `Previsão resumida: ${safe((weather as Record<string, unknown>).forecast_7d, 'Previsão indisponível')}`,
+    `Última cena Sentinel: ${safe((satellite as Record<string, unknown>).scene_date_br)} | Nuvens: ${safe((satellite as Record<string, unknown>).cloud_coverage)}`,
+    `Análise consolidada: Pulverização ${safe(sprayWindow)}, Geada ${safe(frostRisk)}, Estresse hídrico ${safe(waterStress)}`,
+    `Alertas relevantes: ${alertTitles.length ? alertTitles.join(' | ') : 'Nenhum alerta relevante no momento.'}`,
+    `Atualizado em: ${safe(snapshot.updated_at)}`,
+  ].join('\n');
+}
+
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -105,7 +141,14 @@ async function fileToBase64(file: File): Promise<string> {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function Chat() {
-  const { addMessage, clearChat, fields, activeFieldId, weatherCache } = useAppStore();
+  const {
+    addMessage,
+    clearChat,
+    fields,
+    activeFieldId,
+    weatherCache,
+    fetchFieldIntelligence,
+  } = useAppStore();
 
   // Conversation state
   const [conversationId, setConversationId] = useState<string>(() => uuidv4());
@@ -148,6 +191,11 @@ export default function Chat() {
     loadConversations();
   }, []);
 
+  useEffect(() => {
+    if (!activeFieldId) return;
+    void fetchFieldIntelligence(activeFieldId, false);
+  }, [activeFieldId, fetchFieldIntelligence]);
+
   const loadConversations = async () => {
     try {
       setLoadingConversations(true);
@@ -164,7 +212,7 @@ export default function Chat() {
 
   // ── Auto-save with 3s debounce ──────────────────────────────────────────────
   const scheduleSave = useCallback(
-    (msgs: Message[], cid: string, createdAt: string) => {
+    (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string) => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = setTimeout(async () => {
         const userMessages = msgs.filter((m) => m.role !== 'assistant' || msgs.indexOf(m) > 0);
@@ -189,7 +237,7 @@ export default function Chat() {
                 role: m.role === 'assistant' ? 'model' : 'user',
                 text: m.text,
               })),
-              farm_context: buildFarmContext(fields, activeFieldId, false),
+              farm_context: farmContextForSave,
               created_at: createdAt,
               updated_at: nowISO(),
             }),
@@ -200,7 +248,7 @@ export default function Chat() {
         }
       }, 3000);
     },
-    [fields, activeFieldId]
+    []
   );
 
   // ── Start new conversation ─────────────────────────────────────────────────
@@ -311,10 +359,21 @@ export default function Chat() {
         { role: 'user', text: userMsg.text },
       ];
 
-      const farm_context = buildFarmContext(fields, activeFieldId, Boolean(imageBase64));
-      const hourly_weather = weatherCache
-        ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
-        : null;
+      const snapshot = activeFieldId ? await fetchFieldIntelligence(activeFieldId, false) : null;
+      const farm_context = snapshot
+        ? buildFarmContextFromSnapshot(snapshot)
+        : buildFarmContext(fields, activeFieldId, Boolean(imageBase64));
+
+      const weatherFromSnapshot = snapshot?.weather as Record<string, unknown> | undefined;
+      const hourly_weather = weatherFromSnapshot
+        ? {
+            temperature: Number(weatherFromSnapshot.temperature ?? 0),
+            humidity: Number(weatherFromSnapshot.humidity ?? 0),
+            wind_speed: Number(weatherFromSnapshot.wind_speed ?? 0),
+          }
+        : weatherCache
+          ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
+          : null;
 
       const data = await apiFetch<{ reply: string }>('/api/chat', {
         method: 'POST',
@@ -334,7 +393,7 @@ export default function Chat() {
 
       setMessages((prev) => {
         const updated = [...prev, aiMsg];
-        scheduleSave(updated, conversationId, conversationCreatedAt);
+        scheduleSave(updated, conversationId, conversationCreatedAt, farm_context);
         return updated;
       });
       addMessage('model', aiText);

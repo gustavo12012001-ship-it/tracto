@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import useAppStore from '../store/useAppStore';
-import { generateAlerts } from '../services/alertsAI';
 import type { Alert } from '../store/useAppStore';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -37,18 +37,55 @@ interface AlertExtra extends Alert {
   valueLabel?: string;
 }
 
+function mapSnapshotAlerts(rawAlerts: Array<Record<string, unknown>>): Alert[] {
+  const now = Date.now();
+  return rawAlerts.map((item, index) => {
+    const createdAt = typeof item.createdAt === 'string' ? Date.parse(item.createdAt) : now;
+    const normalizedType = item.type === 'critical' || item.type === 'warning' || item.type === 'info'
+      ? item.type
+      : 'info';
+
+    return {
+      id: String(item.id ?? `snapshot-alert-${index}`),
+      type: normalizedType,
+      title: String(item.title ?? 'Alerta agronômico'),
+      message: String(item.message ?? ''),
+      timestamp: Number.isFinite(createdAt) ? createdAt : now,
+      dismissed: false,
+      field: typeof item.field === 'string' ? item.field : undefined,
+      value: item.value != null ? String(item.value) : undefined,
+      valueLabel: typeof item.valueLabel === 'string' ? item.valueLabel : undefined,
+    };
+  });
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Alerts() {
   const navigate = useNavigate();
-  const { currentLocation, fields, weatherCache, alerts, setAlerts, dismissAlert } = useAppStore();
+  const {
+    currentLocation,
+    fields,
+    weatherCache,
+    alerts,
+    setAlerts,
+    dismissAlert,
+    activeFieldId,
+    fieldIntelligenceById,
+    fetchFieldIntelligence,
+  } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didAutoLoad = useRef(false);
   
 
-  const loc = fields.length > 0
-    ? fields[fields.length - 1]
-    : (currentLocation || { lat: -23.31028, lng: -51.16278, name: 'Londrina, PR' });
+  const activeField = activeFieldId
+    ? fields.find((field) => field.id === activeFieldId) ?? null
+    : null;
+
+  const loc = activeField
+    ? activeField
+    : (currentLocation || FALLBACK_LOCATION);
+  const snapshot = activeFieldId ? fieldIntelligenceById[activeFieldId] : null;
 
   const visibleAlerts = (alerts as AlertExtra[]).filter((a) => !a.dismissed);
   const criticalCount = visibleAlerts.filter((a) => a.type === 'critical').length;
@@ -76,28 +113,38 @@ export default function Alerts() {
   const localAlerts = getLocalAlerts();
 
   const loadAlerts = useCallback(async () => {
-    if (fields.length === 0 && !weatherCache) return;
+    if (!activeFieldId) {
+      setError('Selecione um talhão ativo para carregar os alertas consolidados.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const generated = await generateAlerts(weatherCache, fields);
+      const intelligence = await fetchFieldIntelligence(activeFieldId, true);
+      const generated = intelligence?.alerts ? mapSnapshotAlerts(intelligence.alerts) : [];
       setAlerts(generated);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao gerar alertas');
     } finally {
       setLoading(false);
     }
-  }, [fields, weatherCache, setAlerts]);
+  }, [activeFieldId, fetchFieldIntelligence, setAlerts]);
 
   // Auto-load when mounting if no alerts yet
   useEffect(() => {
+    didAutoLoad.current = false;
+    if (!activeFieldId) return;
+    void loadAlerts();
+  }, [activeFieldId, loadAlerts]);
+
+  useEffect(() => {
     if (didAutoLoad.current) return;
 
-    if (alerts.length === 0 && fields.length > 0 && weatherCache) {
+    if (alerts.length === 0 && activeFieldId) {
       didAutoLoad.current = true;
       void loadAlerts();
     }
-  }, [alerts.length, fields.length, weatherCache, loadAlerts]);
+  }, [alerts.length, activeFieldId, loadAlerts]);
 
   return (
     <>
@@ -120,8 +167,13 @@ export default function Alerts() {
             <div>
               <h1 className="text-white font-bold text-xl">Alertas Inteligentes</h1>
               <p className="text-slate-400 text-xs mt-1">
-                Análise em tempo real via IA · {loc?.name ?? 'Localização atual'}
+                Snapshot do talhão ativo · {loc?.name ?? 'Localização atual'}
               </p>
+              {snapshot && (
+                <p className="text-slate-500 text-[11px] mt-1">
+                  Alertas atualizados em: {snapshot.updated_at ? new Date(snapshot.updated_at).toLocaleString('pt-BR') : 'N/D'}
+                </p>
+              )}
             </div>
             <button
               onClick={loadAlerts}
@@ -132,7 +184,7 @@ export default function Alerts() {
               <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
                 {loading ? 'refresh' : 'smart_toy'}
               </span>
-              {loading ? 'Analisando...' : 'Gerar Alertas IA'}
+              {loading ? 'Analisando...' : 'Atualizar talhão'}
             </button>
           </div>
 

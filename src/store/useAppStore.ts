@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../services/supabase';
 import { apiFetch } from '../services/api';
+import { fetchFieldIntelligenceSnapshot, type FieldIntelligenceSnapshot } from '../services/api';
 import { type LocationStatus, fetchCurrentLocation } from '../utils/geolocation';
 
 export interface Entitlements {
@@ -122,6 +123,9 @@ interface AppState {
   chatHistory: { role: 'user' | 'model'; text: string }[];
   alerts: Alert[];
   weatherCache: WeatherCache | null;
+  fieldIntelligenceById: Record<string, FieldIntelligenceSnapshot>;
+  fieldIntelligenceLoadingById: Record<string, boolean>;
+  fieldIntelligenceErrorById: Record<string, string | null>;
   activeFarmId: string | null;
   activeFieldId: string | null;
   activeFieldFocusToken: number;
@@ -149,6 +153,8 @@ interface AppState {
   setAlerts: (alerts: Alert[]) => void;
   dismissAlert: (id: string) => void;
   setWeatherCache: (cache: WeatherCache) => void;
+  fetchFieldIntelligence: (fieldId: string, forceRefresh?: boolean) => Promise<FieldIntelligenceSnapshot | null>;
+  refreshActiveFieldIntelligence: () => Promise<FieldIntelligenceSnapshot | null>;
   fetchEntitlements: () => Promise<void>;
   syncFromBackend: () => Promise<void>;
   resetStore: () => void;
@@ -164,6 +170,9 @@ export const useAppStore = create<AppState>()(
       chatHistory: [],
       alerts: [],
       weatherCache: null,
+      fieldIntelligenceById: {},
+      fieldIntelligenceLoadingById: {},
+      fieldIntelligenceErrorById: {},
       activeFarmId: null,
       activeFieldId: null,
       activeFieldFocusToken: 0,
@@ -333,6 +342,48 @@ export const useAppStore = create<AppState>()(
 
       setWeatherCache: (cache) => set({ weatherCache: cache }),
 
+      fetchFieldIntelligence: async (fieldId, forceRefresh = false) => {
+        if (!fieldId) return null;
+
+        const currentSnapshot = get().fieldIntelligenceById[fieldId];
+        const currentTime = Date.now();
+        const snapshotAgeMs = currentSnapshot
+          ? currentTime - new Date(currentSnapshot.updated_at).getTime()
+          : Number.POSITIVE_INFINITY;
+
+        if (!forceRefresh && currentSnapshot && snapshotAgeMs < 5 * 60 * 1000) {
+          return currentSnapshot;
+        }
+
+        set((state) => ({
+          fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: true },
+          fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: null },
+        }));
+
+        try {
+          const snapshot = await fetchFieldIntelligenceSnapshot(fieldId);
+          set((state) => ({
+            fieldIntelligenceById: { ...state.fieldIntelligenceById, [fieldId]: snapshot },
+            fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
+            fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: null },
+          }));
+          return snapshot;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Falha ao carregar snapshot do talhão.';
+          set((state) => ({
+            fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
+            fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: message },
+          }));
+          return currentSnapshot ?? null;
+        }
+      },
+
+      refreshActiveFieldIntelligence: async () => {
+        const fieldId = get().activeFieldId;
+        if (!fieldId) return null;
+        return get().fetchFieldIntelligence(fieldId, true);
+      },
+
       fetchEntitlements: async () => {
         try {
           const ent = await apiFetch<Entitlements>('/api/billing/entitlements');
@@ -380,6 +431,9 @@ export const useAppStore = create<AppState>()(
           chatHistory: [],
           alerts: [],
           weatherCache: null,
+          fieldIntelligenceById: {},
+          fieldIntelligenceLoadingById: {},
+          fieldIntelligenceErrorById: {},
           activeFarmId: null,
           activeFieldId: null,
           activeFieldFocusToken: 0,

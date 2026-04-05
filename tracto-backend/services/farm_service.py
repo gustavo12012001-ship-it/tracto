@@ -117,6 +117,26 @@ def get_fields(user_id: str, farm_id: str | None = None) -> List[Dict[str, Any]]
         raise
 
 
+def get_field_by_id(user_id: str, field_id: str) -> Dict[str, Any] | None:
+    try:
+        response = requests.get(
+            _supabase_url("fields"),
+            headers=_get_supabase_headers(),
+            params={
+                "id": f"eq.{field_id}",
+                "user_id": f"eq.{user_id}",
+                "limit": 1,
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+    except Exception as exc:
+        logging.error("Erro ao buscar talhao por id: %s", exc)
+        raise
+
+
 def save_field(user_id: str, field_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # field_data ALREADY comes correctly mapped from Pydantic models in main.py

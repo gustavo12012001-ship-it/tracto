@@ -160,6 +160,36 @@ export interface FieldAnalysisResult {
   source: string;
 }
 
+export interface SnapshotSourceStatus {
+  status: 'ok' | 'fallback' | 'unavailable';
+  message: string;
+  updated_at: string | null;
+}
+
+export interface FieldIntelligenceSnapshot {
+  field_id: string;
+  field_name: string;
+  farm_id: string | null;
+  farm_name: string | null;
+  lat: number;
+  lng: number;
+  boundaries: [number, number][] | null;
+  crop_type: string | null;
+  planting_date: string | null;
+  variety: string | null;
+  area_ha: number | null;
+  weather: Record<string, unknown>;
+  satellite: Record<string, unknown>;
+  analysis: Record<string, unknown>;
+  alerts: Array<Record<string, unknown>>;
+  report_summary: string;
+  weather_status: SnapshotSourceStatus;
+  satellite_status: SnapshotSourceStatus;
+  analysis_status: SnapshotSourceStatus;
+  ai_summary_status: SnapshotSourceStatus;
+  updated_at: string;
+}
+
 export async function analyzeField(
   lat: number,
   lng: number,
@@ -186,5 +216,11 @@ export async function analyzeField(
       variety,
       area_ha: areaHa
     }),
+  });
+}
+
+export async function fetchFieldIntelligenceSnapshot(fieldId: string) {
+  return apiFetch<FieldIntelligenceSnapshot>(`/api/fields/${fieldId}/intelligence`, {
+    method: 'GET',
   });
 }

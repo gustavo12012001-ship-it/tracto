@@ -74,14 +74,33 @@ async function fetchOpenMeteo(lat: number, lng: number): Promise<WeatherCache> {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Weather() {
   const navigate = useNavigate();
-  const { currentLocation, fields, weatherCache, setWeatherCache } = useAppStore();
+  const {
+    currentLocation,
+    fields,
+    activeFieldId,
+    weatherCache,
+    setWeatherCache,
+    fieldIntelligenceById,
+    fetchFieldIntelligence,
+  } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windyOverlay, setWindyOverlay] = useState<'temp' | 'rain' | 'humidity' | 'wind' | 'clouds'>('temp');
 
-  const loc = fields.length > 0
-    ? fields[fields.length - 1]
+  const activeField = activeFieldId
+    ? fields.find((field) => field.id === activeFieldId) ?? null
+    : null;
+
+  const loc = activeField
+    ? activeField
     : (currentLocation ?? { lat: -18.9188, lng: -48.2768, name: 'Uberlândia, MG' });
+
+  const snapshot = activeFieldId ? fieldIntelligenceById[activeFieldId] : null;
+
+  useEffect(() => {
+    if (!activeFieldId) return;
+    void fetchFieldIntelligence(activeFieldId, false);
+  }, [activeFieldId, fetchFieldIntelligence]);
 
   useEffect(() => {
     const isCacheValid =
@@ -113,10 +132,31 @@ export default function Weather() {
     return () => {
       mounted = false;
     };
-  }, [loc.lat, loc.lng]);
+  }, [loc.lat, loc.lng, weatherCache, setWeatherCache]);
 
   const w = weatherCache;
-  const { icon, label } = w ? wmo(w.weatherCode) : { icon: 'cloud', label: '' };
+  const snapshotWeather = snapshot?.weather as Record<string, unknown> | undefined;
+  const hasSnapshotWeather = Boolean(snapshot && snapshot.weather_status.status !== 'unavailable' && snapshotWeather);
+
+  const displayTemperature = hasSnapshotWeather
+    ? Number(snapshotWeather?.temperature ?? w?.temperature ?? 0)
+    : (w?.temperature ?? 0);
+  const displayHumidity = hasSnapshotWeather
+    ? Number(snapshotWeather?.humidity ?? w?.humidity ?? 0)
+    : (w?.humidity ?? 0);
+  const displayWindSpeed = hasSnapshotWeather
+    ? Number(snapshotWeather?.wind_speed ?? w?.windSpeed ?? 0)
+    : (w?.windSpeed ?? 0);
+  const displayCondition = hasSnapshotWeather
+    ? String(snapshotWeather?.condition ?? 'Snapshot do talhão')
+    : '';
+
+  const sourceLabel = hasSnapshotWeather ? 'Snapshot do talhão ativo' : 'Open-Meteo direto (fallback)';
+  const sourceTimestamp = hasSnapshotWeather
+    ? (snapshot?.weather_status.updated_at ?? snapshot?.updated_at ?? null)
+    : (w ? new Date(w.fetchedAt).toISOString() : null);
+
+  const { icon, label } = w ? wmo(w.weatherCode) : { icon: 'cloud', label: displayCondition };
 
   // Current hour index for highlighting
   const nowHour = new Date().getHours();
@@ -131,14 +171,21 @@ export default function Weather() {
             <h1 className="text-xl font-bold text-white">Meteorologia</h1>
             <p className="text-xs mt-0.5 flex items-center gap-1.5" style={{ color: '#64748b' }}>
               <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>location_on</span>
-              {loc.name ?? 'Localização atual'} · Open-Meteo
+              {loc.name ?? 'Localização atual'} · {activeField ? 'Talhão ativo' : 'Localização atual'} · {sourceLabel}
             </p>
+            {(snapshot || w) && (
+              <p className="text-[11px] mt-1" style={{ color: '#94a3b8' }}>
+                Fonte usada em: {sourceTimestamp ? new Date(sourceTimestamp).toLocaleString('pt-BR') : 'N/D'}{snapshot ? ` · Satélite atualizado em: ${snapshot.satellite_status.updated_at ? new Date(snapshot.satellite_status.updated_at).toLocaleString('pt-BR') : 'N/D'}` : ''}
+              </p>
+            )}
           </div>
           <button
             onClick={() => {
               setLoading(true);
-              fetchOpenMeteo(loc.lat, loc.lng)
-                .then(setWeatherCache)
+              Promise.all([
+                fetchOpenMeteo(loc.lat, loc.lng).then(setWeatherCache),
+                activeFieldId ? fetchFieldIntelligence(activeFieldId, true) : Promise.resolve(null),
+              ])
                 .catch((e) => setError(e.message))
                 .finally(() => setLoading(false));
             }}
@@ -146,7 +193,7 @@ export default function Weather() {
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: '#94a3b8' }}
           >
             <span className="material-symbols-outlined text-sm">refresh</span>
-            Atualizar
+            Atualizar talhão
           </button>
         </div>
 
@@ -236,10 +283,10 @@ export default function Weather() {
                 <span className="material-symbols-outlined text-5xl" style={{ color: '#ec5b13' }}>{icon}</span>
               </div>
               <div>
-                <p className="text-7xl font-black text-white leading-none">{Math.round(w.temperature)}°</p>
-                <p className="text-sm font-semibold capitalize mt-1" style={{ color: '#e2e8f0' }}>{label}</p>
+                <p className="text-7xl font-black text-white leading-none">{Math.round(displayTemperature)}°</p>
+                <p className="text-sm font-semibold capitalize mt-1" style={{ color: '#e2e8f0' }}>{displayCondition || label}</p>
                 <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
-                  Máx {Math.round(w.daily.tempMax[0] ?? w.temperature)}° · Mín {Math.round(w.daily.tempMin[0] ?? w.temperature)}°
+                  Máx {Math.round(w.daily.tempMax[0] ?? displayTemperature)}° · Mín {Math.round(w.daily.tempMin[0] ?? displayTemperature)}°
                 </p>
               </div>
             </div>
@@ -249,8 +296,8 @@ export default function Weather() {
             {/* Quick stats */}
             <div className="flex flex-wrap gap-x-8 gap-y-3 items-center">
               {[
-                { icon: 'air', label: 'Vento', val: `${Math.round(w.windSpeed)} km/h`, color: '#94a3b8' },
-                { icon: 'water_drop', label: 'Umidade', val: `${w.humidity}%`, color: '#60a5fa' },
+                { icon: 'air', label: 'Vento', val: `${Math.round(displayWindSpeed)} km/h`, color: '#94a3b8' },
+                { icon: 'water_drop', label: 'Umidade', val: `${Math.round(displayHumidity)}%`, color: '#60a5fa' },
                 { icon: 'umbrella', label: 'Precip. hoje', val: `${(w.daily.precipSum[0] ?? 0).toFixed(1)} mm`, color: '#818cf8' },
               ].map((s) => (
                 <div key={s.label}>

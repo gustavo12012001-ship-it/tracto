@@ -135,3 +135,33 @@ class WhatsAppWebhookPayload(BaseModel):
     From: str
     Body: str
     ProfileName: str | None = None
+
+
+class SnapshotSourceStatus(BaseModel):
+    status: Literal["ok", "fallback", "unavailable"]
+    message: str
+    updated_at: str | None = None
+
+
+class FieldIntelligenceSnapshot(BaseModel):
+    field_id: str
+    field_name: str
+    farm_id: str | None = None
+    farm_name: str | None = None
+    lat: float
+    lng: float
+    boundaries: list[list[float]] | None = None
+    crop_type: str | None = None
+    planting_date: str | None = None
+    variety: str | None = None
+    area_ha: float | None = None
+    weather: dict[str, Any]
+    satellite: dict[str, Any]
+    analysis: dict[str, Any]
+    alerts: list[dict[str, Any]]
+    report_summary: str
+    weather_status: SnapshotSourceStatus
+    satellite_status: SnapshotSourceStatus
+    analysis_status: SnapshotSourceStatus
+    ai_summary_status: SnapshotSourceStatus
+    updated_at: str

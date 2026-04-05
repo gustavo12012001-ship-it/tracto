@@ -34,6 +34,7 @@ from models import (
     WhatsAppWebhookPayload,
     LatestSceneRequest,
     GeoSearchRequest,
+    FieldIntelligenceSnapshot,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -44,6 +45,7 @@ from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
 from services.geo_service import GeoNotFoundError, GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
+from services.field_intelligence_service import build_field_intelligence_snapshot
 
 # --- Security & Rate Limiting ---
 
@@ -52,7 +54,9 @@ from services.agronomic_engine import AgronomicEngine
 # O limitador usa IP (get_remote_address) como chave primÃ¡ria para governanÃ§a econÃ´mica.
 # A identidade do usuÃ¡rio (context_user_id) Ã© usada apenas para contexto em logs.
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", version="2.2.1")
+APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
+
+app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", version=APP_VERSION)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -118,7 +122,12 @@ app.add_middleware(
 
 @app.get("/")
 def health_check():
-    return {"status": "Tracto backend online", "version": "2.1.0"}
+    return {
+        "status": "Tracto backend online",
+        "version": APP_VERSION,
+        "service": "tracto-backend",
+        "timestamp": datetime.now().isoformat(),
+    }
 
 # --- Stage 3: Commercial, Push & WhatsApp ---
 
@@ -650,6 +659,25 @@ async def get_fields_endpoint(farm_id: str | None = None, user: AuthenticatedUse
     except Exception as exc:
         logging.error("Erro ao buscar talhoes: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar talhoes.") from exc
+
+
+@app.get("/api/fields/{field_id}/intelligence", response_model=FieldIntelligenceSnapshot)
+@limiter.limit("20/minute")
+async def get_field_intelligence_endpoint(
+    request: Request,
+    field_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        snapshot = await build_field_intelligence_snapshot(user_id=user.id, field_id=field_id)
+        return snapshot
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("Erro ao montar snapshot de inteligencia do talhao %s: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao montar inteligencia do talhao.") from exc
 
 @app.post("/api/fields")
 async def save_field_endpoint(request: FieldCreate, user: AuthenticatedUser = Depends(get_current_user)):

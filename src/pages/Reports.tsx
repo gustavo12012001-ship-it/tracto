@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 import useAppStore from '../store/useAppStore';
 import type { Location } from '../store/useAppStore';
-import { analyzeField } from '../services/api';
-import type { FieldAnalysisResult } from '../services/api';
+import type { FieldAnalysisResult, FieldIntelligenceSnapshot } from '../services/api';
 import { polygonAreaHa } from '../utils/geo';
 
 // ── Sem dados históricos simulados na Etapa 2 ───────────────────────────────
@@ -56,9 +55,51 @@ function exportPDF(fields: ReturnType<typeof useAppStore.getState>['fields']) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Reports() {
-  const { fields, weatherCache } = useAppStore();
+  const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
+
+  const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
+    const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
+    const analysis = (snapshot.analysis ?? {}) as Record<string, unknown>;
+    const ndviStats = (satellite.ndvi_stats ?? {}) as Record<string, unknown>;
+
+    return {
+      field_name: snapshot.field_name,
+      ndvi_image_base64: (satellite.ndvi_image_base64 as string | null) ?? null,
+      date_acquired: (satellite.scene_date_br as string | null) ?? null,
+      cloud_coverage: (satellite.cloud_coverage as number | null) ?? null,
+      ndvi_analysis: {
+        ndvi_medio: Number(ndviStats.ndvi_avg ?? 0),
+        zona_critica_pct: 0,
+        zona_estresse_pct: 0,
+        zona_saudavel_pct: 0,
+        zona_excelente_pct: 0,
+        solo_exposto_pct: 0,
+        problemas_detectados: [],
+        areas_atencao: 'Consulte a cena satelital para inspeção visual detalhada.',
+        tendencia: 'estavel',
+        confianca: Number(analysis.confidence ?? 0),
+        janela_pulverizacao: ((analysis.spray_window as Record<string, unknown> | undefined)?.label as string | undefined) ?? 'N/D',
+        risco_geada: ((analysis.frost_risk as Record<string, unknown> | undefined)?.label as string | undefined) ?? 'N/D',
+        deficit_hidrico: ((analysis.water_stress as Record<string, unknown> | undefined)?.label as string | undefined) ?? 'N/D',
+        recomendacao_irrigacao: 'Use o diagnóstico consolidado e valide no campo.',
+      },
+      weather_summary: String((snapshot.weather as Record<string, unknown>)?.condition ?? 'N/D'),
+      ai_report: snapshot.report_summary,
+      alerts: snapshot.alerts,
+      cached: false,
+      is_mock: snapshot.weather_status.status !== 'ok',
+      analyzed_at: snapshot.updated_at,
+      confidence: Number(analysis.confidence ?? 0),
+      engine_results: {
+        spray_window: (analysis.spray_window as { color: string; label: string; level: number }) ?? { color: 'gray', label: 'N/D', level: 0 },
+        frost_risk: (analysis.frost_risk as { color: string; label: string; level: number }) ?? { color: 'gray', label: 'N/D', level: 0 },
+        water_stress: (analysis.water_stress as { color: string; label: string; level: number }) ?? { color: 'gray', label: 'N/D', level: 0 },
+      },
+      source: String(satellite.provider ?? 'Snapshot do talhão'),
+    };
+  };
 
   // Carregar do cache inicial se existir
   useEffect(() => {
@@ -80,23 +121,20 @@ export default function Reports() {
     setAnalysisResults(initial);
   }, [fields]);
 
-  const handleAnalyze = async (loc: Location) => {
-    const key = `${loc.lat}-${loc.lng}`;
+  const handleAnalyze = useCallback(async (loc: Location) => {
+    const key = loc.id ?? `${loc.lat}-${loc.lng}`;
     setLoadingAnalysis(prev => ({ ...prev, [key]: true }));
     try {
-      const fieldName = loc.name || 'Setor Base';
-      const cropType = loc.cultura;
-      const result = await analyzeField(
-        loc.lat, 
-        loc.lng, 
-        fieldName, 
-        cropType, 
-        weatherCache,
-        loc.boundaries || null,
-        loc.dataPlantio,
-        loc.variedade,
-        loc.areaHa
-      );
+      if (!loc.id) {
+        throw new Error('Talhão sem identificador válido para snapshot.');
+      }
+
+      const snapshot = await fetchFieldIntelligence(loc.id, true);
+      if (!snapshot) {
+        throw new Error('Snapshot indisponível para o talhão selecionado.');
+      }
+
+      const result = snapshotToFieldAnalysisResult(snapshot);
 
       setAnalysisResults(prev => ({ ...prev, [key]: result }));
       localStorage.setItem(`tracto-ndvi-${key}`, JSON.stringify({
@@ -108,7 +146,15 @@ export default function Reports() {
     } finally {
       setLoadingAnalysis(prev => ({ ...prev, [key]: false }));
     }
-  };
+  }, [fetchFieldIntelligence]);
+
+  useEffect(() => {
+    if (!activeFieldId) return;
+    const selected = fields.find((item) => item.id === activeFieldId);
+    if (selected) {
+      void handleAnalyze(selected);
+    }
+  }, [activeFieldId, fields, handleAnalyze]);
 
   const hasFields = fields.length > 0;
 
@@ -190,7 +236,7 @@ export default function Reports() {
             </h2>
             <div className="grid grid-cols-1 gap-4">
               {fields.map((loc, i) => {
-                const key = `${loc.lat}-${loc.lng}`;
+                const key = loc.id ?? `${loc.lat}-${loc.lng}`;
                 const result = analysisResults[key];
                 const isLoading = loadingAnalysis[key];
                 const name = loc.name ?? `Talhão ${i + 1}`;
@@ -398,13 +444,11 @@ export default function Reports() {
           )}
         </div>
 
-        {/* Precipitation info if available */}
-        {weatherCache && (
-          <div className="p-4 rounded-xl flex items-center gap-3 text-xs" style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.12)' }}>
-            <span className="material-symbols-outlined text-blue-400">water_drop</span>
-            <span style={{ color: '#94a3b8' }}>Precipitação acumulada (7d): <span className="text-white font-semibold">{weatherCache.daily.precipSum.reduce((a, b) => a + (b ?? 0), 0).toFixed(1)} mm</span></span>
-          </div>
-        )}
+        {/* Fonte canônica */}
+        <div className="p-4 rounded-xl flex items-center gap-3 text-xs" style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.12)' }}>
+          <span className="material-symbols-outlined text-blue-400">dataset</span>
+          <span style={{ color: '#94a3b8' }}>Fonte principal: snapshot canônico do talhão ativo ({activeFieldId ? 'ativo' : 'selecione um talhão no mapa'}).</span>
+        </div>
 
       </div>
     </div>
