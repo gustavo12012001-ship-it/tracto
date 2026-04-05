@@ -515,11 +515,10 @@ export default function FieldMap() {
             />
           </>
         ) : (
-          // Sentinel mode: Esri Satellite como base — WMS ou preview carrega por cima.
-          // Evita tela preta quando WMS não está configurado ou cena em fallback.
+          // Sentinel mode: base OSM estavel; WMS do Copernicus renderiza por cima.
           <TileLayer
-            attribution="&copy; Esri"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            attribution="&copy; OpenStreetMap contributors"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={20}
           />
         )}
