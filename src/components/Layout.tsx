@@ -184,11 +184,9 @@ export default function Layout() {
         
         syncFromBackend().finally(() => clearTimeout(timeout));
 
-        // Trigger geolocation on mount if not already precise/denied
+        // Sempre tenta geolocalizacao no mount; o util decide fallback em caso de erro/negacao.
         const state = useAppStore.getState();
-        if (!state.currentLocation || state.locationStatus !== 'precise') {
-          state.updateGeolocation();
-        }
+        void state.updateGeolocation();
       }
     });
 
@@ -196,9 +194,7 @@ export default function Layout() {
       if (session?.user) {
         syncFromBackend();
         const state = useAppStore.getState();
-        if (!state.currentLocation || state.locationStatus !== 'precise') {
-          state.updateGeolocation();
-        }
+        void state.updateGeolocation();
       }
     });
 

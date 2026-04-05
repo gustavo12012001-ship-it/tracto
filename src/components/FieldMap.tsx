@@ -45,13 +45,46 @@ type GeoSearchResult = {
   name: string;
   lat: number;
   lng: number;
-  bbox: {
+  bbox: [number, number, number, number] | {
     south: number;
     north: number;
     west: number;
     east: number;
   } | null;
 };
+
+function normalizeBBox(target: GeoSearchResult['bbox']): {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+} | null {
+  if (!target) return null;
+
+  if (Array.isArray(target) && target.length === 4) {
+    const [south, north, west, east] = target;
+    return { south, north, west, east };
+  }
+
+  if (
+    !Array.isArray(target)
+    &&
+    typeof target === 'object'
+    && typeof target.south === 'number'
+    && typeof target.north === 'number'
+    && typeof target.west === 'number'
+    && typeof target.east === 'number'
+  ) {
+    return {
+      south: target.south,
+      north: target.north,
+      west: target.west,
+      east: target.east,
+    };
+  }
+
+  return null;
+}
 
 function getPreviewBounds(field: Location | undefined, center: [number, number]): [[number, number], [number, number]] {
   if (field?.boundaries && field.boundaries.length >= 3) {
@@ -82,11 +115,13 @@ function GeoSearchNavigator({ target }: { target: GeoSearchResult | null }) {
   useEffect(() => {
     if (!target) return;
 
-    if (target.bbox) {
+    const bbox = normalizeBBox(target.bbox);
+
+    if (bbox) {
       map.flyToBounds(
         [
-          [target.bbox.south, target.bbox.west],
-          [target.bbox.north, target.bbox.east],
+          [bbox.south, bbox.west],
+          [bbox.north, bbox.east],
         ],
         {
           padding: [48, 48],
