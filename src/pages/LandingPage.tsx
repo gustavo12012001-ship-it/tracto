@@ -1,25 +1,38 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
 export default function LandingPage() {
     const navigate = useNavigate();
+    const [checking, setChecking] = useState(true);
+    const [hasSession, setHasSession] = useState(false);
 
     useEffect(() => {
         let mounted = true;
 
         const syncSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
-            if (mounted && session) {
+            if (!mounted) return;
+
+            if (session) {
+                setHasSession(true);
                 navigate('/app', { replace: true });
+                return;
             }
+
+            setHasSession(false);
+            setChecking(false);
         };
 
         void syncSession();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session) {
+                setHasSession(true);
                 navigate('/app', { replace: true });
+            } else if (mounted) {
+                setHasSession(false);
+                setChecking(false);
             }
         });
 
@@ -28,6 +41,10 @@ export default function LandingPage() {
             subscription.unsubscribe();
         };
     }, [navigate]);
+
+    if (checking || hasSession) {
+        return null;
+    }
 
     return (
         <>

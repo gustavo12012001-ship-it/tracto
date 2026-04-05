@@ -32,6 +32,10 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+html {
+  font-size: 14px;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 font-sans antialiased;
 }
