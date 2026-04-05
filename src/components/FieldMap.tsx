@@ -526,10 +526,12 @@ export default function FieldMap() {
 
         {activeMapLayer === 'sentinel' && sentinelScene?.display_mode === 'wms' && sentinelScene.wms_url && sentinelScene.wms_params && (
           <WMSTileLayer
-            url={`${sentinelScene.wms_url}?TIME=${encodeURIComponent(sentinelScene.wms_params.time)}`}
+            url={sentinelScene.wms_url}
             layers={sentinelScene.wms_params.layers}
             format={sentinelScene.wms_params.format}
             transparent={sentinelScene.wms_params.transparent}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            {...({ TIME: sentinelScene.wms_params.time } as any)}
             opacity={0.95}
             attribution="Copernicus Data Space (ESA)"
           />

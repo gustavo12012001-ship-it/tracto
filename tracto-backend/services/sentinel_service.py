@@ -341,7 +341,18 @@ def get_latest_scene_metadata(
             preview_url = candidate
             break
 
-    instance_id = os.getenv("VITE_SENTINEL_INSTANCE_ID") or os.getenv("SENTINEL_INSTANCE_ID")
+    instance_id = (
+        os.getenv("SENTINEL_INSTANCE_ID")
+        or os.getenv("SENTINEL_HUB_INSTANCE_ID")
+        or os.getenv("SH_INSTANCE_ID")
+        or os.getenv("VITE_SENTINEL_INSTANCE_ID")
+    )
+    logging.info(
+        "[Sentinel WMS] instance_id check — SENTINEL_INSTANCE_ID=%r, SENTINEL_HUB_INSTANCE_ID=%r, resolved=%s",
+        os.getenv("SENTINEL_INSTANCE_ID"),
+        os.getenv("SENTINEL_HUB_INSTANCE_ID"),
+        "<set>" if instance_id else "None → display_mode will be preview",
+    )
     if instance_id:
         time_param = scene_date_iso if scene_date_iso else now_utc.strftime("%Y-%m-%d")
         return {
