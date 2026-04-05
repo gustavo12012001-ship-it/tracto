@@ -224,6 +224,19 @@ function ZoomControls() {
   );
 }
 
+function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 'satellite' | 'sentinel' }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (activeMapLayer !== 'sentinel') return;
+    if (map.getZoom() < 14) {
+      map.setZoom(14);
+    }
+  }, [activeMapLayer, map]);
+
+  return null;
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function FieldMap() {
   const {
@@ -482,11 +495,12 @@ export default function FieldMap() {
       <MapContainer
         key={activeMapLayer}
         center={center}
-        zoom={13}
+        zoom={activeMapLayer === 'sentinel' ? 14 : 13}
         style={{ height: '100%', width: '100%', background: '#080809' }}
         zoomControl={false}
       >
         <MapController />
+        <SentinelZoomController activeMapLayer={activeMapLayer} />
         <GeoSearchNavigator target={geoResult} />
 
         {/* OSM */}
@@ -519,6 +533,7 @@ export default function FieldMap() {
               key="sentinel-proxy"
               url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
               attribution="&copy; Copernicus Data Space (ESA)"
+              minZoom={10}
               maxZoom={18}
               maxNativeZoom={14}
               opacity={1}
