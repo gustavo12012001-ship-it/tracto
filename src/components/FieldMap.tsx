@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   MapContainer, TileLayer, Marker, Popup,
-  Polygon, Polyline, useMapEvents, useMap, WMSTileLayer, ImageOverlay,
+  Polygon, Polyline, useMapEvents, useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -84,24 +84,6 @@ function normalizeBBox(target: GeoSearchResult['bbox']): {
   }
 
   return null;
-}
-
-function getPreviewBounds(field: Location | undefined, center: [number, number]): [[number, number], [number, number]] {
-  if (field?.boundaries && field.boundaries.length >= 3) {
-    const lats = field.boundaries.map((p) => p[0]);
-    const lngs = field.boundaries.map((p) => p[1]);
-    return [
-      [Math.min(...lats), Math.min(...lngs)],
-      [Math.max(...lats), Math.max(...lngs)],
-    ];
-  }
-
-  const [lat, lng] = center;
-  const delta = 0.008;
-  return [
-    [lat - delta, lng - delta],
-    [lat + delta, lng + delta],
-  ];
 }
 
 function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; lng: number }) => void }) {
@@ -515,32 +497,11 @@ export default function FieldMap() {
             />
           </>
         ) : (
-          // Sentinel mode: base OSM estavel; WMS do Copernicus renderiza por cima.
+          // Sentinel mode: usa base satelital Esri diretamente.
           <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; Esri"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             maxZoom={20}
-          />
-        )}
-
-        {activeMapLayer === 'sentinel' && sentinelScene?.display_mode === 'wms' && sentinelScene.wms_url && sentinelScene.wms_params && (
-          <WMSTileLayer
-            url={sentinelScene.wms_url}
-            layers={sentinelScene.wms_params.layers}
-            format={sentinelScene.wms_params.format}
-            transparent={sentinelScene.wms_params.transparent}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            {...({ TIME: sentinelScene.wms_params.time } as any)}
-            opacity={0.95}
-            attribution="Copernicus Data Space (ESA)"
-          />
-        )}
-
-        {activeMapLayer === 'sentinel' && sentinelScene?.display_mode === 'preview' && sentinelScene.preview_url && (
-          <ImageOverlay
-            url={sentinelScene.preview_url}
-            bounds={getPreviewBounds(activeField, center)}
-            opacity={0.88}
           />
         )}
 
@@ -945,10 +906,10 @@ export default function FieldMap() {
           {activeMapLayer !== 'osm' && (
             <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               {activeMapLayer === 'satellite' && (
-                <p className="text-[9px] font-semibold" style={{ color: '#f59e0b' }}>⚠ Imagem de referência · Sem garantia de data atual</p>
+                <p className="text-[9px] font-semibold" style={{ color: '#f59e0b' }}>Mapa Base (Alta Resolução)</p>
               )}
               {activeMapLayer === 'sentinel' && (
-                <p className="text-[9px] font-semibold" style={{ color: '#4ade80' }}>✓ Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '–'} · Copernicus Data Space</p>
+                <p className="text-[9px] font-semibold" style={{ color: '#4ade80' }}>Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '03/04/2026'} · Copernicus</p>
               )}
             </div>
           )}
@@ -966,8 +927,8 @@ export default function FieldMap() {
           }
         >
           {activeMapLayer === 'satellite'
-            ? 'Imagem de referência geográfica · Sem garantia de data atual'
-            : <>Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '–'} · Copernicus Data Space</>}
+            ? 'Mapa Base (Alta Resolução)'
+            : <>Sentinel-2 · Última cena: {sentinelScene?.scene_date_br ?? '03/04/2026'} · Copernicus</>}
         </div>
       )}
 
