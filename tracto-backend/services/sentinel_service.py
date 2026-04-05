@@ -99,34 +99,60 @@ def get_sentinel_tile_jpeg(z: int, x: int, y: int, scene_date: Optional[str] = N
 
         wms_url = f"{SENTINEL_WMS_BASE}/{instance_id}"
 
-        params = {
-            "SERVICE": "WMS",
-            "VERSION": "1.3.0",
-            "REQUEST": "GetMap",
-            "LAYERS": "TRUE-COLOR-S2L2A",
-            "FORMAT": "image/jpeg",
-            "TRANSPARENT": "false",
-            "WIDTH": "256",
-            "HEIGHT": "256",
-            "CRS": "EPSG:3857",
-            "BBOX": _tile_bbox_epsg_3857(z, x, y),
-        }
-        # NÃO incluir "TIME" — deixar Copernicus retornar a imagem mais recente por padrão
-        # Isso evita erro se a variável de data não estiver disponível ou inválida
-
         headers = {"Authorization": f"Bearer {token}"}
+        bbox = _tile_bbox_epsg_3857(z, x, y)
+        last_error: Optional[Exception] = None
 
         with httpx.Client() as client:
-            response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
-            if response.status_code == 401:
-                refreshed_token = get_oauth_token(force_refresh=True)
-                if not refreshed_token:
-                    raise ValueError("Token Sentinel expirado e falha ao renovar OAuth.")
-                headers = {"Authorization": f"Bearer {refreshed_token}"}
-                response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
+            for days_back in (10, 20):
+                today_utc = datetime.utcnow()
+                start_date = (today_utc - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                end_date = today_utc.strftime("%Y-%m-%d")
+                time_param = f"{start_date}/{end_date}"
 
-            response.raise_for_status()
-            return response.content
+                params = {
+                    "SERVICE": "WMS",
+                    "VERSION": "1.3.0",
+                    "REQUEST": "GetMap",
+                    "LAYERS": "TRUE-COLOR",
+                    "FORMAT": "image/jpeg",
+                    "TRANSPARENT": "false",
+                    "WIDTH": "256",
+                    "HEIGHT": "256",
+                    "CRS": "EPSG:3857",
+                    "BBOX": bbox,
+                    "TIME": time_param,
+                }
+
+                try:
+                    response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
+                    if response.status_code == 401:
+                        refreshed_token = get_oauth_token(force_refresh=True)
+                        if not refreshed_token:
+                            raise ValueError("Token Sentinel expirado e falha ao renovar OAuth.")
+                        headers = {"Authorization": f"Bearer {refreshed_token}"}
+                        response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
+
+                    response.raise_for_status()
+                    if response.content:
+                        logging.info(
+                            "[Sentinel Tile] Tile recente obtido com janela de %s dias (%s)",
+                            days_back,
+                            time_param,
+                        )
+                        return response.content
+                except Exception as exc:
+                    last_error = exc
+                    logging.warning(
+                        "[Sentinel Tile] Falha ao buscar tile com janela de %s dias (%s): %s",
+                        days_back,
+                        time_param,
+                        exc,
+                    )
+
+        if last_error:
+            raise last_error
+        raise ValueError("Nao foi possivel obter tile Sentinel recente.")
     except Exception as e:
         logging.error(f"[Sentinel Tile] Erro real: z={z} x={x} y={y} -> {str(e)}")
         raise
