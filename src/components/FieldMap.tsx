@@ -256,6 +256,7 @@ export default function FieldMap() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [geoResult, setGeoResult] = useState<GeoSearchResult | null>(null);
+  const lastSentinelSceneRequestKeyRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lat, currentLocation.lng]
@@ -267,9 +268,19 @@ export default function FieldMap() {
   const requestLat = activeField?.lat ?? center[0];
   const requestLng = activeField?.lng ?? center[1];
   const activeBoundaries = activeField?.boundaries ?? null;
+  const sentinelBoundaryKey = activeBoundaries ? JSON.stringify(activeBoundaries) : 'no-boundaries';
+  const sentinelSceneRequestKey = activeFieldId
+    ? `field:${activeFieldId}:${sentinelBoundaryKey}`
+    : `center:${requestLat.toFixed(5)}:${requestLng.toFixed(5)}`;
 
   useEffect(() => {
-    if (activeMapLayer !== 'sentinel') return;
+    if (activeMapLayer !== 'sentinel') {
+      lastSentinelSceneRequestKeyRef.current = null;
+      return;
+    }
+
+    if (lastSentinelSceneRequestKeyRef.current === sentinelSceneRequestKey) return;
+    lastSentinelSceneRequestKeyRef.current = sentinelSceneRequestKey;
 
     let isMounted = true;
     const controller = new AbortController();
@@ -336,7 +347,7 @@ export default function FieldMap() {
       isMounted = false;
       controller.abort();
     };
-  }, [activeMapLayer, requestLat, requestLng, activeBoundaries]);
+  }, [activeMapLayer, activeFieldId, requestLat, requestLng, sentinelBoundaryKey, sentinelSceneRequestKey]);
 
   const handleMapClick = useCallback((latlng: { lat: number; lng: number }) => {
     if (drawMode !== 'drawing') return;
@@ -506,15 +517,22 @@ export default function FieldMap() {
         )}
 
         {activeMapLayer === 'sentinel' && (
-          <TileLayer
-            url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
-            attribution="&copy; Copernicus Data Space (ESA)"
-            maxZoom={18}
-            maxNativeZoom={14}
-            opacity={1}
-            tms={false}
-            crossOrigin="anonymous"
-          />
+          <>
+            {(() => {
+              console.log('[Sentinel TileLayer] renderizando proxy');
+              return null;
+            })()}
+            <TileLayer
+              key="sentinel-proxy-layer"
+              url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
+              attribution="&copy; Copernicus Data Space (ESA)"
+              maxZoom={18}
+              maxNativeZoom={14}
+              opacity={1}
+              tms={false}
+              crossOrigin="anonymous"
+            />
+          </>
         )}
 
         <MapClickHandler onMapClick={handleMapClick} />
