@@ -8,6 +8,28 @@ Documentação técnica completa contendo toda a estrutura, configurações, có
 
 ## ✅ Últimas Atualizações Aplicadas (April 5, 2026)
 
+### Proxy Sentinel-2 (OAuth + Tiles XYZ)
+- Backend passou a expor `GET /api/sentinel/tile/{z}/{x}/{y}` com limite de `100/minute` e retorno `image/jpeg`.
+- Implementado cache de token OAuth do Copernicus em memória com TTL de 55 minutos e renovação automática em caso de `401`.
+- Conversão de tile `z/x/y` para `BBOX` em `EPSG:3857` no backend para requisição `GetMap` do WMS.
+
+### Mapa Sentinel no Frontend
+- `FieldMap` passou a consumir o proxy de tiles Sentinel via `TileLayer` em `API_URL/api/sentinel/tile/{z}/{x}/{y}`.
+- `MapContainer` passou a usar `key={activeMapLayer}` para forçar remount completo do Leaflet ao trocar de camada.
+- No modo `sentinel`, o mapa usa pilha explícita: base Esri + overlay do proxy Sentinel por cima.
+- Zoom inicial do modo `sentinel` foi ajustado para `14`, com controlador adicional (`SentinelZoomController`) para garantir visibilidade imediata dos tiles.
+- `TileLayer` do proxy Sentinel opera com `minZoom=10`, `maxZoom=18` e `maxNativeZoom=14`.
+- Badge de Sentinel exibe data da última cena quando disponível (`scene_date_br`) e status de fonte.
+
+### Diagnóstico Operacional do Sentinel
+- Logging de diagnóstico do `instance_id` foi reforçado no backend (incluindo tipo resolvido e `display_mode`).
+- Adicionado `print(..., flush=True, file=sys.stdout)` para garantir visibilidade em provedores que priorizam stdout.
+- Requisições repetidas de `latest-scene` foram deduplicadas no `FieldMap` por chave de alvo Sentinel.
+
+### Estabilidade de Startup Backend
+- Type hints críticos de `sentinel_service.py` foram ajustados para compatibilidade de runtime no deploy.
+- Validação local executada com `compileall` e import direto do módulo após ajustes.
+
 ### Snapshot de Inteligência do Talhão (Arquitetura Canônica)
 - Novo contrato canônico no backend para consolidar clima, satélite, análise, alertas e resumo textual por talhão.
 - Novo endpoint autenticado `GET /api/fields/{field_id}/intelligence` com resposta tipada (`FieldIntelligenceSnapshot`).
@@ -35,6 +57,16 @@ Documentação técnica completa contendo toda a estrutura, configurações, có
 
 ### Commits de Referência (main)
 - `728c9c2` — unificação do fluxo de inteligência de talhão (snapshot backend + consumo frontend)
+- `e2d0133` — proxy OAuth de tiles Sentinel no backend + integração no mapa
+- `a8f39f0` — remount do `MapContainer` por camada + stack explícita Esri/Sentinel proxy
+- `9fa629e` — zoom forçado do modo Sentinel para visibilidade imediata dos tiles
+- `e544652` — deduplicação de `latest-scene` e diagnóstico de render do proxy
+- `6fa3750` — bases condicionais do mapa e ligação explícita do proxy Sentinel no frontend
+- `6df1b02` — diagnóstico Sentinel em stdout para observabilidade no Railway
+- `6325c9b` — elevação do diagnóstico Sentinel para nível warning
+- `fc63252` — compatibilidade de startup do backend em `sentinel_service.py`
+- `0e845d8` — normalização ASCII do log de diagnóstico Sentinel
+- `1a968ef` — ajuste final de build no `FieldMap` (import não utilizado)
 
 ---
 
