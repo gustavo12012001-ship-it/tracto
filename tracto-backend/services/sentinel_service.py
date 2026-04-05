@@ -348,7 +348,7 @@ def get_latest_scene_metadata(
         or (os.getenv("VITE_SENTINEL_INSTANCE_ID") or "").strip()
     )
     logging.info(
-        "[Sentinel WMS] instance_id check — SENTINEL_INSTANCE_ID=%r, resolved=%r (type: %s), display_mode will be %s",
+        "[Sentinel WMS] SENTINEL_INSTANCE_ID=%r, resolved=%r (type: %s), display_mode=%s",
         os.getenv("SENTINEL_INSTANCE_ID"),
         instance_id if instance_id else None,
         type(instance_id).__name__,
