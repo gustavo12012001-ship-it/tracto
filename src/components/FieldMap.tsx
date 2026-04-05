@@ -240,8 +240,8 @@ function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 's
 
   useEffect(() => {
     if (activeMapLayer !== 'sentinel') return;
-    if (map.getZoom() < 14) {
-      map.setZoom(14);
+    if (map.getZoom() < 13) {
+      map.setZoom(13);
     }
   }, [activeMapLayer, map]);
 
@@ -500,7 +500,7 @@ export default function FieldMap() {
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
   const API_URL = import.meta.env.VITE_API_URL
     || 'https://tracto-production.up.railway.app';
-  const sentinelNeedsZoomHint = activeMapLayer === 'sentinel' && currentZoom < 13;
+  const sentinelNeedsZoomHint = activeMapLayer === 'sentinel' && currentZoom < 12;
 
   return (
     <div
@@ -511,6 +511,7 @@ export default function FieldMap() {
         key={activeMapLayer}
         center={center}
         zoom={activeMapLayer === 'sentinel' ? 14 : 13}
+        minZoom={activeMapLayer === 'sentinel' ? 12 : undefined}
         style={{ height: '100%', width: '100%', background: '#080809' }}
         zoomControl={false}
       >
@@ -556,7 +557,7 @@ export default function FieldMap() {
               key="sentinel-proxy-layer"
               url={`${API_URL}/api/sentinel/tile/{z}/{x}/{y}`}
               attribution="© Copernicus Data Space (ESA)"
-              minZoom={10}
+              minZoom={12}
               maxZoom={18}
               maxNativeZoom={14}
               opacity={1}
@@ -736,7 +737,10 @@ export default function FieldMap() {
                 ].map(({ id, label, icon, subtitle }) => (
                   <button
                     key={id}
-                    onClick={() => setMapLayer(id)}
+                    onClick={() => {
+                      setMapLayer(id);
+                      setLayerControlOpen(false);
+                    }}
                     className="px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left flex items-center gap-2"
                     style={{
                       background: activeMapLayer === id ? 'rgba(236,91,19,0.2)' : 'rgba(255,255,255,0.04)',
@@ -796,34 +800,6 @@ export default function FieldMap() {
             )}
           </div>
         </form>
-      )}
-
-      {/* Layer selector pills */}
-      {drawMode === 'none' && (
-        <div className="absolute top-4 left-4 z-[499] flex flex-col gap-2 pointer-events-auto">
-          <div className="flex items-center gap-1.5 p-1.5 rounded-xl" style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            {[
-              { id: 'osm', label: 'OpenStreetMap', icon: 'map' },
-              { id: 'satellite', label: 'Mapa Base (Alta Resolução)', icon: 'satellite_alt' },
-              { id: 'sentinel', label: 'Sentinel-2 Atualizado', icon: 'location_searching' },
-            ].map(({ id, label, icon }) => (
-              <button
-                key={id}
-                onClick={() => setMapLayer(id as 'osm' | 'satellite' | 'sentinel')}
-                title={label}
-                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150"
-                style={{
-                  background: activeMapLayer === id ? 'rgba(236,91,19,0.25)' : 'rgba(255,255,255,0.05)',
-                  border: activeMapLayer === id ? '1px solid rgba(236,91,19,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                  color: activeMapLayer === id ? '#f97316' : '#94a3b8',
-                }}
-              >
-                <span className="material-symbols-outlined text-sm">{icon}</span>
-                <span className="hidden md:inline text-xs">{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* Draw new field button */}
