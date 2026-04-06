@@ -8,8 +8,11 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1/search"
+CDSE_PROCESS_URL = "https://sh.dataspace.copernicus.eu/api/v1/process"
+CDSE_OAUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 # ── Token cache em memória (55 min TTL) ──────────────────────────────────────
 _token_cache: Dict[str, Any] = {"token": None, "expires_at": 0.0}
+_cdse_token_cache: Dict[str, Any] = {"token": None, "expires_at": 0.0}
 
 
 def _resolve_instance_id() -> Optional[str]:
@@ -57,6 +60,119 @@ def get_oauth_token() -> Optional[str]:
             return token
     except Exception as e:
         logging.error(f"Error getting Sentinel OAuth token: {str(e)}")
+        return None
+
+
+def get_cdse_oauth_token() -> Optional[str]:
+    import time
+
+    now = time.time()
+    if _cdse_token_cache["token"] and now < _cdse_token_cache["expires_at"]:
+        return _cdse_token_cache["token"]
+
+    client_id = os.getenv("SENTINEL_CLIENT_ID")
+    client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
+
+    if not client_id or not client_secret:
+        logging.error("SENTINEL credentials not configured.")
+        return None
+
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                CDSE_OAUTH_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+                timeout=15.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            token = data.get("access_token")
+            expires_in = data.get("expires_in", 3600)
+            _cdse_token_cache["token"] = token
+            _cdse_token_cache["expires_at"] = now + min(expires_in - 60, 3300)
+            return token
+    except Exception as e:
+        logging.error(f"Error getting CDSE OAuth token: {str(e)}")
+        return None
+
+
+def get_overlay_image(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Optional[bytes]:
+    token = get_cdse_oauth_token()
+    if not token:
+        return None
+
+    to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+    from_date = (datetime.utcnow() - timedelta(days=60)).strftime("%Y-%m-%dT00:00:00Z")
+
+    payload = {
+        "input": {
+            "bounds": {
+                "bbox": [min_lon, min_lat, max_lon, max_lat],
+                "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+            },
+            "data": [
+                {
+                    "type": "sentinel-2-l2a",
+                    "dataFilter": {
+                        "timeRange": {"from": from_date, "to": to_date},
+                        "maxCloudCoverage": 100,
+                        "mosaickingOrder": "mostRecent",
+                    },
+                }
+            ],
+        },
+        "output": {
+            "width": 1024,
+            "height": 1024,
+            "responses": [
+                {"identifier": "default", "format": {"type": "image/jpeg"}}
+            ],
+        },
+        "evalscript": """
+        //VERSION=3
+        function setup() {
+          return {
+            input: [{ bands: ["B04", "B03", "B02"] }],
+            output: { bands: 3 }
+          };
+        }
+        function evaluatePixel(sample) {
+          return [3.5 * sample.B04, 3.5 * sample.B03, 3.5 * sample.B02];
+        }
+        """,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        with httpx.Client(timeout=40.0) as client:
+            response = client.post(CDSE_PROCESS_URL, headers=headers, json=payload)
+            if response.status_code == 401:
+                _cdse_token_cache["token"] = None
+                token = get_cdse_oauth_token()
+                if not token:
+                    return None
+                headers["Authorization"] = f"Bearer {token}"
+                response = client.post(CDSE_PROCESS_URL, headers=headers, json=payload)
+
+            if response.status_code == 200 and response.content:
+                return response.content
+
+            logging.warning(
+                "Sentinel overlay failed: status=%s body=%s",
+                response.status_code,
+                response.text[:300],
+            )
+            return None
+    except Exception as e:
+        logging.warning("Sentinel overlay request error: %s", e)
         return None
 
 

@@ -42,7 +42,7 @@ from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata, get_tile_image
+from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata, get_tile_image, get_overlay_image
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -362,6 +362,25 @@ async def sentinel_tile_proxy(z: int, x: int, y: int, request: Request):
             "X-Sentinel-Source": "process-api",
         },
     )
+
+
+@app.get("/api/sentinel/overlay")
+@limiter.limit("300/minute")
+async def sentinel_overlay(
+    request: Request,
+    min_lon: float = Query(...),
+    min_lat: float = Query(...),
+    max_lon: float = Query(...),
+    max_lat: float = Query(...),
+):
+    if min_lon >= max_lon or min_lat >= max_lat:
+        raise HTTPException(status_code=400, detail="Bounding box invalido.")
+
+    img_bytes = get_overlay_image(min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat)
+    if not img_bytes:
+        raise HTTPException(status_code=502, detail="Falha ao gerar overlay Sentinel.")
+
+    return Response(content=img_bytes, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/geo/search")

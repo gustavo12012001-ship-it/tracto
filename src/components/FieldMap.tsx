@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  MapContainer, TileLayer, Marker, Popup,
+  MapContainer, TileLayer, Marker, Popup, ImageOverlay,
   Polygon, Polyline, useMapEvents, useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
@@ -241,7 +241,7 @@ function MapController() {
 const QUICK_CROPS = ['Soja', 'Milho', 'Sorgo', 'Algodão', 'Trigo', 'Cana-de-açúcar', 'Café'] as const;
 const OTHER_CROP_VALUE = '__other__';
 
-function ZoomControls({ zoomLocked }: { zoomLocked: boolean }) {
+function ZoomControls() {
   const map = useMap();
   return (
     <div className="absolute bottom-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
@@ -252,7 +252,6 @@ function ZoomControls({ zoomLocked }: { zoomLocked: boolean }) {
         <button
           key={s}
           onClick={() => {
-            if (zoomLocked) return;
             action();
           }}
           className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
@@ -260,8 +259,8 @@ function ZoomControls({ zoomLocked }: { zoomLocked: boolean }) {
             background: 'rgba(8,8,9,0.85)',
             backdropFilter: 'blur(12px)',
             border: '1px solid rgba(255,255,255,0.08)',
-            color: zoomLocked ? '#64748b' : '#94a3b8',
-            opacity: zoomLocked ? 0.55 : 1,
+            color: '#94a3b8',
+            opacity: 1,
           }}
         >
           {s}
@@ -269,65 +268,6 @@ function ZoomControls({ zoomLocked }: { zoomLocked: boolean }) {
       ))}
     </div>
   );
-}
-
-function ZoomWatcher({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
-  const map = useMap();
-  useMapEvents({
-    zoomend: () => onZoomChange(map.getZoom()),
-  });
-
-  useEffect(() => {
-    onZoomChange(map.getZoom());
-  }, [map, onZoomChange]);
-
-  return null;
-}
-
-function ZoomLocker({ active }: { active: boolean }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (active) {
-      map.setZoom(18, { animate: true });
-      map.setMinZoom(18);
-      map.setMaxZoom(18);
-    } else {
-      map.setMinZoom(1);
-      map.setMaxZoom(20);
-      map.invalidateSize();
-    }
-  }, [active, map]);
-
-  useEffect(() => {
-    if (!active) return;
-
-    const lock = () => {
-      if (map.getZoom() !== 18) {
-        map.setZoom(18, { animate: false });
-      }
-    };
-
-    map.on('zoomend', lock);
-    return () => {
-      map.off('zoomend', lock);
-    };
-  }, [active, map]);
-
-  return null;
-}
-
-function SentinelZoomController({ activeMapLayer }: { activeMapLayer: 'osm' | 'satellite' | 'sentinel' }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (activeMapLayer !== 'sentinel') return;
-    // Ao entrar em Sentinel, sempre força zoom 18
-    // e gera remontagem via key={activeMapLayer} no MapContainer
-    map.setZoom(18);
-  }, [activeMapLayer, map]);
-
-  return null;
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -362,7 +302,6 @@ export default function FieldMap() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [geoResult, setGeoResult] = useState<GeoSearchResult | null>(null);
-  const [currentZoom, setCurrentZoom] = useState(13);
   const lastSentinelSceneRequestKeyRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation
@@ -379,6 +318,32 @@ export default function FieldMap() {
   const sentinelSceneRequestKey = activeFieldId
     ? `field:${activeFieldId}:${sentinelBoundaryKey}`
     : `center:${requestLat.toFixed(5)}:${requestLng.toFixed(5)}`;
+
+  const API_URL = import.meta.env.VITE_API_URL
+    || 'https://tracto-production.up.railway.app';
+
+  const sentinelOverlayData = (() => {
+    if (!activeField?.boundaries || activeField.boundaries.length < 3) return null;
+
+    const lats = activeField.boundaries.map((point) => point[0]);
+    const lngs = activeField.boundaries.map((point) => point[1]);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lngs);
+    const maxLon = Math.max(...lngs);
+
+    const overlayUrl = `${API_URL}/api/sentinel/overlay?${new URLSearchParams({
+      min_lon: String(minLon),
+      min_lat: String(minLat),
+      max_lon: String(maxLon),
+      max_lat: String(maxLat),
+    }).toString()}`;
+
+    return {
+      overlayUrl,
+      overlayBounds: [[minLat, minLon], [maxLat, maxLon]] as [[number, number], [number, number]],
+    };
+  })();
 
   useEffect(() => {
     if (activeMapLayer !== 'sentinel') {
@@ -606,9 +571,6 @@ export default function FieldMap() {
   };
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
-  const API_URL = import.meta.env.VITE_API_URL
-    || 'https://tracto-production.up.railway.app';
-  const sentinelNeedsZoomHint = activeMapLayer === 'sentinel' && currentZoom < 12;
 
   return (
     <div
@@ -617,24 +579,21 @@ export default function FieldMap() {
     >
       <MapContainer
         center={center}
-        zoom={activeMapLayer === 'sentinel' ? 18 : 13}
+        zoom={13}
         minZoom={3}
         maxZoom={20}
-        scrollWheelZoom={activeMapLayer !== 'sentinel'}
-        doubleClickZoom={activeMapLayer !== 'sentinel'}
-        touchZoom={activeMapLayer !== 'sentinel'}
-        keyboard={activeMapLayer !== 'sentinel'}
+        scrollWheelZoom
+        doubleClickZoom
+        touchZoom
+        keyboard
         style={{ height: '100%', width: '100%', background: '#080809' }}
         zoomControl={false}
       >
         <MapController />
-        <SentinelZoomController activeMapLayer={activeMapLayer} />
-        <ZoomLocker active={activeMapLayer === 'sentinel'} />
-        <ZoomWatcher onZoomChange={setCurrentZoom} />
         <GeoSearchNavigator target={geoResult} />
 
-        {/* Esri base - sempre visivel no satellite e sentinel */}
-        {(activeMapLayer === 'satellite' || activeMapLayer === 'sentinel') && (
+        {/* Esri base - apenas no modo satellite */}
+        {activeMapLayer === 'satellite' && (
           <TileLayer
             attribution="© Esri"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -642,8 +601,8 @@ export default function FieldMap() {
           />
         )}
 
-        {/* OSM */}
-        {activeMapLayer === 'osm' && (
+        {/* OSM base para modo normal e Sentinel overlay */}
+        {(activeMapLayer === 'osm' || activeMapLayer === 'sentinel') && (
           <TileLayer
             attribution="© OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -660,18 +619,12 @@ export default function FieldMap() {
           />
         )}
 
-        {/* Sentinel proxy por cima do Esri */}
-        {activeMapLayer === 'sentinel' && (
-          <TileLayer
-            key="sentinel-proxy"
-            url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}?v=2`}
-            attribution="© Copernicus Data Space (ESA)"
-            minZoom={18}
-            maxZoom={18}
-            maxNativeZoom={18}
-            opacity={1}
-            tms={false}
-            crossOrigin="anonymous"
+        {activeMapLayer === 'sentinel' && sentinelOverlayData && (
+          <ImageOverlay
+            key={sentinelOverlayData.overlayUrl}
+            url={sentinelOverlayData.overlayUrl}
+            bounds={sentinelOverlayData.overlayBounds}
+            opacity={1.0}
           />
         )}
 
@@ -766,7 +719,7 @@ export default function FieldMap() {
         )}
 
         {/* Functional zoom controls inside map */}
-        <ZoomControls zoomLocked={activeMapLayer === 'sentinel'} />
+        <ZoomControls />
       </MapContainer>
 
       {/* ── Overlays (outside MapContainer) ── */}
@@ -1099,15 +1052,11 @@ export default function FieldMap() {
       {drawMode === 'none' && activeMapLayer === 'sentinel' && (
         <div
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[505] pointer-events-none px-3.5 py-2 rounded-xl text-[10px] font-semibold"
-          style={
-            sentinelNeedsZoomHint
-              ? { background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b', backdropFilter: 'blur(10px)' }
-              : { background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#4ade80', backdropFilter: 'blur(10px)' }
-          }
+          style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#4ade80', backdropFilter: 'blur(10px)' }}
         >
-          {sentinelNeedsZoomHint
-            ? '🔍 Aproxime o mapa para ver as imagens do Sentinel-2'
-            : `Sentinel-2 · Última cena: ${sentinelScene?.scene_date_br ?? 'Sem cena recente'}`}
+          {sentinelOverlayData
+            ? `Sentinel-2 · Última cena: ${sentinelScene?.scene_date_br ?? 'Sem cena recente'}`
+            : 'Selecione um talhão para carregar o overlay Sentinel-2'}
         </div>
       )}
 
