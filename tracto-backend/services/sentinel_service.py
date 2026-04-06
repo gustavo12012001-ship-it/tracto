@@ -116,7 +116,7 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
                         "type": "sentinel-2-l2a",
                         "dataFilter": {
                             "timeRange": {"from": from_date, "to": to_date},
-                            "maxCloudCoverage": 20,
+                            "maxCloudCoverage": 40,
                             "mosaickingOrder": "mostRecent",
                         },
                     }
@@ -152,7 +152,7 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
                         json=payload,
                     )
 
-                if resp.status_code == 200 and len(resp.content) > 1000:
+                if resp.status_code == 200 and len(resp.content) > 200:
                     print(
                         f"[Sentinel] tile z={z} x={x} y={y} ok — janela {days}d "
                         f"({len(resp.content)//1024}KB)",
@@ -162,7 +162,7 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
 
                 print(
                     f"[Sentinel] tile z={z} x={x} y={y} falhou (status={resp.status_code}, "
-                    f"bytes={len(resp.content)}) — tentando janela maior",
+                    f"bytes={len(resp.content)}, body={resp.text[:300]}) — tentando janela maior",
                     flush=True, file=sys.stdout,
                 )
 
@@ -496,31 +496,11 @@ def get_latest_scene_metadata(
         flush=True,
         file=sys.stdout,
     )
-    if instance_id and isinstance(instance_id, str) and len(instance_id) > 0:
-        time_param = scene_date_iso if scene_date_iso else now_utc.strftime("%Y-%m-%d")
-        return {
-            "status": "ok",
-            "provider": "Copernicus Data Space (ESA)",
-            "display_mode": "wms",
-            "scene_date": scene_date_iso,
-            "scene_date_br": scene_date_br,
-            "scene_id": scene_id,
-            "cloud_coverage": cloud_coverage,
-            "wms_url": f"https://sh.dataspace.copernicus.eu/ogc/wms/{instance_id}",
-            "wms_params": {
-                "layers": "TRUE_COLOR",
-                "format": "image/png",
-                "transparent": False,
-                "time": f"{time_param}/{time_param}",
-            },
-            "preview_url": preview_url,
-            "message": None,
-        }
-
+    # Sempre usa o proxy autenticado — ignora Instance ID legado
     return {
         "status": "ok",
-        "provider": "Earth Search STAC (preview)",
-        "display_mode": "preview",
+        "provider": "Copernicus Sentinel-2 L2A (Process API)",
+        "display_mode": "proxy",
         "scene_date": scene_date_iso,
         "scene_date_br": scene_date_br,
         "scene_id": scene_id,
@@ -528,5 +508,5 @@ def get_latest_scene_metadata(
         "preview_url": preview_url,
         "wms_url": None,
         "wms_params": None,
-        "message": "Preview estatico da ultima cena (fallback ilustrativo). Nao georreferenciado com precisao.",
+        "message": None,
     }
