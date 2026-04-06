@@ -1,4 +1,5 @@
 import os
+import math
 import sys
 import httpx
 import logging
@@ -7,12 +8,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1/search"
-SENTINEL_OAUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
-SENTINEL_WMS_BASE = "https://sh.dataspace.copernicus.eu/ogc/wms"
-TOKEN_TTL_MINUTES = 55
-
-_TOKEN_CACHE: Optional[str] = None
-_TOKEN_CACHE_EXPIRES_AT: Optional[datetime] = None
+# ── Token cache em memória (55 min TTL) ──────────────────────────────────────
+_token_cache: Dict[str, Any] = {"token": None, "expires_at": 0.0}
 
 
 def _resolve_instance_id() -> Optional[str]:
@@ -25,27 +22,12 @@ def _resolve_instance_id() -> Optional[str]:
     return instance_id or None
 
 
-def _tile_bbox_epsg_3857(z: int, x: int, y: int) -> str:
-    if z < 0:
-        raise ValueError("Zoom invalido para tile Sentinel.")
+def get_oauth_token() -> Optional[str]:
+    import time
 
-    tiles_per_axis = 2 ** z
-    if x < 0 or y < 0 or x >= tiles_per_axis or y >= tiles_per_axis:
-        raise ValueError("Coordenadas x/y invalidas para o zoom informado.")
-
-    origin_shift = 20037508.342789244
-    tile_size = (2 * origin_shift) / tiles_per_axis
-
-    min_x = -origin_shift + (x * tile_size)
-    max_x = -origin_shift + ((x + 1) * tile_size)
-    max_y = origin_shift - (y * tile_size)
-    min_y = origin_shift - ((y + 1) * tile_size)
-
-    return f"{min_x},{min_y},{max_x},{max_y}"
-
-
-def get_oauth_token(force_refresh: bool = False):
-    global _TOKEN_CACHE, _TOKEN_CACHE_EXPIRES_AT
+    now = time.time()
+    if _token_cache["token"] and now < _token_cache["expires_at"]:
+        return _token_cache["token"]
 
     client_id = os.getenv("SENTINEL_CLIENT_ID")
     client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
@@ -54,108 +36,140 @@ def get_oauth_token(force_refresh: bool = False):
         logging.error("SENTINEL credentials not configured.")
         return None
 
-    now_utc = datetime.utcnow()
-    if (
-        not force_refresh
-        and _TOKEN_CACHE
-        and _TOKEN_CACHE_EXPIRES_AT
-        and now_utc < _TOKEN_CACHE_EXPIRES_AT
-    ):
-        return _TOKEN_CACHE
-        
     try:
         with httpx.Client() as client:
             response = client.post(
-                SENTINEL_OAUTH_URL,
+                "https://services.sentinel-hub.com/oauth/token",
                 data={
                     "grant_type": "client_credentials",
                     "client_id": client_id,
-                    "client_secret": client_secret
-                }
+                    "client_secret": client_secret,
+                },
+                timeout=15.0,
             )
             response.raise_for_status()
-            token = response.json().get("access_token")
-            if not token:
-                logging.error("Sentinel OAuth respondeu sem access_token.")
-                return None
-
-            _TOKEN_CACHE = token
-            _TOKEN_CACHE_EXPIRES_AT = now_utc + timedelta(minutes=TOKEN_TTL_MINUTES)
+            data = response.json()
+            token = data.get("access_token")
+            expires_in = data.get("expires_in", 3600)
+            _token_cache["token"] = token
+            _token_cache["expires_at"] = now + min(expires_in - 60, 3300)
+            print(f"[Sentinel] Token renovado, expira em {expires_in}s", flush=True, file=sys.stdout)
             return token
     except Exception as e:
         logging.error(f"Error getting Sentinel OAuth token: {str(e)}")
         return None
 
 
-def get_sentinel_tile_jpeg(z: int, x: int, y: int, scene_date: Optional[str] = None) -> bytes:
-    try:
-        instance_id = _resolve_instance_id()
-        if not instance_id:
-            raise ValueError("Sentinel nao configurado: SENTINEL_INSTANCE_ID ausente no backend.")
+# ── Tile XYZ → BBOX EPSG:4326 ─────────────────────────────────────────────────
+def tile_to_bbox_4326(z: int, x: int, y: int) -> List[float]:
+    """Converte tile XYZ para [west, south, east, north] em EPSG:4326."""
+    n = 2 ** z
+    west = x / n * 360.0 - 180.0
+    east = (x + 1) / n * 360.0 - 180.0
+    north = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
+    south = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n))))
+    return [west, south, east, north]
 
-        token = get_oauth_token()
-        if not token:
-            raise ValueError("Nao foi possivel obter token OAuth do Sentinel.")
 
-        wms_url = f"{SENTINEL_WMS_BASE}/{instance_id}"
+# ── Tile proxy via Process API (TRUE-COLOR, janela dinâmica) ──────────────────
+def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
+    """
+    Retorna bytes JPEG de uma tile Sentinel-2 TRUE-COLOR.
+    Usa Process API (OAuth) — sem dependência de SENTINEL_INSTANCE_ID.
+    Janela: últimos 30 dias, fallback 60 dias. MaxCloud: 20%.
+    """
+    token = get_oauth_token()
+    if not token:
+        return None
 
-        headers = {"Authorization": f"Bearer {token}"}
-        bbox = _tile_bbox_epsg_3857(z, x, y)
-        last_error: Optional[Exception] = None
+    bbox = tile_to_bbox_4326(z, x, y)
 
-        with httpx.Client() as client:
-            for days_back in (10, 20):
-                today_utc = datetime.utcnow()
-                start_date = (today_utc - timedelta(days=days_back)).strftime("%Y-%m-%d")
-                end_date = today_utc.strftime("%Y-%m-%d")
-                time_param = f"{start_date}/{end_date}"
+    evalscript = """
+    //VERSION=3
+    function setup() {
+      return {
+        input: [{ bands: ["B04", "B03", "B02"] }],
+        output: { bands: 3, sampleType: "AUTO" }
+      };
+    }
+    function evaluatePixel(s) {
+      return [3.5 * s.B04, 3.5 * s.B03, 3.5 * s.B02];
+    }
+    """
 
-                params = {
-                    "SERVICE": "WMS",
-                    "VERSION": "1.3.0",
-                    "REQUEST": "GetMap",
-                    "LAYERS": "TRUE-COLOR",
-                    "FORMAT": "image/jpeg",
-                    "TRANSPARENT": "false",
-                    "WIDTH": "256",
-                    "HEIGHT": "256",
-                    "CRS": "EPSG:3857",
-                    "BBOX": bbox,
-                    "TIME": time_param,
-                }
+    to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+    attempts = [30, 60, 90]
 
-                try:
-                    response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
-                    if response.status_code == 401:
-                        refreshed_token = get_oauth_token(force_refresh=True)
-                        if not refreshed_token:
-                            raise ValueError("Token Sentinel expirado e falha ao renovar OAuth.")
-                        headers = {"Authorization": f"Bearer {refreshed_token}"}
-                        response = client.get(wms_url, params=params, headers=headers, timeout=15.0)
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-                    response.raise_for_status()
-                    if response.content:
-                        logging.info(
-                            "[Sentinel Tile] Tile recente obtido com janela de %s dias (%s)",
-                            days_back,
-                            time_param,
-                        )
-                        return response.content
-                except Exception as exc:
-                    last_error = exc
-                    logging.warning(
-                        "[Sentinel Tile] Falha ao buscar tile com janela de %s dias (%s): %s",
-                        days_back,
-                        time_param,
-                        exc,
+    for days in attempts:
+        from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+
+        payload = {
+            "input": {
+                "bounds": {
+                    "bbox": bbox,
+                    "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+                },
+                "data": [
+                    {
+                        "type": "sentinel-2-l2a",
+                        "dataFilter": {
+                            "timeRange": {"from": from_date, "to": to_date},
+                            "maxCloudCoverage": 20,
+                            "mosaickingOrder": "mostRecent",
+                        },
+                    }
+                ],
+            },
+            "output": {
+                "width": 256,
+                "height": 256,
+                "responses": [
+                    {"identifier": "default", "format": {"type": "image/jpeg", "quality": 85}}
+                ],
+            },
+            "evalscript": evalscript,
+        }
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.post(
+                    "https://services.sentinel-hub.com/api/v1/process",
+                    headers=headers,
+                    json=payload,
+                )
+
+                if resp.status_code == 401:
+                    _token_cache["token"] = None
+                    token = get_oauth_token()
+                    if not token:
+                        return None
+                    headers["Authorization"] = f"Bearer {token}"
+                    resp = client.post(
+                        "https://services.sentinel-hub.com/api/v1/process",
+                        headers=headers,
+                        json=payload,
                     )
 
-        if last_error:
-            raise last_error
-        raise ValueError("Nao foi possivel obter tile Sentinel recente.")
-    except Exception as e:
-        logging.error(f"[Sentinel Tile] Erro real: z={z} x={x} y={y} -> {str(e)}")
-        raise
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    print(
+                        f"[Sentinel] tile z={z} x={x} y={y} ok — janela {days}d "
+                        f"({len(resp.content)//1024}KB)",
+                        flush=True, file=sys.stdout,
+                    )
+                    return resp.content
+
+                print(
+                    f"[Sentinel] tile z={z} x={x} y={y} falhou (status={resp.status_code}, "
+                    f"bytes={len(resp.content)}) — tentando janela maior",
+                    flush=True, file=sys.stdout,
+                )
+
+        except Exception as e:
+            logging.warning(f"[Sentinel] tile {z}/{x}/{y} erro ({days}d): {e}")
+
+    return None
 
 def get_bbox_from_boundaries(boundaries: Optional[List[List[float]]], lat: float, lng: float) -> list[float]:
     """

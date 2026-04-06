@@ -42,7 +42,7 @@ from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata, get_sentinel_tile_jpeg
+from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata, get_tile_image
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -324,32 +324,44 @@ async def latest_sentinel_scene_endpoint(
 
 @app.get("/api/sentinel/tile/{z}/{x}/{y}")
 @limiter.limit("100/minute")
-async def sentinel_tile_proxy_endpoint(
-    request: Request,
-    z: int,
-    x: int,
-    y: int,
-    date: Optional[str] = Query(default=None),
-):
-    try:
-        tile_data = get_sentinel_tile_jpeg(z=z, x=x, y=y, scene_date=date)
-        return Response(
-            content=tile_data,
-            media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=300"},
+async def sentinel_tile_proxy(z: int, x: int, y: int, request: Request):
+    """
+    Proxy autenticado de tiles Sentinel-2 TRUE-COLOR via Process API (OAuth).
+    Sem dependência de SENTINEL_INSTANCE_ID — sempre busca cena mais recente.
+    """
+    img_bytes = get_tile_image(z, x, y)
+
+    if not img_bytes:
+        # Retorna tile transparente 1x1 para não quebrar o mapa
+        transparent_1x1 = (
+            b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+            b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
+            b"\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a"
+            b"\x1f\x1e\x1d\x1a\x1c\x1c $.\' \",#\x1c\x1c(7),01444\x1f\'9=82<.342\x1e"
+            b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00"
+            b"\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00"
+            b"\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00"
+            b"\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00"
+            b"\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07\"q\x142\x81"
+            b"\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18\x19"
+            b"\x1a%&\'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85\x86"
+            b"\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4"
+            b"\xa5\xa6\xa7\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2"
+            b"\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9"
+            b"\xda\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xf1\xf2\xf3\xf4\xf5"
+            b"\xf6\xf7\xf8\xf9\xfa\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb\xd4"
+            b"P\x00\x00\x00\x00\x1f\xff\xd9"
         )
-    except ValueError as exc:
-        logging.error(f"[Sentinel Tile Proxy] ValueError z={z} x={x} y={y} -> {str(exc)}")
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except httpx.HTTPStatusError as exc:
-        status_code = exc.response.status_code if exc.response else "unknown"
-        logging.error(
-            f"[Sentinel Tile Proxy] HTTPStatusError z={z} x={x} y={y} status={status_code} -> {str(exc)}"
-        )
-        raise HTTPException(status_code=502, detail=f"Erro HTTP {status_code} ao buscar tile Sentinel: {str(exc)}") from exc
-    except Exception as exc:
-        logging.error(f"[Sentinel Tile Proxy] Erro real z={z} x={x} y={y} -> {str(exc)}")
-        raise HTTPException(status_code=502, detail=f"Erro ao buscar tile: {str(exc)}") from exc
+        return Response(content=transparent_1x1, media_type="image/jpeg")
+
+    return Response(
+        content=img_bytes,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "X-Sentinel-Source": "process-api",
+        },
+    )
 
 
 @app.post("/api/geo/search")
