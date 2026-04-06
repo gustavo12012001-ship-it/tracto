@@ -1,30 +1,45 @@
 # Código Completo do Projeto Tracto — Inteligência Agronômica
 
-> **Data de atualização:** April 5, 2026  
+> **Data de atualização:** April 5, 2026 — 21:20 UTC  
 > **Versão:** 2.3.0  
 > **Status:** Produção  
+> **Backend:** Railway (Python FastAPI)  
+> **Frontend:** Vite + React 19 + TypeScript  
+> **Database:** Supabase PostgreSQL  
 
-Documentação técnica completa contendo toda a estrutura, configurações, código-fonte e arquitetura do projeto Tracto.
+Documentação técnica completa contendo toda a estrutura, configurações, código-fonte e arquitetura do projeto Tracto com snapshot de inteligência de talhão, proxy OAuth de Sentinel-2 e IA agronômica unificada.
 
 ## ✅ Últimas Atualizações Aplicadas (April 5, 2026)
 
 ### Proxy Sentinel-2 (OAuth + Tiles XYZ)
 - Backend passou a expor `GET /api/sentinel/tile/{z}/{x}/{y}` com limite de `100/minute` e retorno `image/jpeg`.
 - Implementado cache de token OAuth do Copernicus em memória com TTL de 55 minutos e renovação automática em caso de `401`.
-- Conversão de tile `z/x/y` para `BBOX` em `EPSG:3857` no backend para requisição `GetMap` do WMS.
+- Conversão de tile `z/x/y` para `BBOX` em `EPSG:4326` no backend para requisição autenticada no `Process API`.
+- Proxy usa `TRUE-COLOR` com janelas crescentes de `5`, `15`, `30` e `60` dias, priorizando a cena real mais nova disponível (`mosaickingOrder=mostRecent`).
+- `maxCloudCoverage` foi elevado para `100` para garantir retorno de imagem real mesmo com cobertura de nuvens alta.
+- Header de resposta do tile foi alterado para `Cache-Control: no-cache` para evitar retenção de tiles brancas no browser.
 
 ### Mapa Sentinel no Frontend
-- `FieldMap` passou a consumir o proxy de tiles Sentinel via `TileLayer` em `API_URL/api/sentinel/tile/{z}/{x}/{y}`.
-- `MapContainer` passou a usar `key={activeMapLayer}` para forçar remount completo do Leaflet ao trocar de camada.
+- `FieldMap` consome o proxy de tiles Sentinel via `TileLayer` em `API_URL/api/sentinel/tile/{z}/{x}/{y}?v=2` para cache busting de cliente.
+- O seletor de camadas foi consolidado em um único dropdown `Camadas` no canto superior esquerdo com 3 opções: `OpenStreetMap`, `Mapa Base (Alta Resolução)` e `Sentinel-2 Atualizado`.
 - No modo `sentinel`, o mapa usa pilha explícita: base Esri + overlay do proxy Sentinel por cima.
-- Zoom inicial do modo `sentinel` foi ajustado para `14`, com controlador adicional (`SentinelZoomController`) para garantir visibilidade imediata dos tiles.
-- `TileLayer` do proxy Sentinel opera com `minZoom=10`, `maxZoom=18` e `maxNativeZoom=14`.
-- Badge de Sentinel exibe data da última cena quando disponível (`scene_date_br`) e status de fonte.
+- Ao trocar para `sentinel`, o `ZoomLocker` força e mantém `zoom=18` sem remontar o mapa, preservando a posição atual ao trocar de camada.
+- No modo `sentinel`, `scroll`, `double click`, `touch`, `keyboard` e botões `+/-` ficam bloqueados para manter o zoom fixo em `18`.
+- `TileLayer` do proxy Sentinel opera com `minZoom=18`, `maxZoom=18` e `maxNativeZoom=18`.
+- Ao sair do modo `sentinel`, o `ZoomLocker` libera novamente o intervalo de zoom (`minZoom=1`, `maxZoom=20`) para `OSM` e `Mapa Base`.
+
+### Busca por Coordenadas no Mapa
+- O campo de busca do `FieldMap` aceita coordenadas decimais no formato `-18.919139, -49.287722`.
+- O campo de busca também aceita coordenadas DMS no formato `18°55'08.9"S 49°17'15.8"W`.
+- Quando a entrada é coordenada (decimal ou DMS), o frontend não chama `/api/geo/search`; ele navega diretamente para o ponto com `flyTo(..., 15)` e mostra marcador temporário.
+- Quando a entrada é texto normal, a busca geográfica autenticada via backend continua funcionando como antes.
 
 ### Diagnóstico Operacional do Sentinel
 - Logging de diagnóstico do `instance_id` foi reforçado no backend (incluindo tipo resolvido e `display_mode`).
 - Adicionado `print(..., flush=True, file=sys.stdout)` para garantir visibilidade em provedores que priorizam stdout.
 - Requisições repetidas de `latest-scene` foram deduplicadas no `FieldMap` por chave de alvo Sentinel.
+- Logging de falha do tile inclui `status`, `bytes` e `body` parcial da resposta do Process API para facilitar diagnóstico em produção.
+- Evalscript do tile foi atualizado para ajuste adaptativo por banda (`adj(v) = pow(clamp(v*2.5), 0.9)`) para evitar imagem "lavada".
 
 ### Estabilidade de Startup Backend
 - Type hints críticos de `sentinel_service.py` foram ajustados para compatibilidade de runtime no deploy.
@@ -56,6 +71,18 @@ Documentação técnica completa contendo toda a estrutura, configurações, có
 - `Weather`: estratégia explícita snapshot-first para clima atual, com fallback Open-Meteo.
 
 ### Commits de Referência (main)
+- `45c922b` — ajuste do evalscript Sentinel (contraste adaptativo) + janela 5/15/30/60 + nuvens até 100%
+- `ee306a6` — cache busting no frontend (`?v=2`) + `Cache-Control: no-cache` no endpoint de tile
+- `e005576` — proxy Sentinel atualizado para `TRUE-COLOR` com janela recente dinâmica (10 dias + fallback 20 dias)
+- `3d20062` — suporte a coordenadas DMS no campo de busca do `FieldMap`
+- `a8b7d25` — liberação completa do zoom ao sair do modo Sentinel no `ZoomLocker`
+- `3b7b85a` — remoção do remount por camada e preservação da posição do mapa ao trocar base
+- `69a4fd3` — `ZoomLocker` refeito com listeners de zoom para reforçar lock em `18`
+- `eeb02b6` — bloqueio total do zoom do Sentinel incluindo botões `+/-`, teclado e interações do mapa
+- `183a215` — suporte a busca por coordenadas decimais no `FieldMap`
+- `2623d97` — remoção do contador temporário e retorno do Sentinel para zoom fixo `18`
+- `3d267d8` — remoção do seletor duplicado e travamento do zoom mínimo do Sentinel
+- `12a3e8a` — reativação do dropdown de camadas no `FieldMap`
 - `728c9c2` — unificação do fluxo de inteligência de talhão (snapshot backend + consumo frontend)
 - `e2d0133` — proxy OAuth de tiles Sentinel no backend + integração no mapa
 - `a8f39f0` — remount do `MapContainer` por camada + stack explícita Esri/Sentinel proxy
@@ -67,6 +94,42 @@ Documentação técnica completa contendo toda a estrutura, configurações, có
 - `fc63252` — compatibilidade de startup do backend em `sentinel_service.py`
 - `0e845d8` — normalização ASCII do log de diagnóstico Sentinel
 - `1a968ef` — ajuste final de build no `FieldMap` (import não utilizado)
+
+---
+
+## 📊 Stack Crítico Resumido
+
+**Frontend (React + TypeScript)**
+- Orquestração: `App.tsx` com React Router 7 (públicas + protegidas)
+- Estado Global: `useAppStore.ts` com Zustand + localStorage (farms, fields, alerts, weather)
+- Mapa: `FieldMap.tsx` com Leaflet 1.9 + react-leaflet 5
+  - Camadas: dropdown único com `OSM`, `Mapa Base` e `Sentinel-2 Atualizado`
+  - Sentinel: base Esri + proxy autenticado por backend + `ZoomLocker` para manter zoom fixo em `18` sem perder a posição ao trocar camada
+  - Busca: suporta nome de cidade, coordenadas decimais e coordenadas DMS
+  - Interação: click para adicionar coordenadas, desenho de polígonos com área calculada (ha)
+- Serviços: `api.ts` (HTTP centralizado com Bearer JWT Supabase)
+- Páginas: Dashboard (NDVI/alertas), Weather (Open-Meteo + snapshot), Chat (Claude vision), Alerts, Reports, Market
+
+**Backend (FastAPI/Python)**
+- Orquestração: `main.py` com 20+ endpoints REST
+- Autenticação: JWT Supabase + rate limiting por IP
+- Serviços especializados:
+  - `sentinel_service.py`: OAuth 2.0 Copernicus (55min TTL) + Process API `TRUE-COLOR` com janela 5/15/30/60 + NDVI
+  - `weather_service.py`: Open-Meteo (sucesso) → fallback cache
+  - `ai_service.py`: Claude Sonnet 4.5 (visão + alertas + chat tech)
+  - `field_intelligence_service.py`: Consolidação canônica (clima+satélite+análise+alertas) com timeout + fallback
+  - `farm_service.py`: CRUD lazendas/talhões com ownership RLS
+  - `auth_service.py`: Validação JWT Supabase
+- Cache: Redis implied (via slowapi) + memória local (tokens OAuth, snapshots)
+- Banco: Supabase PostgreSQL (RLS policies)
+
+**Integrações Externas Críticas**
+- Supabase: Auth + PostgreSQL
+- Copernicus CDSE: OAuth + Process API (Sentinel-2 L2A)
+- Anthropic: Claude Sonnet 4.5 (visão base64 + JSON parsing)
+- Open-Meteo: Previsões 7 dias (temperatura, umidade, ET0, chuva acumulada)
+- Google reCAPTCHA: Validação em registro
+- Earth Search STAC: Scene metadata
 
 ---
 
