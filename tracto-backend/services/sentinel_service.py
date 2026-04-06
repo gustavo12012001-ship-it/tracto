@@ -100,13 +100,24 @@ def get_cdse_oauth_token() -> Optional[str]:
         return None
 
 
-def get_overlay_image(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Optional[bytes]:
+def get_overlay_image(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    target_date: Optional[str] = None,
+) -> tuple[Optional[bytes], bool]:
     token = get_cdse_oauth_token()
     if not token:
-        return None
+        return None, False
 
-    to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
-    from_date = (datetime.utcnow() - timedelta(days=60)).strftime("%Y-%m-%dT00:00:00Z")
+    if target_date:
+        target = datetime.strptime(target_date, "%Y-%m-%d")
+        from_date = (target - timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+        to_date = (target + timedelta(days=2)).strftime("%Y-%m-%dT23:59:59Z")
+    else:
+        to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+        from_date = (datetime.utcnow() - timedelta(days=15)).strftime("%Y-%m-%dT00:00:00Z")
 
     payload = {
         "input": {
@@ -158,22 +169,24 @@ def get_overlay_image(min_lon: float, min_lat: float, max_lon: float, max_lat: f
                 _cdse_token_cache["token"] = None
                 token = get_cdse_oauth_token()
                 if not token:
-                    return None
+                    return None, False
                 headers["Authorization"] = f"Bearer {token}"
                 response = client.post(CDSE_PROCESS_URL, headers=headers, json=payload)
 
             if response.status_code == 200 and response.content:
-                return response.content
+                return response.content, False
 
             logging.warning(
                 "Sentinel overlay failed: status=%s body=%s",
                 response.status_code,
                 response.text[:300],
             )
-            return None
+            if response.status_code in (400, 404):
+                return None, True
+            return None, False
     except Exception as e:
         logging.warning("Sentinel overlay request error: %s", e)
-        return None
+        return None, False
 
 
 # ── Tile XYZ → BBOX EPSG:4326 ─────────────────────────────────────────────────

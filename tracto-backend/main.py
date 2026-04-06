@@ -372,11 +372,27 @@ async def sentinel_overlay(
     min_lat: float = Query(...),
     max_lon: float = Query(...),
     max_lat: float = Query(...),
+    target_date: Optional[str] = Query(None),
 ):
     if min_lon >= max_lon or min_lat >= max_lat:
         raise HTTPException(status_code=400, detail="Bounding box invalido.")
 
-    img_bytes = get_overlay_image(min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat)
+    if target_date is not None:
+        try:
+            datetime.strptime(target_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="target_date deve estar no formato YYYY-MM-DD.") from exc
+
+    img_bytes, no_image = get_overlay_image(
+        min_lon=min_lon,
+        min_lat=min_lat,
+        max_lon=max_lon,
+        max_lat=max_lat,
+        target_date=target_date,
+    )
+    if no_image:
+        raise HTTPException(status_code=404, detail="Sem imagem nesta data. O Sentinel-2 passa a cada ~5 dias.")
+
     if not img_bytes:
         raise HTTPException(status_code=502, detail="Falha ao gerar overlay Sentinel.")
 

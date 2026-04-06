@@ -302,6 +302,17 @@ export default function FieldMap() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [geoResult, setGeoResult] = useState<GeoSearchResult | null>(null);
+  const [sentinelTargetDate, setSentinelTargetDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [overlayImageUrl, setOverlayImageUrl] = useState<string | null>(null);
+  const [isOverlayLoading, setIsOverlayLoading] = useState(false);
+  const [overlayError, setOverlayError] = useState<string | null>(null);
+  const overlayObjectUrlRef = useRef<string | null>(null);
   const lastSentinelSceneRequestKeyRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation
@@ -337,6 +348,7 @@ export default function FieldMap() {
       min_lat: String(minLat),
       max_lon: String(maxLon),
       max_lat: String(maxLat),
+      target_date: sentinelTargetDate,
     }).toString()}`;
 
     return {
@@ -344,6 +356,81 @@ export default function FieldMap() {
       overlayBounds: [[minLat, minLon], [maxLat, maxLon]] as [[number, number], [number, number]],
     };
   })();
+
+  useEffect(() => {
+    if (activeMapLayer !== 'sentinel' || !sentinelOverlayData?.overlayUrl) {
+      setIsOverlayLoading(false);
+      setOverlayError(null);
+      if (overlayObjectUrlRef.current) {
+        URL.revokeObjectURL(overlayObjectUrlRef.current);
+        overlayObjectUrlRef.current = null;
+      }
+      setOverlayImageUrl(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const loadOverlay = async () => {
+      try {
+        setIsOverlayLoading(true);
+        setOverlayError(null);
+
+        const response = await fetch(sentinelOverlayData.overlayUrl, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+
+        if (response.status === 404) {
+          setOverlayImageUrl(null);
+          setOverlayError('Sem imagem nesta data. O Sentinel-2 passa a cada ~5 dias.');
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Erro HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        if (!isMounted) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        if (overlayObjectUrlRef.current) {
+          URL.revokeObjectURL(overlayObjectUrlRef.current);
+        }
+        overlayObjectUrlRef.current = objectUrl;
+        setOverlayImageUrl(objectUrl);
+      } catch {
+        if (!isMounted) return;
+        setOverlayImageUrl(null);
+        setOverlayError('Falha ao carregar overlay Sentinel-2. Tente novamente.');
+      } finally {
+        if (isMounted) {
+          setIsOverlayLoading(false);
+        }
+      }
+    };
+
+    void loadOverlay();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [activeMapLayer, sentinelOverlayData?.overlayUrl]);
+
+  useEffect(() => () => {
+    if (overlayObjectUrlRef.current) {
+      URL.revokeObjectURL(overlayObjectUrlRef.current);
+      overlayObjectUrlRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (activeMapLayer !== 'sentinel') {
@@ -619,10 +706,10 @@ export default function FieldMap() {
           />
         )}
 
-        {activeMapLayer === 'sentinel' && sentinelOverlayData && (
+        {activeMapLayer === 'sentinel' && sentinelOverlayData && overlayImageUrl && (
           <ImageOverlay
             key={sentinelOverlayData.overlayUrl}
-            url={sentinelOverlayData.overlayUrl}
+            url={overlayImageUrl}
             bounds={sentinelOverlayData.overlayBounds}
             opacity={1.0}
           />
@@ -1052,10 +1139,18 @@ export default function FieldMap() {
       {drawMode === 'none' && activeMapLayer === 'sentinel' && (
         <div
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[505] pointer-events-none px-3.5 py-2 rounded-xl text-[10px] font-semibold"
-          style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#4ade80', backdropFilter: 'blur(10px)' }}
+          style={
+            overlayError
+              ? { background: 'rgba(248,113,113,0.14)', border: '1px solid rgba(248,113,113,0.35)', color: '#fca5a5', backdropFilter: 'blur(10px)' }
+              : { background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#4ade80', backdropFilter: 'blur(10px)' }
+          }
         >
-          {sentinelOverlayData
-            ? `Sentinel-2 · Última cena: ${sentinelScene?.scene_date_br ?? 'Sem cena recente'}`
+          {isOverlayLoading
+            ? 'Carregando imagem Sentinel-2...'
+            : overlayError
+              ? overlayError
+              : sentinelOverlayData
+                ? `Sentinel-2 · Última cena: ${sentinelScene?.scene_date_br ?? 'Sem cena recente'}`
             : 'Selecione um talhão para carregar o overlay Sentinel-2'}
         </div>
       )}
@@ -1063,7 +1158,7 @@ export default function FieldMap() {
       {/* Sentinel scene status */}
       {activeMapLayer === 'sentinel' && (
         <div
-          className="absolute bottom-4 right-4 z-[500] p-3 rounded-xl pointer-events-none text-[10px]"
+          className="absolute bottom-4 right-4 z-[500] p-3 rounded-xl pointer-events-auto text-[10px]"
           style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', maxWidth: '280px' }}
         >
           <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Sentinel-2 Atualizado</p>
@@ -1072,7 +1167,9 @@ export default function FieldMap() {
             <p className="text-[8px]" style={{ color: '#cbd5e1' }}>
               {isLoadingScene
                 ? 'Consultando Earth Search STAC...'
-                : 'Proxy de tiles Sentinel ativo (autenticado via backend Tracto)'}
+                : isOverlayLoading
+                  ? 'Carregando overlay da data selecionada...'
+                  : 'Overlay Sentinel ativo (autenticado via backend Tracto)'}
             </p>
             {!!sentinelScene?.provider && (
               <p className="text-[8px] mt-1.5" style={{ color: '#94a3b8' }}>Fonte: {sentinelScene.provider}</p>
@@ -1080,6 +1177,19 @@ export default function FieldMap() {
             {!!sentinelScene?.message && (
               <p className="text-[8px] mt-1.5" style={{ color: '#fca5a5' }}>{sentinelScene.message}</p>
             )}
+            <div className="mt-2.5">
+              <label htmlFor="sentinel-date" className="block text-[8px] mb-1" style={{ color: '#cbd5e1' }}>
+                Ver imagem de:
+              </label>
+              <input
+                id="sentinel-date"
+                type="date"
+                value={sentinelTargetDate}
+                onChange={(e) => setSentinelTargetDate(e.target.value)}
+                className="w-full text-[10px] rounded-md px-2 py-1 bg-transparent focus:outline-none"
+                style={{ border: '1px solid rgba(255,255,255,0.18)', color: '#e2e8f0' }}
+              />
+            </div>
           </div>
         </div>
       )}
