@@ -75,8 +75,8 @@ def tile_to_bbox_4326(z: int, x: int, y: int) -> List[float]:
 def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
     """
     Retorna bytes JPEG de uma tile Sentinel-2 TRUE-COLOR.
-    Usa Process API (OAuth) — sem dependência de SENTINEL_INSTANCE_ID.
-    Janela: últimos 30 dias, fallback 60 dias. MaxCloud: 20%.
+    Mostra imagem real do dia — aceita nuvens (maxCloudCoverage=100).
+    Tenta janelas crescentes: 5, 15, 30, 60 dias.
     """
     token = get_oauth_token()
     if not token:
@@ -93,12 +93,13 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
       };
     }
     function evaluatePixel(s) {
-      return [5.0 * s.B04, 5.0 * s.B03, 5.0 * s.B02];
+          function adj(v) { return Math.pow(Math.max(0, Math.min(1, v * 2.5)), 0.9); }
+          return [adj(s.B04), adj(s.B03), adj(s.B02)];
     }
     """
 
     to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
-    attempts = [30, 60, 90]
+    attempts = [5, 15, 30, 60]
 
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -116,7 +117,7 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
                         "type": "sentinel-2-l2a",
                         "dataFilter": {
                             "timeRange": {"from": from_date, "to": to_date},
-                            "maxCloudCoverage": 40,
+                            "maxCloudCoverage": 100,
                             "mosaickingOrder": "mostRecent",
                         },
                     }
