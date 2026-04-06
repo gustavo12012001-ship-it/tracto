@@ -119,6 +119,16 @@ def get_overlay_image(
         to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
         from_date = (datetime.utcnow() - timedelta(days=15)).strftime("%Y-%m-%dT00:00:00Z")
 
+    codigo_cores = (
+        "//VERSION=3\n"
+        "function setup() {\n"
+        "  return { input: [\"B04\",\"B03\",\"B02\"], output: { bands: 3 } };\n"
+        "}\n"
+        "function evaluatePixel(sample) {\n"
+        "  return [3.5*sample.B04, 3.5*sample.B03, 3.5*sample.B02];\n"
+        "}"
+    )
+
     payload = {
         "input": {
             "bounds": {
@@ -143,18 +153,7 @@ def get_overlay_image(
                 {"identifier": "default", "format": {"type": "image/jpeg"}}
             ],
         },
-        "evalscript": """
-        //VERSION=3
-        function setup() {
-          return {
-            input: [{ bands: ["B04", "B03", "B02"] }],
-            output: { bands: 3 }
-          };
-        }
-        function evaluatePixel(sample) {
-          return [3.5 * sample.B04, 3.5 * sample.B03, 3.5 * sample.B02];
-        }
-        """,
+            "evalscript": codigo_cores,
     }
 
     headers = {
