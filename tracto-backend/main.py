@@ -323,7 +323,7 @@ async def latest_sentinel_scene_endpoint(
 
 
 @app.get("/api/sentinel/tile/{z}/{x}/{y}")
-@limiter.limit("100/minute")
+@limiter.limit("2000/minute")
 async def sentinel_tile_proxy(z: int, x: int, y: int, request: Request):
     """
     Proxy autenticado de tiles Sentinel-2 TRUE-COLOR via Process API (OAuth).

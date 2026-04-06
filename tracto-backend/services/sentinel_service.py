@@ -124,10 +124,10 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
                 ],
             },
             "output": {
-                "width": 256,
-                "height": 256,
+                "width": 512,
+                "height": 512,
                 "responses": [
-                    {"identifier": "default", "format": {"type": "image/jpeg", "quality": 85}}
+                    {"identifier": "default", "format": {"type": "image/jpeg"}}
                 ],
             },
             "evalscript": evalscript,
