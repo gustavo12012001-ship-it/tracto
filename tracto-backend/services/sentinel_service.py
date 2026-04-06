@@ -93,7 +93,7 @@ def get_tile_image(z: int, x: int, y: int) -> Optional[bytes]:
       };
     }
     function evaluatePixel(s) {
-      return [3.5 * s.B04, 3.5 * s.B03, 3.5 * s.B02];
+      return [5.0 * s.B04, 5.0 * s.B03, 5.0 * s.B02];
     }
     """
 

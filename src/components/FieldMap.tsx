@@ -24,7 +24,7 @@ type DrawMode = 'none' | 'drawing';
 type SentinelSceneResponse = {
   status: 'ok' | 'fallback';
   provider: string;
-  display_mode: 'wms' | 'preview' | 'fallback';
+  display_mode: 'wms' | 'preview' | 'fallback' | 'proxy';
   scene_date: string | null;
   scene_date_br: string | null;
   scene_id?: string | null;
@@ -664,7 +664,7 @@ export default function FieldMap() {
         {activeMapLayer === 'sentinel' && (
           <TileLayer
             key="sentinel-proxy"
-            url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}`}
+            url={`${import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app'}/api/sentinel/tile/{z}/{x}/{y}?v=2`}
             attribution="© Copernicus Data Space (ESA)"
             minZoom={18}
             maxZoom={18}

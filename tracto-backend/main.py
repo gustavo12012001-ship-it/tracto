@@ -358,7 +358,7 @@ async def sentinel_tile_proxy(z: int, x: int, y: int, request: Request):
         content=img_bytes,
         media_type="image/jpeg",
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "no-cache",
             "X-Sentinel-Source": "process-api",
         },
     )
