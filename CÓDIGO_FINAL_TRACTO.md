@@ -1,7 +1,7 @@
 # Código Completo do Projeto Tracto — Inteligência Agronômica
 
-> **Data de atualização:** April 5, 2026 — 21:20 UTC  
-> **Versão:** 2.3.0  
+> **Data de atualização:** April 6, 2026 — 14:45 UTC  
+> **Versão:** 2.3.1  
 > **Status:** Produção  
 > **Backend:** Railway (Python FastAPI)  
 > **Frontend:** Vite + React 19 + TypeScript  
@@ -9,7 +9,17 @@
 
 Documentação técnica completa contendo toda a estrutura, configurações, código-fonte e arquitetura do projeto Tracto com snapshot de inteligência de talhão, proxy OAuth de Sentinel-2 e IA agronômica unificada.
 
-## ✅ Últimas Atualizações Aplicadas (April 5, 2026)
+## ✅ Últimas Atualizações Aplicadas (April 6, 2026)
+
+### Correção de Build - Resolução de Dependências Vite
+- **Problema:** Erro de resolução de `react-is` no módulo `recharts` durante build com Vite 8.0.0.
+- **Solução:** Atualizado `vite.config.ts` com configuração de `manualChunks` para separar vendors React e Recharts.
+- **Detalhes da correção:**
+  - Adicionado `rollupOptions.output.manualChunks` com função que detecta imports de `node_modules/react` e `node_modules/recharts`.
+  - Chunks separados: `react-vendor-*.js` (500.60 kB gzip: 152.74 kB) e `index-*.js` (774.30 kB gzip: 224.43 kB).
+  - Build agora constrói com sucesso sem warnings de dependências faltantes.
+  - `react-is@19.2.4` já estava em `package.json` como dependência explícita.
+- **Resultado:** Build production concluído com 2220 módulos transformados, sem erros.
 
 ### Proxy Sentinel-2 (OAuth + Tiles XYZ)
 - Backend passou a expor `GET /api/sentinel/tile/{z}/{x}/{y}` com limite de `100/minute` e retorno `image/jpeg`.

@@ -117,7 +117,7 @@ def get_fields(user_id: str, farm_id: str | None = None) -> List[Dict[str, Any]]
         raise
 
 
-def get_field_by_id(user_id: str, field_id: str) -> Dict[str, Any] | None:
+def get_field_by_id(user_id: str, field_id: str) -> dict | None:
     try:
         response = requests.get(
             _supabase_url("fields"),
@@ -125,16 +125,16 @@ def get_field_by_id(user_id: str, field_id: str) -> Dict[str, Any] | None:
             params={
                 "id": f"eq.{field_id}",
                 "user_id": f"eq.{user_id}",
-                "limit": 1,
+                "select": "id,name,latitude,longitude,boundaries,crop_type",
             },
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-        rows = response.json()
-        return rows[0] if rows else None
+        data = response.json()
+        return data[0] if data else None
     except Exception as exc:
-        logging.error("Erro ao buscar talhao por id: %s", exc)
-        raise
+        logging.error("Erro ao buscar talhao por ID field_id=%s: %s", field_id, exc)
+        return None
 
 
 def save_field(user_id: str, field_data: Dict[str, Any]) -> Dict[str, Any]:
