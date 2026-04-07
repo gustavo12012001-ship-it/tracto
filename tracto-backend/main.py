@@ -303,7 +303,7 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
 @app.get("/api/sentinel/overlay")
 @limiter.limit("20/minute")
 async def sentinel_overlay_endpoint(
-    _request: Request,
+    request: Request,
     field_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
