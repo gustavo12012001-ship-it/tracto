@@ -15,12 +15,10 @@ _token_cache: dict[str, Any] = {
     "expires_at": 0.0,
 }
 
-# Overlay cache by field_id (30 min)
+# ── Cache de overlay por (field_id, scene_id) ────────────────────────────────
 _overlay_lock = threading.Lock()
 _overlay_cache: dict[str, dict[str, Any]] = {}
 OVERLAY_TTL_SECONDS = 30 * 60
-
-EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1/search"
 
 
 def get_oauth_token() -> str | None:
@@ -59,24 +57,24 @@ def get_oauth_token() -> str | None:
             return None
 
 
-def _get_cached_overlay(field_id: str) -> bytes | None:
+def _get_cached_overlay(cache_key: str) -> bytes | None:
     with _overlay_lock:
-        entry = _overlay_cache.get(field_id)
+        entry = _overlay_cache.get(cache_key)
         if entry and time.time() < entry["expires_at"]:
-            logging.info("[Sentinel] overlay cache hit field_id=%s", field_id)
+            logging.info("[Sentinel] Cache HIT overlay key=%s", cache_key)
             return entry["image_bytes"]
         if entry:
-            del _overlay_cache[field_id]
+            del _overlay_cache[cache_key]
     return None
 
 
-def _set_cached_overlay(field_id: str, image_bytes: bytes) -> None:
+def _set_cached_overlay(cache_key: str, image_bytes: bytes) -> None:
     with _overlay_lock:
-        _overlay_cache[field_id] = {
+        _overlay_cache[cache_key] = {
             "image_bytes": image_bytes,
             "expires_at": time.time() + OVERLAY_TTL_SECONDS,
         }
-    logging.info("[Sentinel] overlay cached field_id=%s bytes=%d", field_id, len(image_bytes))
+    logging.info("[Sentinel] Overlay cacheado key=%s size=%d bytes", cache_key, len(image_bytes))
 
 
 def get_bbox_from_boundaries(
@@ -116,14 +114,148 @@ def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | No
     return {"type": "Polygon", "coordinates": [valid]}
 
 
+# ── Busca de cenas disponíveis via STAC (Earth Search AWS) ─────────────────
+
+STAC_URL = "https://earth-search.aws.element84.com/v1/search"
+
+
+def get_available_scenes(
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    lookback_days: int = 90,
+    max_results_per_source: int = 5,
+) -> dict[str, list[dict]]:
+    """
+    Consulta o Earth Search STAC e retorna cenas disponíveis de Sentinel-1 e Sentinel-2
+    para o polígono do talhão. Retorna dict com chaves 's2' e 's1'.
+    """
+    now = datetime.utcnow()
+    from_dt = (now - timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
+    to_dt = now.strftime("%Y-%m-%dT23:59:59Z")
+
+    def build_intersects() -> dict:
+        if boundaries and len(boundaries) >= 3:
+            ring = []
+            for p in boundaries:
+                if p and len(p) >= 2:
+                    ring.append([float(p[1]), float(p[0])])
+            if len(ring) >= 3:
+                if ring[0] != ring[-1]:
+                    ring.append(ring[0])
+                return {"type": "Polygon", "coordinates": [ring]}
+        return {"type": "Point", "coordinates": [float(lng), float(lat)]}
+
+    intersects = build_intersects()
+    results: dict[str, list[dict]] = {"s2": [], "s1": []}
+
+    # ── Sentinel-2 L2A ────────────────────────────────────────────────────
+    s2_payload = {
+        "collections": ["sentinel-2-l2a"],
+        "limit": max_results_per_source,
+        "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+        "datetime": f"{from_dt}/{to_dt}",
+        "intersects": intersects,
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.post(STAC_URL, json=s2_payload)
+            res.raise_for_status()
+            features = res.json().get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            dt_str = props.get("datetime") or props.get("created")
+            date_iso, date_br = None, None
+            if dt_str:
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    date_iso = dt.date().isoformat()
+                    date_br = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            cloud = props.get("eo:cloud_cover")
+            assets = feat.get("assets", {})
+            thumbnail = (
+                assets.get("thumbnail", {}).get("href")
+                or assets.get("overview", {}).get("href")
+            )
+            results["s2"].append({
+                "scene_id": feat.get("id"),
+                "date": date_iso,
+                "date_br": date_br,
+                "cloud_coverage": round(float(cloud), 1) if cloud is not None else None,
+                "source": "s2",
+                "collection": "sentinel-2-l2a",
+                "thumbnail_url": thumbnail,
+            })
+    except Exception as exc:
+        logging.warning("[Sentinel] Erro ao buscar cenas S2 via STAC: %s", exc)
+
+    # ── Sentinel-1 GRD ────────────────────────────────────────────────────
+    s1_payload = {
+        "collections": ["sentinel-1-grd"],
+        "limit": max_results_per_source,
+        "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+        "datetime": f"{from_dt}/{to_dt}",
+        "intersects": intersects,
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.post(STAC_URL, json=s1_payload)
+            res.raise_for_status()
+            features = res.json().get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            dt_str = props.get("datetime") or props.get("created")
+            date_iso, date_br = None, None
+            if dt_str:
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    date_iso = dt.date().isoformat()
+                    date_br = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            orbit = props.get("sat:orbit_state", "")
+            assets = feat.get("assets", {})
+            thumbnail = assets.get("thumbnail", {}).get("href")
+            results["s1"].append({
+                "scene_id": feat.get("id"),
+                "date": date_iso,
+                "date_br": date_br,
+                "cloud_coverage": None,
+                "orbit": orbit,
+                "source": "s1",
+                "collection": "sentinel-1-grd",
+                "thumbnail_url": thumbnail,
+            })
+    except Exception as exc:
+        logging.warning("[Sentinel] Erro ao buscar cenas S1 via STAC: %s", exc)
+
+    logging.info(
+        "[Sentinel] Cenas encontradas: S2=%d S1=%d para lat=%.4f lng=%.4f",
+        len(results["s2"]), len(results["s1"]), lat, lng,
+    )
+    return results
+
+
+# ── Overlay True Color por cena específica ────────────────────────────────────
+
 def get_true_color_overlay(
     field_id: str,
     lat: float,
     lng: float,
     boundaries: list[list[float]] | None = None,
     date_range_days: int = 30,
+    scene_date: str | None = None,  # ISO date "2026-04-02" — se fornecido, busca cena desta data
+    source: str = "s2",  # "s1" ou "s2"
 ) -> bytes | None:
-    cached = _get_cached_overlay(field_id)
+    """
+    Gera PNG recortado no polígono do talhão via Sentinel Hub Process API.
+    Se scene_date for fornecido, busca a cena daquela data específica.
+    source: 's2' = True Color RGB, 's1' = Radar VV amplitude
+    """
+    cache_key = f"{field_id}_{source}_{scene_date or 'latest'}"
+    cached = _get_cached_overlay(cache_key)
     if cached:
         return cached
 
@@ -134,7 +266,27 @@ def get_true_color_overlay(
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
     geojson_polygon = _build_geojson_polygon(boundaries) if boundaries else None
 
-    evalscript = """
+    # ── Evalscripts ────────────────────────────────────────────────────────────────
+    if source == "s1":
+        # Sentinel-1 SAR — VV amplitude em escala de cinza com realce
+        evalscript = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["VV", "dataMask"] }],
+    output: { bands: 2, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+  let vv = Math.log(s.VV * s.VV + 0.000001) / Math.log(10) * 10;
+  let norm = Math.round(Math.min(Math.max((vv + 25) / 25, 0), 1) * 255);
+  return [norm, s.dataMask * 255];
+}
+"""
+        data_type = "sentinel-1-grd"
+    else:
+        # Sentinel-2 True Color com correção de gama
+        evalscript = """
 //VERSION=3
 function setup() {
   return {
@@ -150,23 +302,42 @@ function evaluatePixel(s) {
 }
 """
 
-    bounds_input: dict[str, Any] = {
+        data_type = "sentinel-2-l2a"
+
+    # ── Janela de tempo ────────────────────────────────────────────────────────────────
+    if scene_date:
+        # Janela de ±2 dias ao redor da data escolhida
+        try:
+            sd = datetime.fromisoformat(scene_date)
+            from_date = (sd - timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
+            to_date = (sd + timedelta(days=2)).strftime("%Y-%m-%dT23:59:59Z")
+        except Exception:
+            from_date = (datetime.utcnow() - timedelta(days=date_range_days)).strftime("%Y-%m-%dT00:00:00Z")
+            to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+        windows = [(from_date, to_date)]
+    else:
+        to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+        windows = [
+            ((datetime.utcnow() - timedelta(days=d)).strftime("%Y-%m-%dT00:00:00Z"), to_date)
+            for d in [date_range_days, 60, 90]
+        ]
+
+    bounds_input: dict = {
         "bbox": bbox,
         "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
     }
     if geojson_polygon:
         bounds_input["geometry"] = geojson_polygon
 
-    to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
-    payload: dict[str, Any] = {
+    payload: dict = {
         "input": {
             "bounds": bounds_input,
             "data": [
                 {
-                    "type": "sentinel-2-l2a",
+                    "type": data_type,
                     "dataFilter": {
-                        "timeRange": {"from": "", "to": to_date},
-                        "maxCloudCoverage": 60,
+                        "timeRange": {"from": "", "to": ""},
+                        "maxCloudCoverage": 100,
                         "mosaickingOrder": "mostRecent",
                     },
                 }
@@ -180,14 +351,15 @@ function evaluatePixel(s) {
         "evalscript": evalscript,
     }
 
-    windows = sorted(set([date_range_days, 60, 90]))
-
-    for days in windows:
-        from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
-        payload["input"]["data"][0]["dataFilter"]["timeRange"]["from"] = from_date
+    for from_dt, to_dt in windows:
+        payload["input"]["data"][0]["dataFilter"]["timeRange"]["from"] = from_dt
+        payload["input"]["data"][0]["dataFilter"]["timeRange"]["to"] = to_dt
 
         try:
-            logging.info("[Sentinel] overlay request field_id=%s window=%sd", field_id, days)
+            logging.info(
+                "[Sentinel] overlay POST source=%s field_id=%s from=%s to=%s",
+                source, field_id, from_dt, to_dt,
+            )
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             with httpx.Client(timeout=60.0) as http_client:
                 resp = http_client.post(
@@ -197,15 +369,15 @@ function evaluatePixel(s) {
                 )
 
             if resp.status_code == 200:
-                content_type = resp.headers.get("content-type", "")
-                if "image" in content_type:
+                ct = resp.headers.get("content-type", "")
+                if "image" in ct:
                     image_bytes = resp.content
-                    _set_cached_overlay(field_id, image_bytes)
+                    _set_cached_overlay(cache_key, image_bytes)
                     return image_bytes
-                logging.warning("[Sentinel] non-image response content-type=%s", content_type)
+                logging.warning("[Sentinel] Resposta não-imagem content-type=%s body=%s", ct, resp.text[:200])
 
             elif resp.status_code == 401:
-                logging.warning("[Sentinel] 401 on overlay, invalidating token cache")
+                logging.warning("[Sentinel] 401 — renovando token")
                 with _token_lock:
                     _token_cache["access_token"] = None
                     _token_cache["expires_at"] = 0.0
@@ -213,15 +385,18 @@ function evaluatePixel(s) {
                 continue
 
             else:
-                logging.warning("[Sentinel] overlay status=%s body=%s", resp.status_code, resp.text[:300])
+                logging.warning("[Sentinel] HTTP %d from=%s body=%s", resp.status_code, from_dt, resp.text[:300])
 
         except httpx.TimeoutException:
-            logging.warning("[Sentinel] overlay timeout field_id=%s window=%sd", field_id, days)
+            logging.warning("[Sentinel] Timeout source=%s from=%s", source, from_dt)
         except Exception as exc:
-            logging.error("[Sentinel] overlay error field_id=%s window=%sd err=%s", field_id, days, exc)
+            logging.error("[Sentinel] Erro source=%s from=%s: %s", source, from_dt, exc)
 
+    logging.error("[Sentinel] Todas as janelas falharam field_id=%s source=%s", field_id, source)
     return None
 
+
+# ── NDVI (mantida para /api/analyze-field) ────────────────────────────────────────────────
 
 def get_ndvi_stats(
     bbox: list[float],
@@ -403,98 +578,3 @@ function evaluatePixel(s) {
             logging.error("[Sentinel] NDVI image error window=%sd: %s", days, exc)
 
     return None
-
-
-def get_latest_scene_metadata(
-    lat: float,
-    lng: float,
-    boundaries: list[list[float]] | None = None,
-    lookback_days: int = 21,
-    max_cloud_coverage: int = 40,
-) -> dict[str, Any]:
-    now_utc = datetime.utcnow()
-
-    def _build_intersects() -> dict[str, Any]:
-        if boundaries and len(boundaries) >= 3:
-            ring: list[list[float]] = []
-            for p in boundaries:
-                if p and len(p) >= 2:
-                    ring.append([float(p[1]), float(p[0])])
-            if len(ring) >= 3:
-                if ring[0] != ring[-1]:
-                    ring.append(ring[0])
-                return {"type": "Polygon", "coordinates": [ring]}
-        return {"type": "Point", "coordinates": [float(lng), float(lat)]}
-
-    payload = {
-        "collections": ["sentinel-2-l2a"],
-        "limit": 1,
-        "sortby": [{"field": "properties.datetime", "direction": "desc"}],
-        "datetime": f"{(now_utc - timedelta(days=lookback_days)).strftime('%Y-%m-%dT00:00:00Z')}/{now_utc.strftime('%Y-%m-%dT23:59:59Z')}",
-        "intersects": _build_intersects(),
-        "query": {"eo:cloud_cover": {"lte": max_cloud_coverage}},
-    }
-
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            res = client.post(EARTH_SEARCH_URL, json=payload)
-            res.raise_for_status()
-            features = res.json().get("features", [])
-    except Exception as exc:
-        logging.warning("[Sentinel] Earth Search error: %s", exc)
-        features = []
-
-    if not features:
-        return {
-            "status": "fallback",
-            "provider": "Earth Search STAC",
-            "display_mode": "fallback",
-            "scene_date": None,
-            "scene_date_br": None,
-            "scene_id": None,
-            "cloud_coverage": None,
-            "message": "Nenhuma cena Sentinel-2 encontrada na janela consultada.",
-        }
-
-    feature = features[0]
-    properties = feature.get("properties", {})
-    scene_datetime = properties.get("datetime")
-    scene_date_iso = None
-    scene_date_br = None
-    if isinstance(scene_datetime, str):
-        try:
-            dt = datetime.fromisoformat(scene_datetime.replace("Z", "+00:00"))
-            scene_date_iso = dt.date().isoformat()
-            scene_date_br = dt.strftime("%d/%m/%Y")
-        except ValueError:
-            pass
-
-    return {
-        "status": "ok",
-        "provider": "Earth Search STAC",
-        "display_mode": "proxy",
-        "scene_date": scene_date_iso,
-        "scene_date_br": scene_date_br,
-        "scene_id": feature.get("id"),
-        "cloud_coverage": properties.get("eo:cloud_cover"),
-        "preview_url": None,
-        "wms_url": None,
-        "wms_params": None,
-        "message": None,
-    }
-
-
-def get_tile_image(z: int, x: int, y: int) -> bytes | None:
-    _ = (z, x, y)
-    return None
-
-
-def get_overlay_image(
-    min_lon: float,
-    min_lat: float,
-    max_lon: float,
-    max_lat: float,
-    target_date: str | None = None,
-) -> tuple[bytes | None, bool]:
-    _ = (min_lon, min_lat, max_lon, max_lat, target_date)
-    return None, False

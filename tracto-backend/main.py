@@ -40,7 +40,7 @@ from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image, get_true_color_overlay
+from services.sentinel_service import get_ndvi_image, get_true_color_overlay, get_available_scenes
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -300,19 +300,77 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
         raise HTTPException(status_code=500, detail="Erro ao analisar o mapa climatico.") from exc
 
 
+@app.get("/api/sentinel/scenes")
+@limiter.limit("30/minute")
+async def sentinel_scenes_endpoint(
+    request: Request,
+    field_id: str,
+    lookback_days: int = 90,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Retorna cenas Sentinel-1 e Sentinel-2 disponíveis para o talhão
+    nos últimos `lookback_days` dias, via Earth Search STAC (gratuito).
+    """
+    try:
+        lookback_days = min(max(lookback_days, 7), 180)
+
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Talhão não encontrado ou sem permissão de acesso.",
+            )
+
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+
+        scenes = get_available_scenes(
+            lat=lat,
+            lng=lng,
+            boundaries=boundaries,
+            lookback_days=lookback_days,
+            max_results_per_source=5,
+        )
+
+        return {
+            "field_id": field_id,
+            "lookback_days": lookback_days,
+            "s2": scenes.get("s2", []),
+            "s1": scenes.get("s1", []),
+            "total": len(scenes.get("s2", [])) + len(scenes.get("s1", [])),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/sentinel/scenes] Erro field_id=%s: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar cenas disponíveis.") from exc
+
+
 @app.get("/api/sentinel/overlay")
 @limiter.limit("20/minute")
 async def sentinel_overlay_endpoint(
     request: Request,
     field_id: str,
+    source: str = "s2",
+    scene_date: str | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
+    """
+    Gera e retorna PNG recortado no polígono do talhão via Sentinel Hub Process API.
+    source: 's2' (True Color) ou 's1' (Radar SAR). scene_date: ISO date opcional.
+    """
+    if source not in ("s1", "s2"):
+        raise HTTPException(status_code=400, detail="source deve ser 's1' ou 's2'.")
+
     try:
         field_data = farm_service.get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(
                 status_code=404,
-                detail="Talhao nao encontrado ou sem permissao de acesso.",
+                detail="Talhão não encontrado ou sem permissão de acesso.",
             )
 
         lat = float(field_data.get("latitude", 0))
@@ -325,12 +383,14 @@ async def sentinel_overlay_endpoint(
             lng=lng,
             boundaries=boundaries,
             date_range_days=30,
+            scene_date=scene_date,
+            source=source,
         )
 
         if not image_bytes:
             raise HTTPException(
                 status_code=503,
-                detail="Imagem Sentinel nao disponivel para este talhao no momento. Tente novamente em instantes.",
+                detail=f"Imagem Sentinel-{'2' if source == 's2' else '1'} não disponível para este talhão no momento.",
             )
 
         return Response(
@@ -339,12 +399,14 @@ async def sentinel_overlay_endpoint(
             headers={
                 "Cache-Control": "public, max-age=1800",
                 "X-Field-ID": field_id,
+                "X-Source": source,
+                "X-Scene-Date": scene_date or "latest",
             },
         )
     except HTTPException:
         raise
     except Exception as exc:
-        logging.error("[/api/sentinel/overlay] Erro field_id=%s: %s", field_id, exc)
+        logging.error("[/api/sentinel/overlay] Erro field_id=%s source=%s: %s", field_id, source, exc)
         raise HTTPException(status_code=500, detail="Erro interno ao gerar overlay Sentinel.") from exc
 
 
