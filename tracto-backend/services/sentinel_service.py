@@ -1,3 +1,8 @@
+"""
+tracto-backend/services/sentinel_service.py — Versão 4.1
+Correção: indentação do bloco S1, evalscript S1 com 4 bandas RGBA, sem maxCloudCoverage no S1
+"""
+
 import base64
 import logging
 import os
@@ -8,17 +13,10 @@ from typing import Any
 
 import httpx
 
-# OAuth token cache (55 min)
-_token_lock = threading.Lock()
-_token_cache: dict[str, Any] = {
-    "access_token": None,
-    "expires_at": 0.0,
-}
+# ── Cache de token OAuth ──────────────────────────────────────────────────────
 
-# ── Cache de overlay por (field_id, scene_id) ────────────────────────────────
-_overlay_lock = threading.Lock()
-_overlay_cache: dict[str, dict[str, Any]] = {}
-OVERLAY_TTL_SECONDS = 30 * 60
+_token_lock = threading.Lock()
+_token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
 
 
 def get_oauth_token() -> str | None:
@@ -57,6 +55,13 @@ def get_oauth_token() -> str | None:
             return None
 
 
+# ── Cache de overlay ──────────────────────────────────────────────────────────
+
+_overlay_lock = threading.Lock()
+_overlay_cache: dict[str, dict[str, Any]] = {}
+OVERLAY_TTL_SECONDS = 30 * 60
+
+
 def _get_cached_overlay(cache_key: str) -> bytes | None:
     with _overlay_lock:
         entry = _overlay_cache.get(cache_key)
@@ -77,6 +82,8 @@ def _set_cached_overlay(cache_key: str, image_bytes: bytes) -> None:
     logging.info("[Sentinel] Overlay cacheado key=%s size=%d bytes", cache_key, len(image_bytes))
 
 
+# ── Utilitários de geometria ──────────────────────────────────────────────────
+
 def get_bbox_from_boundaries(
     boundaries: list[list[float]] | None,
     lat: float,
@@ -91,12 +98,7 @@ def get_bbox_from_boundaries(
         return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
 
     margin = 0.0005
-    return [
-        min(lngs) - margin,
-        min(lats) - margin,
-        max(lngs) + margin,
-        max(lats) + margin,
-    ]
+    return [min(lngs) - margin, min(lats) - margin, max(lngs) + margin, max(lats) + margin]
 
 
 def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | None:
@@ -104,17 +106,14 @@ def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | No
     for p in boundaries:
         if p and len(p) >= 2:
             valid.append([float(p[1]), float(p[0])])
-
     if len(valid) < 3:
         return None
-
     if valid[0] != valid[-1]:
         valid.append(valid[0])
-
     return {"type": "Polygon", "coordinates": [valid]}
 
 
-# ── Busca de cenas disponíveis via STAC (Earth Search AWS) ─────────────────
+# ── Busca de cenas via STAC ───────────────────────────────────────────────────
 
 STAC_URL = "https://earth-search.aws.element84.com/v1/search"
 
@@ -126,10 +125,6 @@ def get_available_scenes(
     lookback_days: int = 90,
     max_results_per_source: int = 5,
 ) -> dict[str, list[dict]]:
-    """
-    Consulta o Earth Search STAC e retorna cenas disponíveis de Sentinel-1 e Sentinel-2
-    para o polígono do talhão. Retorna dict com chaves 's2' e 's1'.
-    """
     now = datetime.utcnow()
     from_dt = (now - timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
     to_dt = now.strftime("%Y-%m-%dT23:59:59Z")
@@ -149,17 +144,16 @@ def get_available_scenes(
     intersects = build_intersects()
     results: dict[str, list[dict]] = {"s2": [], "s1": []}
 
-    # ── Sentinel-2 L2A ────────────────────────────────────────────────────
-    s2_payload = {
-        "collections": ["sentinel-2-l2a"],
-        "limit": max_results_per_source,
-        "sortby": [{"field": "properties.datetime", "direction": "desc"}],
-        "datetime": f"{from_dt}/{to_dt}",
-        "intersects": intersects,
-    }
+    # Sentinel-2
     try:
         with httpx.Client(timeout=20.0) as client:
-            res = client.post(STAC_URL, json=s2_payload)
+            res = client.post(STAC_URL, json={
+                "collections": ["sentinel-2-l2a"],
+                "limit": max_results_per_source,
+                "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+                "datetime": f"{from_dt}/{to_dt}",
+                "intersects": intersects,
+            })
             res.raise_for_status()
             features = res.json().get("features", [])
         for feat in features:
@@ -175,10 +169,7 @@ def get_available_scenes(
                     pass
             cloud = props.get("eo:cloud_cover")
             assets = feat.get("assets", {})
-            thumbnail = (
-                assets.get("thumbnail", {}).get("href")
-                or assets.get("overview", {}).get("href")
-            )
+            thumbnail = assets.get("thumbnail", {}).get("href") or assets.get("overview", {}).get("href")
             results["s2"].append({
                 "scene_id": feat.get("id"),
                 "date": date_iso,
@@ -189,19 +180,18 @@ def get_available_scenes(
                 "thumbnail_url": thumbnail,
             })
     except Exception as exc:
-        logging.warning("[Sentinel] Erro ao buscar cenas S2 via STAC: %s", exc)
+        logging.warning("[Sentinel] Erro S2 STAC: %s", exc)
 
-    # ── Sentinel-1 GRD ────────────────────────────────────────────────────
-    s1_payload = {
-        "collections": ["sentinel-1-grd"],
-        "limit": max_results_per_source,
-        "sortby": [{"field": "properties.datetime", "direction": "desc"}],
-        "datetime": f"{from_dt}/{to_dt}",
-        "intersects": intersects,
-    }
+    # Sentinel-1
     try:
         with httpx.Client(timeout=20.0) as client:
-            res = client.post(STAC_URL, json=s1_payload)
+            res = client.post(STAC_URL, json={
+                "collections": ["sentinel-1-grd"],
+                "limit": max_results_per_source,
+                "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+                "datetime": f"{from_dt}/{to_dt}",
+                "intersects": intersects,
+            })
             res.raise_for_status()
             features = res.json().get("features", [])
         for feat in features:
@@ -229,16 +219,14 @@ def get_available_scenes(
                 "thumbnail_url": thumbnail,
             })
     except Exception as exc:
-        logging.warning("[Sentinel] Erro ao buscar cenas S1 via STAC: %s", exc)
+        logging.warning("[Sentinel] Erro S1 STAC: %s", exc)
 
-    logging.info(
-        "[Sentinel] Cenas encontradas: S2=%d S1=%d para lat=%.4f lng=%.4f",
-        len(results["s2"]), len(results["s1"]), lat, lng,
-    )
+    logging.info("[Sentinel] Cenas: S2=%d S1=%d lat=%.4f lng=%.4f",
+                 len(results["s2"]), len(results["s1"]), lat, lng)
     return results
 
 
-# ── Overlay True Color por cena específica ────────────────────────────────────
+# ── Overlay por cena específica ───────────────────────────────────────────────
 
 def get_true_color_overlay(
     field_id: str,
@@ -246,14 +234,9 @@ def get_true_color_overlay(
     lng: float,
     boundaries: list[list[float]] | None = None,
     date_range_days: int = 30,
-    scene_date: str | None = None,  # ISO date "2026-04-02" — se fornecido, busca cena desta data
-    source: str = "s2",  # "s1" ou "s2"
+    scene_date: str | None = None,
+    source: str = "s2",
 ) -> bytes | None:
-    """
-    Gera PNG recortado no polígono do talhão via Sentinel Hub Process API.
-    Se scene_date for fornecido, busca a cena daquela data específica.
-    source: 's2' = True Color RGB, 's1' = Radar VV amplitude
-    """
     cache_key = f"{field_id}_{source}_{scene_date or 'latest'}"
     cached = _get_cached_overlay(cache_key)
     if cached:
@@ -266,21 +249,22 @@ def get_true_color_overlay(
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
     geojson_polygon = _build_geojson_polygon(boundaries) if boundaries else None
 
-    # ── Evalscripts ────────────────────────────────────────────────────────────────
+    # ── Evalscripts ───────────────────────────────────────────────────────────
     if source == "s1":
-        # Sentinel-1 SAR — VV amplitude em escala de cinza com realce
+        # Sentinel-1 SAR — VV em escala de cinza, 4 bandas RGBA
         evalscript = """
 //VERSION=3
 function setup() {
   return {
-    input: [{ bands: ["VV", "dataMask"] }],
-    output: { bands: 2, sampleType: "UINT8" }
+    input: [{ bands: ["VV", "VH", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
   };
 }
 function evaluatePixel(s) {
   let vv = Math.log(s.VV * s.VV + 0.000001) / Math.log(10) * 10;
   let norm = Math.round(Math.min(Math.max((vv + 25) / 25, 0), 1) * 255);
-  return [norm, s.dataMask * 255];
+  let alpha = s.dataMask * 255;
+  return [norm, norm, norm, alpha];
 }
 """
         data_type = "sentinel-1-grd"
@@ -290,8 +274,8 @@ function evaluatePixel(s) {
 //VERSION=3
 function setup() {
   return {
-    input: [{ bands: [\"B04\", \"B03\", \"B02\", \"dataMask\"] }],
-    output: { bands: 4, sampleType: \"UINT8\" }
+    input: [{ bands: ["B04", "B03", "B02", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
   };
 }
 function evaluatePixel(s) {
@@ -301,16 +285,14 @@ function evaluatePixel(s) {
   return [adj(s.B04), adj(s.B03), adj(s.B02), s.dataMask * 255];
 }
 """
-
         data_type = "sentinel-2-l2a"
 
-    # ── Janela de tempo ────────────────────────────────────────────────────────────────
+    # ── Janela de tempo ───────────────────────────────────────────────────────
     if scene_date:
-        # Janela de ±2 dias ao redor da data escolhida
         try:
             sd = datetime.fromisoformat(scene_date)
-            from_date = (sd - timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
-            to_date = (sd + timedelta(days=2)).strftime("%Y-%m-%dT23:59:59Z")
+            from_date = (sd - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+            to_date = (sd + timedelta(days=1)).strftime("%Y-%m-%dT23:59:59Z")
         except Exception:
             from_date = (datetime.utcnow() - timedelta(days=date_range_days)).strftime("%Y-%m-%dT00:00:00Z")
             to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
@@ -329,17 +311,25 @@ function evaluatePixel(s) {
     if geojson_polygon:
         bounds_input["geometry"] = geojson_polygon
 
+    # dataFilter: S2 tem maxCloudCoverage e mosaickingOrder, S1 não suporta esses filtros
+    if source == "s2":
+        data_filter_base: dict = {
+            "timeRange": {"from": "", "to": ""},
+            "maxCloudCoverage": 100,
+            "mosaickingOrder": "mostRecent",
+        }
+    else:
+        data_filter_base = {
+            "timeRange": {"from": "", "to": ""},
+        }
+
     payload: dict = {
         "input": {
             "bounds": bounds_input,
             "data": [
                 {
                     "type": data_type,
-                    "dataFilter": {
-                        "timeRange": {"from": "", "to": ""},
-                        "maxCloudCoverage": 100,
-                        "mosaickingOrder": "mostRecent",
-                    },
+                    "dataFilter": dict(data_filter_base),
                 }
             ],
         },
@@ -356,10 +346,8 @@ function evaluatePixel(s) {
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["to"] = to_dt
 
         try:
-            logging.info(
-                "[Sentinel] overlay POST source=%s field_id=%s from=%s to=%s",
-                source, field_id, from_dt, to_dt,
-            )
+            logging.info("[Sentinel] overlay POST source=%s field_id=%s from=%s to=%s",
+                         source, field_id, from_dt, to_dt)
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             with httpx.Client(timeout=60.0) as http_client:
                 resp = http_client.post(
@@ -374,7 +362,7 @@ function evaluatePixel(s) {
                     image_bytes = resp.content
                     _set_cached_overlay(cache_key, image_bytes)
                     return image_bytes
-                logging.warning("[Sentinel] Resposta não-imagem content-type=%s body=%s", ct, resp.text[:200])
+                logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
 
             elif resp.status_code == 401:
                 logging.warning("[Sentinel] 401 — renovando token")
@@ -385,7 +373,8 @@ function evaluatePixel(s) {
                 continue
 
             else:
-                logging.warning("[Sentinel] HTTP %d from=%s body=%s", resp.status_code, from_dt, resp.text[:300])
+                logging.warning("[Sentinel] HTTP %d from=%s body=%s",
+                                resp.status_code, from_dt, resp.text[:300])
 
         except httpx.TimeoutException:
             logging.warning("[Sentinel] Timeout source=%s from=%s", source, from_dt)
@@ -396,7 +385,7 @@ function evaluatePixel(s) {
     return None
 
 
-# ── NDVI (mantida para /api/analyze-field) ────────────────────────────────────────────────
+# ── NDVI (mantida para /api/analyze-field) ────────────────────────────────────
 
 def get_ndvi_stats(
     bbox: list[float],
@@ -418,11 +407,8 @@ def get_ndvi_stats(
 //VERSION=3
 function setup() {
   return {
-    input: [{ bands: [\"B04\", \"B08\", \"dataMask\"] }],
-    output: [
-      { id: \"ndvi\", bands: 1 },
-      { id: \"dataMask\", bands: 1 }
-    ]
+    input: [{ bands: ["B04", "B08", "dataMask"] }],
+    output: [{ id: "ndvi", bands: 1 }, { id: "dataMask", bands: 1 }]
   };
 }
 function evaluatePixel(s) {
@@ -430,29 +416,22 @@ function evaluatePixel(s) {
   return { ndvi: [ndvi], dataMask: [s.dataMask] };
 }
 """
-
     to_dt = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
     from_dt = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
 
     payload = {
         "input": {
             "bounds": bounds_payload,
-            "data": [
-                {
-                    "type": "sentinel-2-l2a",
-                    "dataFilter": {
-                        "maxCloudCoverage": 30,
-                        "timeRange": {"from": from_dt, "to": to_dt},
-                    },
-                }
-            ],
+            "data": [{"type": "sentinel-2-l2a", "dataFilter": {
+                "maxCloudCoverage": 30,
+                "timeRange": {"from": from_dt, "to": to_dt},
+            }}],
         },
         "aggregation": {
             "timeRange": {"from": from_dt, "to": to_dt},
             "aggregationInterval": {"of": "P30D"},
             "evalscript": evalscript,
-            "resx": 10,
-            "resy": 10,
+            "resx": 10, "resy": 10,
         },
     }
 
@@ -461,21 +440,17 @@ function evaluatePixel(s) {
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(
                 "https://services.sentinel-hub.com/api/v1/statistics",
-                headers=headers,
-                json=payload,
+                headers=headers, json=payload,
             )
             resp.raise_for_status()
             data = resp.json()
 
         output = (
             data.get("data", [{}])[0]
-            .get("outputs", {})
-            .get("ndvi", {})
-            .get("bands", {})
-            .get("B0", {})
+            .get("outputs", {}).get("ndvi", {})
+            .get("bands", {}).get("B0", {})
             .get("stats", {})
         )
-
         if not output or output.get("count", 0) == 0:
             return None
 
@@ -508,7 +483,7 @@ def get_ndvi_image(
     evalscript = """
 //VERSION=3
 function setup() {
-  return { input: [\"B04\",\"B08\",\"dataMask\"], output: { bands: 4 } };
+  return { input: ["B04","B08","dataMask"], output: { bands: 4 } };
 }
 function evaluatePixel(s) {
   let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
@@ -520,12 +495,10 @@ function evaluatePixel(s) {
   return [0.1, 0.5, 0.1, 1];
 }
 """
-
     to_date = datetime.utcnow().strftime("%Y-%m-%d")
 
     for days in [date_range_days, 30]:
         f_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
-
         bounds_input: dict[str, Any] = {
             "bbox": bbox,
             "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
@@ -536,22 +509,13 @@ function evaluatePixel(s) {
         payload = {
             "input": {
                 "bounds": bounds_input,
-                "data": [
-                    {
-                        "type": "sentinel-2-l2a",
-                        "dataFilter": {
-                            "timeRange": {
-                                "from": f"{f_date}T00:00:00Z",
-                                "to": f"{to_date}T23:59:59Z",
-                            },
-                            "maxCloudCoverage": 30,
-                        },
-                    }
-                ],
+                "data": [{"type": "sentinel-2-l2a", "dataFilter": {
+                    "timeRange": {"from": f"{f_date}T00:00:00Z", "to": f"{to_date}T23:59:59Z"},
+                    "maxCloudCoverage": 30,
+                }}],
             },
             "output": {
-                "width": 512,
-                "height": 512,
+                "width": 512, "height": 512,
                 "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
             },
             "evalscript": evalscript,
@@ -562,11 +526,9 @@ function evaluatePixel(s) {
             with httpx.Client(timeout=60.0) as client:
                 resp = client.post(
                     "https://services.sentinel-hub.com/api/v1/process",
-                    headers=headers,
-                    json=payload,
+                    headers=headers, json=payload,
                 )
                 resp.raise_for_status()
-
             return {
                 "image_base64": base64.b64encode(resp.content).decode("utf-8"),
                 "date_acquired": f"{to_date} (Aproximado)",
