@@ -18,7 +18,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
-import { API_URL, apiFetch } from '../services/api';
+import { API_URL } from '../services/api';
 
 // Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -292,20 +292,22 @@ export default function FieldMap() {
       return;
     }
 
-    // Busca geográfica autenticada no backend
+    // Nominatim direto (sem backend)
     setSearchLoading(true);
     try {
-      const result = await apiFetch<{ lat: number; lng: number; display_name?: string }>(
-        '/api/geo/search',
-        {
-          method: 'POST',
-          body: JSON.stringify({ query: q }),
-        },
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`,
+        { headers: { 'Accept-Language': 'pt-BR' } },
       );
-      setFlyTarget({ lat: result.lat, lng: result.lng, zoom: 13 });
-      setTempMarker({ lat: result.lat, lng: result.lng });
-    } catch (err) {
-      setSearchError('Local não encontrado.');
+      const data = (await response.json()) as Array<{ lat: string; lon: string }>;
+      if (!data || data.length === 0) throw new Error('nao encontrado');
+
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
+      setFlyTarget({ lat, lng, zoom: 13 });
+      setTempMarker({ lat, lng });
+    } catch {
+      setSearchError('Local não encontrado. Tente outro nome ou use coordenadas.');
     } finally {
       setSearchLoading(false);
     }
