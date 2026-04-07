@@ -1,3 +1,7 @@
+// src/components/FieldMap.tsx
+// Versão 3.1 — Restaura OSM, busca por cidade/coords, auto-centro nos talhões
+// Adiciona ImageOverlay Sentinel por talhão selecionado (Process API)
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImageOverlay,
@@ -14,7 +18,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
-import { API_URL } from '../services/api';
+import { API_URL, apiFetch } from '../services/api';
 
 // Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -24,7 +28,10 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+
 type DrawMode = 'none' | 'drawing';
+type MapLayer = 'osm' | 'esri' | 'sentinel';
 
 interface OverlayState {
   url: string | null;
@@ -33,6 +40,8 @@ interface OverlayState {
   error: string | null;
   fieldId: string | null;
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function computeBoundsFromBoundaries(
   boundaries: [number, number][],
@@ -45,6 +54,64 @@ function computeBoundsFromBoundaries(
   ];
 }
 
+/** Parseia coordenadas decimais: "-18.919139, -49.287722" */
+function parseDecimalCoords(text: string): { lat: number; lng: number } | null {
+  const match = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if (!match) return null;
+  const lat = parseFloat(match[1]);
+  const lng = parseFloat(match[2]);
+  if (isNaN(lat) || isNaN(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+/** Parseia coordenadas DMS: "18°55'08.9"S 49°17'15.8"W" */
+function parseDMSCoords(text: string): { lat: number; lng: number } | null {
+  const dmsRegex =
+    /(\d+)[°º](\d+)'([\d.]+)"?([NSns])\s+(\d+)[°º](\d+)'([\d.]+)"?([EWew])/;
+  const match = text.match(dmsRegex);
+  if (!match) return null;
+
+  const toDecimal = (deg: number, min: number, sec: number, dir: string) => {
+    const d = deg + min / 60 + sec / 3600;
+    return dir.toUpperCase() === 'S' || dir.toUpperCase() === 'W' ? -d : d;
+  };
+
+  const lat = toDecimal(
+    parseInt(match[1]),
+    parseInt(match[2]),
+    parseFloat(match[3]),
+    match[4],
+  );
+  const lng = toDecimal(
+    parseInt(match[5]),
+    parseInt(match[6]),
+    parseFloat(match[7]),
+    match[8],
+  );
+  return { lat, lng };
+}
+
+async function buildAuthHeaders(): Promise<HeadersInit> {
+  try {
+    const { supabase } = await import('../services/supabase');
+    let {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      const refreshed = await supabase.auth.refreshSession();
+      session = refreshed.data.session;
+    }
+    return session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+// ── Sub-componentes ───────────────────────────────────────────────────────────
+
 function MapClickHandler({
   onMapClick,
 }: {
@@ -54,38 +121,71 @@ function MapClickHandler({
   return null;
 }
 
+/** Voa para um destino externo (busca por cidade ou coords) */
+function FlyController({
+  target,
+}: {
+  target: { lat: number; lng: number; zoom?: number } | null;
+}) {
+  const map = useMap();
+  const prevTarget = useRef<typeof target>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    if (
+      prevTarget.current?.lat === target.lat &&
+      prevTarget.current?.lng === target.lng
+    )
+      return;
+    prevTarget.current = target;
+    map.flyTo([target.lat, target.lng], target.zoom ?? 15, { duration: 1.2 });
+  }, [target, map]);
+
+  return null;
+}
+
+/** Auto-centra no talhão ativo ou na localização atual — só na primeira carga */
 function MapController() {
   const map = useMap();
   const { currentLocation, locationStatus, fields, activeFieldId } = useAppStore();
-  const hasCenteredInitial = useRef(false);
+  const hasCentered = useRef(false);
 
   useEffect(() => {
-    if (hasCenteredInitial.current) return;
+    if (hasCentered.current) return;
 
+    // 1. Talhão ativo
     if (activeFieldId) {
       const field = fields.find((f) => f.id === activeFieldId);
       if (field) {
         map.setView([field.lat, field.lng], 15);
-        hasCenteredInitial.current = true;
+        hasCentered.current = true;
         return;
       }
     }
 
-    if (locationStatus === 'precise' && currentLocation) {
-      map.setView([currentLocation.lat, currentLocation.lng], 13);
-      hasCenteredInitial.current = true;
+    // 2. Qualquer talhão cadastrado
+    if (fields.length > 0) {
+      map.setView([fields[0].lat, fields[0].lng], 15);
+      hasCentered.current = true;
       return;
     }
 
+    // 3. Localização precisa do usuário
+    if (locationStatus === 'precise' && currentLocation) {
+      map.setView([currentLocation.lat, currentLocation.lng], 13);
+      hasCentered.current = true;
+      return;
+    }
+
+    // 4. Fallback / denied mas temos localização aproximada
     if (
       (locationStatus === 'fallback' ||
         locationStatus === 'denied' ||
         locationStatus === 'unavailable') &&
-      fields.length > 0
+      currentLocation
     ) {
-      const firstField = fields[0];
-      map.setView([firstField.lat, firstField.lng], 15);
-      hasCenteredInitial.current = true;
+      map.setView([currentLocation.lat, currentLocation.lng], 11);
+      hasCentered.current = true;
     }
   }, [currentLocation, locationStatus, fields, activeFieldId, map]);
 
@@ -118,23 +218,7 @@ function ZoomControls() {
   );
 }
 
-async function buildAuthHeaders(): Promise<HeadersInit> {
-  try {
-    const { supabase } = await import('../services/supabase');
-    let {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      const refreshed = await supabase.auth.refreshSession();
-      session = refreshed.data.session;
-    }
-
-    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-  } catch {
-    return {};
-  }
-}
+// ── Componente principal ──────────────────────────────────────────────────────
 
 export default function FieldMap() {
   const {
@@ -148,6 +232,17 @@ export default function FieldMap() {
     setActiveField,
   } = useAppStore();
 
+  // ── Camada de mapa ────────────────────────────────────────────────────────
+  const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
+
+  // ── Busca geográfica ──────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [tempMarker, setTempMarker] = useState<{ lat: number; lng: number } | null>(null);
+
+  // ── Desenho ───────────────────────────────────────────────────────────────
   const [drawMode, setDrawMode] = useState<DrawMode>('none');
   const [drawPoints, setDrawPoints] = useState<[number, number][]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -155,7 +250,8 @@ export default function FieldMap() {
   const [fieldCultura, setFieldCultura] = useState('');
   const [fieldDataPlantio, setFieldDataPlantio] = useState('');
   const [fieldVariedade, setFieldVariedade] = useState('');
-  const [sentinelActive, setSentinelActive] = useState(false);
+
+  // ── Overlay Sentinel ──────────────────────────────────────────────────────
   const [overlay, setOverlay] = useState<OverlayState>({
     url: null,
     bounds: null,
@@ -163,13 +259,59 @@ export default function FieldMap() {
     error: null,
     fieldId: null,
   });
-
   const prevUrlRef = useRef<string | null>(null);
+
+  const sentinelActive = mapLayer === 'sentinel';
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lat, currentLocation.lng]
-    : [-23.31028, -51.16278];
+    : [-18.9188, -48.2768]; // Uberlândia como fallback
 
+  // ── Busca geográfica ──────────────────────────────────────────────────────
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+
+    setSearchError(null);
+    setTempMarker(null);
+
+    // Tenta coordenadas decimais primeiro
+    const decimal = parseDecimalCoords(q);
+    if (decimal) {
+      setFlyTarget({ ...decimal, zoom: 15 });
+      setTempMarker(decimal);
+      return;
+    }
+
+    // Tenta DMS
+    const dms = parseDMSCoords(q);
+    if (dms) {
+      setFlyTarget({ ...dms, zoom: 15 });
+      setTempMarker(dms);
+      return;
+    }
+
+    // Busca geográfica autenticada no backend
+    setSearchLoading(true);
+    try {
+      const result = await apiFetch<{ lat: number; lng: number; display_name?: string }>(
+        '/api/geo/search',
+        {
+          method: 'POST',
+          body: JSON.stringify({ query: q }),
+        },
+      );
+      setFlyTarget({ lat: result.lat, lng: result.lng, zoom: 13 });
+      setTempMarker({ lat: result.lat, lng: result.lng });
+    } catch (err) {
+      setSearchError('Local não encontrado.');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // ── Overlay Sentinel — busca quando talhão ativo muda ────────────────────
   useEffect(() => {
     if (!sentinelActive || !activeFieldId) {
       if (prevUrlRef.current) {
@@ -180,6 +322,7 @@ export default function FieldMap() {
       return;
     }
 
+    // Mesmo talhão já carregado — não rebuscar
     if (overlay.fieldId === activeFieldId && overlay.url) return;
 
     const activeField = fields.find((f) => f.id === activeFieldId);
@@ -189,8 +332,9 @@ export default function FieldMap() {
     if (!fieldBoundaries || fieldBoundaries.length < 3) {
       setOverlay((prev) => ({
         ...prev,
-        error: 'Talhao sem poligono definido. Desenhe o talhao primeiro.',
+        error: 'Talhão sem polígono definido. Desenhe o talhão primeiro.',
         loading: false,
+        fieldId: activeFieldId,
       }));
       return;
     }
@@ -216,9 +360,7 @@ export default function FieldMap() {
       try {
         const response = await fetch(
           `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}`,
-          {
-            headers: await buildAuthHeaders(),
-          },
+          { headers: await buildAuthHeaders() },
         );
 
         if (cancelled) return;
@@ -243,7 +385,8 @@ export default function FieldMap() {
         });
       } catch (err) {
         if (cancelled) return;
-        const msg = err instanceof Error ? err.message : 'Erro ao carregar imagem Sentinel.';
+        const msg =
+          err instanceof Error ? err.message : 'Erro ao carregar imagem Sentinel.';
         setOverlay({
           url: null,
           bounds,
@@ -255,21 +398,18 @@ export default function FieldMap() {
     };
 
     void fetchOverlay();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [sentinelActive, activeFieldId, fields, overlay.fieldId, overlay.url]);
 
+  // Cleanup ao desmontar
   useEffect(
     () => () => {
-      if (prevUrlRef.current) {
-        URL.revokeObjectURL(prevUrlRef.current);
-      }
+      if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
     },
     [],
   );
 
+  // ── Handlers de desenho ───────────────────────────────────────────────────
   const handleMapClick = useCallback(
     (latlng: { lat: number; lng: number }) => {
       if (drawMode !== 'drawing') return;
@@ -289,44 +429,41 @@ export default function FieldMap() {
 
   const finishDrawing = async () => {
     if (!activeFarmId) {
-      alert('Selecione ou crie uma fazenda antes de desenhar talhoes.');
+      alert('Selecione ou crie uma fazenda antes de desenhar talhões.');
       return;
     }
     if (drawPoints.length < 3) {
-      alert('Marque pelo menos 3 pontos para criar um talhao.');
+      alert('Marque pelo menos 3 pontos para criar um talhão.');
       return;
     }
-
     const areaHa = polygonAreaHa(drawPoints);
     if (areaHa < 0.05) {
-      alert('A area desenhada e muito pequena. Desenhe um talhao com pelo menos 0.05 ha.');
+      alert('A área desenhada é muito pequena. Mínimo 0.05 ha.');
       return;
     }
 
-    const name = fieldName.trim() || `Talhao ${fields.length + 1}`;
+    const name = fieldName.trim() || `Talhão ${fields.length + 1}`;
     const centroid: [number, number] = [
       drawPoints.reduce((s, p) => s + p[0], 0) / drawPoints.length,
       drawPoints.reduce((s, p) => s + p[1], 0) / drawPoints.length,
     ];
 
-    const newLoc = {
-      lat: centroid[0],
-      lng: centroid[1],
-      name,
-      boundaries: drawPoints,
-      cultura: fieldCultura || undefined,
-      dataPlantio: fieldDataPlantio || undefined,
-      variedade: fieldVariedade || undefined,
-      areaHa,
-    };
-
     try {
       setIsSaving(true);
-      await createField(activeFarmId, newLoc);
+      await createField(activeFarmId, {
+        lat: centroid[0],
+        lng: centroid[1],
+        name,
+        boundaries: drawPoints,
+        cultura: fieldCultura || undefined,
+        dataPlantio: fieldDataPlantio || undefined,
+        variedade: fieldVariedade || undefined,
+        areaHa,
+      });
       resetForm();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao salvar talhao.';
-      alert(`Nao foi possivel salvar o talhao:\n${msg}`);
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar talhão.';
+      alert(`Não foi possível salvar o talhão:\n${msg}`);
     } finally {
       setIsSaving(false);
     }
@@ -334,6 +471,7 @@ export default function FieldMap() {
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
       className="relative w-full h-full overflow-hidden"
@@ -346,18 +484,33 @@ export default function FieldMap() {
         zoomControl={false}
       >
         <MapController />
+        <FlyController target={flyTarget} />
 
-        <TileLayer
-          attribution="&copy; Esri"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={20}
-        />
-        <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={20}
-          opacity={0.6}
-        />
+        {/* ── Camadas base ── */}
+        {mapLayer === 'osm' && (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
+          />
+        )}
 
+        {(mapLayer === 'esri' || mapLayer === 'sentinel') && (
+          <>
+            <TileLayer
+              attribution="&copy; Esri"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+            />
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+              opacity={0.6}
+            />
+          </>
+        )}
+
+        {/* ── ImageOverlay Sentinel (sobre base Esri) ── */}
         {sentinelActive && overlay.url && overlay.bounds && (
           <ImageOverlay
             url={overlay.url}
@@ -369,14 +522,23 @@ export default function FieldMap() {
 
         <MapClickHandler onMapClick={handleMapClick} />
 
+        {/* Marcador temporário de busca */}
+        {tempMarker && (
+          <Marker position={[tempMarker.lat, tempMarker.lng]}>
+            <Popup>📍 {searchQuery}</Popup>
+          </Marker>
+        )}
+
+        {/* Marcador de localização atual */}
         {currentLocation &&
           locationStatus === 'precise' &&
           !fields.some((s) => s.lat === currentLocation.lat) && (
             <Marker position={[currentLocation.lat, currentLocation.lng]}>
-              <Popup>Localizacao atual</Popup>
+              <Popup>📍 Sua localização atual</Popup>
             </Marker>
           )}
 
+        {/* Polígonos dos talhões */}
         {fields.map((loc, idx) => {
           const color = FIELD_COLORS[idx % FIELD_COLORS.length];
           const isActive = loc.id === activeFieldId;
@@ -400,9 +562,7 @@ export default function FieldMap() {
                 dashArray: isActive ? undefined : '4 2',
               }}
               eventHandlers={{
-                click: () => {
-                  if (loc.id) setActiveField(loc.id);
-                },
+                click: () => { if (loc.id) setActiveField(loc.id); },
               }}
             >
               <Popup>
@@ -410,30 +570,30 @@ export default function FieldMap() {
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
                   {loc.cultura && (
                     <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>
-                      {loc.cultura}
+                      🌱 {loc.cultura}
                     </p>
                   )}
                   {loc.variedade && (
                     <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>
-                      {loc.variedade}
+                      🔬 {loc.variedade}
                     </p>
                   )}
                   {loc.dataPlantio && (
                     <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>
-                      Plantio: {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}
+                      📅 Plantio: {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}
                     </p>
                   )}
                   {loc.boundaries && (
                     <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-                      {polygonAreaHa(loc.boundaries).toFixed(2)} ha
+                      📐 {polygonAreaHa(loc.boundaries).toFixed(2)} ha · {loc.boundaries.length} vértices
                     </p>
                   )}
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button
                       onClick={() => {
                         if (loc.id) {
                           setActiveField(loc.id);
-                          setSentinelActive(true);
+                          setMapLayer('sentinel');
                         }
                       }}
                       style={{
@@ -446,10 +606,15 @@ export default function FieldMap() {
                         cursor: 'pointer',
                       }}
                     >
-                      Ver Sentinel
+                      🛰 Ver Sentinel
                     </button>
                     <button
-                      onClick={() => activeFarmId && loc.id && removeField(activeFarmId, loc.id)}
+                      onClick={() => {
+                        if (loc.id && activeFarmId) {
+                          if (!window.confirm(`Remover o talhão "${loc.name}"? Esta ação não pode ser desfeita.`)) return;
+                          removeField(activeFarmId, loc.id);
+                        }
+                      }}
                       style={{
                         fontSize: 11,
                         color: '#ef4444',
@@ -459,7 +624,7 @@ export default function FieldMap() {
                         padding: 0,
                       }}
                     >
-                      Remover
+                      🗑 Remover
                     </button>
                   </div>
                 </div>
@@ -468,6 +633,7 @@ export default function FieldMap() {
           );
         })}
 
+        {/* Preview do desenho em andamento */}
         {drawMode === 'drawing' && drawPoints.length > 0 && (
           <>
             {drawPoints.length > 1 && (
@@ -493,42 +659,106 @@ export default function FieldMap() {
         <ZoomControls />
       </MapContainer>
 
+      {/* ── Overlays fora do MapContainer ── */}
+
+      {/* Barra de busca por cidade ou coordenadas */}
       {drawMode === 'none' && (
-        <div className="absolute top-4 left-4 z-[500] flex gap-2 pointer-events-auto">
-          <button
-            onClick={() => setSentinelActive(false)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+        <form
+          onSubmit={handleSearch}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto"
+          style={{ minWidth: 300 }}
+        >
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
             style={{
-              background: !sentinelActive ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: !sentinelActive ? '#fff' : '#94a3b8',
+              background: 'rgba(8,8,9,0.88)',
+              backdropFilter: 'blur(16px)',
+              border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`,
             }}
           >
-            Mapa Base
-          </button>
+            <span
+              className="material-symbols-outlined text-base flex-shrink-0"
+              style={{ color: '#64748b', fontSize: 18 }}
+            >
+              search
+            </span>
+            <input
+              className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none"
+              placeholder="Buscar cidade ou coordenadas..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchError(null);
+              }}
+            />
+            {searchLoading && (
+              <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />
+            )}
+          </div>
           <button
-            onClick={() => {
-              setSentinelActive(true);
-              if (!activeFieldId && fields.length > 0 && fields[0].id) {
-                setActiveField(fields[0].id);
-              }
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-            style={{
-              background: sentinelActive ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: sentinelActive ? '#fff' : '#94a3b8',
-            }}
+            type="submit"
+            disabled={searchLoading || !searchQuery.trim()}
+            className="px-3 py-2 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-40"
+            style={{ background: '#ec5b13', flexShrink: 0 }}
           >
-            Sentinel-2
+            Ir
           </button>
+        </form>
+      )}
+
+      {/* Erro de busca */}
+      {searchError && drawMode === 'none' && (
+        <div
+          className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none"
+          style={{
+            top: 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(239,68,68,0.15)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            color: '#f87171',
+          }}
+        >
+          {searchError}
         </div>
       )}
 
+      {/* Seletor de camadas — canto superior esquerdo */}
+      {drawMode === 'none' && (
+        <div className="absolute top-4 left-4 z-[500] flex gap-1.5 pointer-events-auto">
+          {(
+            [
+              { key: 'osm', label: 'OpenStreetMap' },
+              { key: 'esri', label: 'Satélite HD' },
+              { key: 'sentinel', label: 'Sentinel-2' },
+            ] as { key: MapLayer; label: string }[]
+          ).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => {
+                setMapLayer(key);
+                if (key === 'sentinel' && !activeFieldId && fields.length > 0 && fields[0].id) {
+                  setActiveField(fields[0].id);
+                }
+              }}
+              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+              style={{
+                background:
+                  mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: mapLayer === key ? '#fff' : '#94a3b8',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Badge de status do Sentinel */}
       {sentinelActive && (
-        <div className="absolute top-14 left-4 z-[500] pointer-events-none">
+        <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           {overlay.loading && (
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white"
@@ -553,7 +783,7 @@ export default function FieldMap() {
                 color: '#4ade80',
               }}
             >
-              Sentinel-2 · True Color · Cache 30min
+              🛰 Sentinel-2 · True Color · Cache 30min
             </div>
           )}
 
@@ -565,16 +795,18 @@ export default function FieldMap() {
                 backdropFilter: 'blur(12px)',
                 border: '1px solid rgba(239,68,68,0.3)',
                 color: '#f87171',
-                maxWidth: 260,
+                maxWidth: 280,
               }}
             >
-              {overlay.error.includes('503')
-                ? 'Imagem indisponivel. Tente novamente em instantes.'
-                : 'Erro ao carregar Sentinel'}
+              {overlay.error.includes('503') || overlay.error.includes('504')
+                ? '⚠ Imagem indisponível — tente novamente em instantes'
+                : overlay.error.includes('sem polígono')
+                ? '⚠ Talhão sem polígono. Desenhe o perímetro primeiro.'
+                : '⚠ Erro ao carregar Sentinel'}
             </div>
           )}
 
-          {!overlay.loading && sentinelActive && !activeFieldId && (
+          {!overlay.loading && !overlay.url && !overlay.error && !activeFieldId && (
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-semibold text-white"
               style={{
@@ -583,22 +815,25 @@ export default function FieldMap() {
                 border: '1px solid rgba(255,255,255,0.09)',
               }}
             >
-              Selecione um talhao para ver o Sentinel
+              👆 Clique em um talhão e selecione "Ver Sentinel"
             </div>
           )}
         </div>
       )}
 
+      {/* Botão Desenhar Talhão */}
       {drawMode === 'none' && (
         <button
           onClick={() => setDrawMode('drawing')}
           className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 pointer-events-auto"
           style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}
         >
-          Desenhar Talhao
+          <span className="material-symbols-outlined text-base">add_location_alt</span>
+          Desenhar Talhão
         </button>
       )}
 
+      {/* Controles de desenho */}
       {drawMode === 'drawing' && (
         <>
           <div
@@ -609,7 +844,10 @@ export default function FieldMap() {
               border: '1px solid rgba(236,91,19,0.3)',
             }}
           >
-            Clique no mapa para marcar os vertices · {drawPoints.length} ponto
+            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>
+              draw
+            </span>
+            Clique no mapa para marcar os vértices · {drawPoints.length} ponto
             {drawPoints.length !== 1 ? 's' : ''}
           </div>
 
@@ -622,13 +860,16 @@ export default function FieldMap() {
               minWidth: 420,
             }}
           >
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
-              {drawPoints.length} pontos marcados · Novo Talhao
+            <p
+              className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: '#ec5b13' }}
+            >
+              {drawPoints.length} pontos marcados · Novo Talhão
             </p>
 
             <input
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
-              placeholder="Nome do talhao"
+              placeholder="Nome do talhão (ex: Talhão Norte)"
               value={fieldName}
               onChange={(e) => setFieldName(e.target.value)}
             />
@@ -636,7 +877,7 @@ export default function FieldMap() {
             <div className="grid grid-cols-2 gap-2">
               <input
                 className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
-                placeholder="Cultura"
+                placeholder="Cultura (ex: Soja)"
                 value={fieldCultura}
                 onChange={(e) => setFieldCultura(e.target.value)}
               />
@@ -657,7 +898,10 @@ export default function FieldMap() {
 
             {drawPoints.length >= 3 && (
               <p className="text-[10px] text-slate-400 text-center">
-                Area estimada: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span>
+                Área estimada:{' '}
+                <span className="font-bold text-white">
+                  {polygonAreaHa(drawPoints).toFixed(2)} ha
+                </span>
               </p>
             )}
 
@@ -668,7 +912,7 @@ export default function FieldMap() {
                 className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-40"
                 style={{ background: '#ec5b13' }}
               >
-                {isSaving ? 'Salvando...' : 'Salvar Talhao'}
+                {isSaving ? 'Salvando...' : 'Salvar Talhão'}
               </button>
               <button
                 onClick={resetForm}
