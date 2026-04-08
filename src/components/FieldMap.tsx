@@ -321,7 +321,6 @@ function ScenesPanel({
       {/* Tabs */}
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
-        {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
           { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
         ] as const).map(({ key, label, icon, color, desc }) => (
@@ -557,6 +556,13 @@ export default function FieldMap() {
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
+  const SENTINEL_FILTERS: { key: 'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'; label: string }[] = [
+    { key: 'truecolor',   label: '🎨 True Color' },
+    { key: 'ndvi',        label: '🌿 NDVI' },
+    { key: 'falsecolor',  label: '🌡 Inf. Vermelho' },
+    { key: 'agriculture', label: '🌾 Agricultura' },
+  ];
+
   const activeField = fields.find((f) => f.id === activeFieldId);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -684,12 +690,7 @@ export default function FieldMap() {
               className="flex gap-1 p-1 rounded-xl"
               style={{ background: 'rgba(8,8,9,0.9)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
             >
-              {([
-                { key: 'truecolor',   label: '🎨 True Color' },
-                { key: 'ndvi',        label: '🌿 NDVI' },
-                { key: 'falsecolor',  label: '🌡 Inf. Vermelho' },
-                { key: 'agriculture', label: '🌾 Agricultura' },
-              ] as const).map(({ key, label }) => (
+              {SENTINEL_FILTERS.map(({ key, label }) => (
                 <button
                   key={key}
                   onClick={() => {
