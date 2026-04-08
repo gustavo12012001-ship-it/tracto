@@ -38,7 +38,7 @@ interface SentinelScene {
   date: string;
   date_br: string;
   cloud_coverage: number | null;
-  source: 's1' | 's2';
+  source: 's1' | 's2' | 'ndvi';
   collection: string;
   thumbnail_url: string | null;
   orbit?: string;
@@ -192,6 +192,7 @@ function SceneCard({
   onClick: () => void;
 }) {
   const isS2 = scene.source === 's2';
+  const isNdvi = scene.source === 'ndvi';
   const cloudOk = scene.cloud_coverage !== null && scene.cloud_coverage <= 30;
   const cloudMid = scene.cloud_coverage !== null && scene.cloud_coverage > 30 && scene.cloud_coverage <= 60;
 
@@ -206,9 +207,9 @@ function SceneCard({
     >
       {/* Ícone */}
       <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: isS2 ? 'rgba(96,165,250,0.15)' : 'rgba(167,139,250,0.15)' }}>
-        <span className="material-symbols-outlined text-sm" style={{ color: isS2 ? '#60a5fa' : '#a78bfa' }}>
-          {isS2 ? 'satellite_alt' : 'radar'}
+        style={{ background: isS2 ? 'rgba(96,165,250,0.15)' : isNdvi ? 'rgba(34,197,94,0.15)' : 'rgba(167,139,250,0.15)' }}>
+        <span className="material-symbols-outlined text-sm" style={{ color: isS2 ? '#60a5fa' : isNdvi ? '#22c55e' : '#a78bfa' }}>
+          {isS2 ? 'satellite_alt' : isNdvi ? 'eco' : 'radar'}
         </span>
       </div>
 
@@ -220,6 +221,8 @@ function SceneCard({
             ? scene.cloud_coverage !== null
               ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
               : 'Cobertura N/D'
+            : isNdvi
+              ? 'Índice de vigor vegetativo'
             : scene.orbit
               ? `Órbita ${scene.orbit}`
               : 'SAR · Radar'
@@ -227,8 +230,8 @@ function SceneCard({
         </p>
       </div>
 
-      {/* Badge qualidade (só S2) */}
-      {isS2 && scene.cloud_coverage !== null && (
+      {/* Badge qualidade (S2 e NDVI) */}
+      {(isS2 || isNdvi) && scene.cloud_coverage !== null && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
           style={{
             background: cloudOk ? 'rgba(74,222,128,0.15)' : cloudMid ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
@@ -263,11 +266,11 @@ function ScenesPanel({
   activeSceneKey: string | null;
   overlayLoading: boolean;
   onClose: () => void;
-  onSelectScene: (source: 's1' | 's2', date: string) => void;
+  onSelectScene: (source: 's1' | 's2' | 'ndvi', date: string) => void;
 }) {
-  const [tab, setTab] = useState<'s2' | 's1'>('s2');
+  const [tab, setTab] = useState<'s2' | 's1' | 'ndvi'>('s2');
 
-  const currentScenes = tab === 's2' ? scenes.s2 : scenes.s1;
+  const currentScenes = tab === 's2' ? scenes.s2 : tab === 'ndvi' ? scenes.s2 : scenes.s1;
 
   return (
     <div
@@ -295,6 +298,7 @@ function ScenesPanel({
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
+          { key: 'ndvi', label: 'NDVI', icon: 'eco', color: '#22c55e', desc: 'Vegetação' },
           { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button
@@ -330,19 +334,20 @@ function ScenesPanel({
               {tab === 's2' ? 'cloud_off' : 'signal_disconnected'}
             </span>
             <p className="text-[10px]" style={{ color: '#64748b' }}>
-              Nenhuma imagem {tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.
+              Nenhuma imagem {tab === 's2' ? 'Sentinel-2' : tab === 'ndvi' ? 'NDVI' : 'Sentinel-1'} nos últimos 90 dias.
             </p>
           </div>
         ) : (
           currentScenes.map((scene) => {
-            const key = `${fieldId}|${scene.source}|${scene.date}`;
+            const selectedSource: 's1' | 's2' | 'ndvi' = tab === 'ndvi' ? 'ndvi' : scene.source;
+            const key = `${fieldId}|${selectedSource}|${scene.date}`;
             return (
               <SceneCard
                 key={scene.scene_id}
-                scene={scene}
+                scene={{ ...scene, source: selectedSource }}
                 isActive={activeSceneKey === key}
                 isLoading={overlayLoading && activeSceneKey === key}
-                onClick={() => onSelectScene(scene.source, scene.date || '')}
+                onClick={() => onSelectScene(selectedSource, scene.date || '')}
               />
             );
           })
@@ -413,7 +418,7 @@ export default function FieldMap() {
   }, [showScenesPanel, activeFieldId]);
 
   // ── Carregar overlay de cena selecionada ──────────────────────────────────
-  const handleSelectScene = async (source: 's1' | 's2', date: string) => {
+  const handleSelectScene = async (source: 's1' | 's2' | 'ndvi', date: string) => {
     if (!activeFieldId) return;
 
     const sceneKey = `${activeFieldId}|${source}|${date}`;
@@ -603,6 +608,7 @@ export default function FieldMap() {
       <style>{`
         .leaflet-field-label { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
         .leaflet-field-label::before { display: none !important; }
+        .leaflet-image-layer { image-rendering: auto !important; }
       `}</style>
 
       {/* Painel de cenas Sentinel */}
@@ -639,7 +645,7 @@ export default function FieldMap() {
       {overlay.url && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {overlay.sceneKey.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : 'Sentinel-2 · True Color'} · Cache 30min
+            🛰 {overlay.sceneKey.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey.includes('|ndvi|') ? 'Sentinel-2 · NDVI' : 'Sentinel-2 · True Color'} · Cache 30min
           </div>
         </div>
       )}
