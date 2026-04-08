@@ -362,8 +362,8 @@ async def sentinel_overlay_endpoint(
     Gera e retorna PNG recortado no polígono do talhão via Sentinel Hub Process API.
     source: 's2' (True Color) ou 's1' (Radar SAR). scene_date: ISO date opcional.
     """
-    if source not in ("s1", "s2", "ndvi"):
-        raise HTTPException(status_code=400, detail="source deve ser 's1', 's2' ou 'ndvi'.")
+    if source not in ("s1", "s2"):
+        raise HTTPException(status_code=400, detail="source deve ser 's1' ou 's2'.")
 
     try:
         field_data = farm_service.get_field_by_id(user.id, field_id)
@@ -390,7 +390,7 @@ async def sentinel_overlay_endpoint(
         if not image_bytes:
             raise HTTPException(
                 status_code=503,
-                detail=f"Imagem {'NDVI' if source == 'ndvi' else f'Sentinel-{"2" if source == "s2" else "1"}'} não disponível para este talhão no momento.",
+                detail=f"Imagem Sentinel-{'2' if source == 's2' else '1'} não disponível para este talhão no momento.",
             )
 
         return Response(

@@ -268,39 +268,6 @@ function evaluatePixel(s) {
 }
 """
         data_type = "sentinel-1-grd"
-        elif source == "ndvi":
-                # Sentinel-2 NDVI com paleta colorBlend e transparência por dataMask
-                evalscript = """
-//VERSION=3
-function setup() {
-    return {
-        input: [{ bands: ["B04", "B08", "dataMask"] }],
-        output: { bands: 4, sampleType: "UINT8" }
-    };
-}
-function evaluatePixel(s) {
-    let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
-    let rgb = colorBlend(
-        ndvi,
-        [-0.2, 0.0, 0.2, 0.4, 0.6, 0.8],
-        [
-            [120/255, 120/255, 120/255],
-            [165/255, 42/255, 42/255],
-            [1.0, 0.85, 0.25],
-            [0.55, 0.82, 0.32],
-            [0.2, 0.67, 0.25],
-            [0.05, 0.42, 0.12]
-        ]
-    );
-    return [
-        Math.round(rgb[0] * 255),
-        Math.round(rgb[1] * 255),
-        Math.round(rgb[2] * 255),
-        s.dataMask * 255
-    ];
-}
-"""
-                data_type = "sentinel-2-l2a"
     else:
         # Sentinel-2 True Color com correção de gama
         evalscript = """
@@ -345,7 +312,7 @@ function evaluatePixel(s) {
         bounds_input["geometry"] = geojson_polygon
 
     # dataFilter: S2 tem maxCloudCoverage e mosaickingOrder, S1 não suporta esses filtros
-    if source in ("s2", "ndvi"):
+    if source == "s2":
         data_filter_base: dict = {
             "timeRange": {"from": "", "to": ""},
             "maxCloudCoverage": 100,
