@@ -34,7 +34,7 @@ def get_oauth_token() -> str | None:
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.post(
-                    "https://services.sentinel-hub.com/oauth/token",
+                    "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
                     data={
                         "grant_type": "client_credentials",
                         "client_id": client_id,
@@ -351,7 +351,7 @@ function evaluatePixel(s) {
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             with httpx.Client(timeout=60.0) as http_client:
                 resp = http_client.post(
-                    "https://services.sentinel-hub.com/api/v1/process",
+                    "https://sh.dataspace.copernicus.eu/api/v1/process",
                     headers=headers,
                     json=payload,
                 )
@@ -439,7 +439,7 @@ function evaluatePixel(s) {
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(
-                "https://services.sentinel-hub.com/api/v1/statistics",
+                "https://sh.dataspace.copernicus.eu/api/v1/statistics",
                 headers=headers, json=payload,
             )
             resp.raise_for_status()
@@ -525,7 +525,7 @@ function evaluatePixel(s) {
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             with httpx.Client(timeout=60.0) as client:
                 resp = client.post(
-                    "https://services.sentinel-hub.com/api/v1/process",
+                    "https://sh.dataspace.copernicus.eu/api/v1/process",
                     headers=headers, json=payload,
                 )
                 resp.raise_for_status()
