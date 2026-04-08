@@ -244,6 +244,32 @@ function evaluatePixel(s) {
   return [20,110,20,255];
 }
 """
+        elif mode == "falsecolor":
+            # Infravermelho Colorido — vegetação aparece em vermelho vibrante
+            evalscript = """
+//VERSION=3
+function setup() {
+  return { input: [{ bands: ["B08", "B04", "B03", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+}
+function evaluatePixel(s) {
+  if (s.dataMask === 0) return [0,0,0,0];
+  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
+  return [adj(s.B08), adj(s.B04), adj(s.B03), 255];
+}
+"""
+        elif mode == "agriculture":
+            # Bandas SWIR — diferencia solo, vegetação e áreas colhidas
+            evalscript = """
+//VERSION=3
+function setup() {
+  return { input: [{ bands: ["B11", "B08", "B02", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+}
+function evaluatePixel(s) {
+  if (s.dataMask === 0) return [0,0,0,0];
+  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
+  return [adj(s.B11), adj(s.B08), adj(s.B02), 255];
+}
+"""
         else:
             evalscript = """
 //VERSION=3

@@ -32,7 +32,7 @@ L.Icon.Default.mergeOptions({
 
 type DrawMode = 'none' | 'drawing';
 type MapLayer = 'osm' | 'esri';
-type SceneTab = 's2' | 's1' | 'ndvi';
+type SceneTab = 's2' | 's1';
 type OverlaySource = 's1' | 's2' | 'ndvi';
 
 interface SentinelScene {
@@ -99,10 +99,12 @@ function formatOverlaySceneDate(sceneKey: string | null): string | null {
   return parsed.toLocaleDateString('pt-BR');
 }
 
-function getOverlaySourceLabel(sceneKey: string | null): string {
+function getOverlaySourceLabel(sceneKey: string | null, filter?: string): string {
   if (!sceneKey) return 'Sentinel';
   if (sceneKey.includes('|s1|')) return 'Sentinel-1 Radar SAR';
-  if (sceneKey.includes('|ndvi|')) return 'NDVI Vegetação';
+  if (filter === 'ndvi') return 'Sentinel-2 NDVI';
+  if (filter === 'falsecolor') return 'Sentinel-2 Inf. Vermelho';
+  if (filter === 'agriculture') return 'Sentinel-2 Agricultura';
   return 'Sentinel-2 True Color';
 }
 
@@ -319,8 +321,8 @@ function ScenesPanel({
       {/* Tabs */}
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
+        {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
-          { key: 'ndvi', label: 'NDVI', icon: 'grass', color: '#4ade80', desc: 'Vegetação' },
           { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button
@@ -341,18 +343,6 @@ function ScenesPanel({
 
       {/* Lista de cenas */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5" style={{ maxHeight: 340 }}>
-        {tab === 'ndvi' && !scenes.loading && !scenes.error && (
-          <div className="rounded-xl p-3 mb-1.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <p className="text-[10px] font-bold mb-2" style={{ color: '#4ade80' }}>Paleta NDVI</p>
-            <div className="grid grid-cols-1 gap-1.5 text-[9px]" style={{ color: '#94a3b8' }}>
-              <p>Cinza = solo</p>
-              <p>Vermelho = crítico</p>
-              <p>Amarelo = estresse</p>
-              <p>Verde claro = saudável</p>
-              <p>Verde escuro = excelente</p>
-            </div>
-          </div>
-        )}
         {scenes.loading ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
@@ -365,15 +355,15 @@ function ScenesPanel({
         ) : currentScenes.length === 0 ? (
           <div className="py-6 text-center">
             <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#334155' }}>
-              {tab === 's2' ? 'cloud_off' : tab === 'ndvi' ? 'grass' : 'signal_disconnected'}
+              {tab === 's2' ? 'cloud_off' : 'signal_disconnected'}
             </span>
             <p className="text-[10px]" style={{ color: '#64748b' }}>
-              Nenhuma imagem {tab === 's2' ? 'Sentinel-2' : tab === 'ndvi' ? 'NDVI' : 'Sentinel-1'} nos últimos 90 dias.
+              Nenhuma imagem {tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.
             </p>
           </div>
         ) : (
           currentScenes.map((scene) => {
-            const selectedSource: OverlaySource = tab === 'ndvi' ? 'ndvi' : scene.source;
+            const selectedSource: OverlaySource = scene.source;
             const key = `${fieldId}|${selectedSource}|${scene.date}`;
             return (
               <SceneCard
@@ -426,6 +416,7 @@ export default function FieldMap() {
   // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
   const [overlayOpacity, setOverlayOpacity] = useState(0.9);
+  const [activeFilter, setActiveFilter] = useState<'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'>('truecolor');
   const prevUrlRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
@@ -454,11 +445,13 @@ export default function FieldMap() {
   }, [showScenesPanel, activeFieldId]);
 
   // ── Carregar overlay de cena selecionada ──────────────────────────────────
-  const handleSelectScene = async (source: OverlaySource, date: string) => {
+  const handleSelectScene = async (source: 's1' | 's2' | 'ndvi', date: string, filterOverride?: typeof activeFilter) => {
+    const filter = filterOverride ?? activeFilter;
     if (!activeFieldId) return;
 
-    const sceneKey = `${activeFieldId}|${source}|${date}`;
-    if (overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
+    const querySource = source === 'ndvi' ? 's2' : source;
+    const sceneKey = `${activeFieldId}|${querySource}|${date}`;
+    if (!filterOverride && overlay.sceneKey === sceneKey && overlay.url) return; // já carregado com o mesmo filtro
 
     const activeField = fields.find((f) => f.id === activeFieldId);
     if (!activeField?.boundaries || activeField.boundaries.length < 3) return;
@@ -470,8 +463,7 @@ export default function FieldMap() {
 
     try {
       const headers = await buildAuthHeaders();
-      const querySource = source === 'ndvi' ? 's2' : source;
-      const modeQuery = source === 'ndvi' ? '&mode=ndvi' : '';
+      const modeQuery = querySource === 's2' ? `&mode=${filter}` : '';
       const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${querySource}&scene_date=${date}${modeQuery}`;
       const resp = await fetch(url, { headers });
 
@@ -496,6 +488,7 @@ export default function FieldMap() {
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
+    setActiveFilter('truecolor');
   }, [activeFieldId]);
 
   useEffect(() => () => { if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current); }, []);
@@ -684,8 +677,39 @@ export default function FieldMap() {
       {overlay.url && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-auto flex flex-col gap-2" style={{ top: 52, left: 4 }}>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {getOverlaySourceLabel(overlay.sceneKey)} · {formatOverlaySceneDate(overlay.sceneKey) ?? 'Data N/D'}
+            🛰 {getOverlaySourceLabel(overlay.sceneKey, activeFilter)} · {formatOverlaySceneDate(overlay.sceneKey) ?? 'Data N/D'}
           </div>
+          {!overlay.sceneKey.includes('|s1|') && (
+            <div
+              className="flex gap-1 p-1 rounded-xl"
+              style={{ background: 'rgba(8,8,9,0.9)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              {([
+                { key: 'truecolor',   label: '🎨 True Color' },
+                { key: 'ndvi',        label: '🌿 NDVI' },
+                { key: 'falsecolor',  label: '🌡 Inf. Vermelho' },
+                { key: 'agriculture', label: '🌾 Agricultura' },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setActiveFilter(key);
+                    const parts = overlay.sceneKey?.split('|') ?? [];
+                    const date = parts[2];
+                    if (date) void handleSelectScene('s2', date, key);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all whitespace-nowrap"
+                  style={{
+                    background: activeFilter === key ? 'rgba(236,91,19,0.25)' : 'transparent',
+                    color: activeFilter === key ? '#ec5b13' : '#64748b',
+                    border: activeFilter === key ? '1px solid rgba(236,91,19,0.5)' : '1px solid transparent',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <input
               type="range"

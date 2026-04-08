@@ -365,6 +365,8 @@ async def sentinel_overlay_endpoint(
     """
     if source not in ("s1", "s2"):
         raise HTTPException(status_code=400, detail="source deve ser 's1' ou 's2'.")
+    if mode not in ("truecolor", "ndvi", "falsecolor", "agriculture"):
+        raise HTTPException(status_code=400, detail="mode inválido.")
 
     try:
         field_data = farm_service.get_field_by_id(user.id, field_id)
