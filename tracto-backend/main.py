@@ -356,6 +356,7 @@ async def sentinel_overlay_endpoint(
     field_id: str,
     source: str = "s2",
     scene_date: str | None = None,
+    mode: str = "truecolor",
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
@@ -385,6 +386,7 @@ async def sentinel_overlay_endpoint(
             date_range_days=30,
             scene_date=scene_date,
             source=source,
+            mode=mode,
         )
 
         if not image_bytes:
@@ -401,6 +403,7 @@ async def sentinel_overlay_endpoint(
                 "X-Field-ID": field_id,
                 "X-Source": source,
                 "X-Scene-Date": scene_date or "latest",
+                "X-Mode": mode,
             },
         )
     except HTTPException:

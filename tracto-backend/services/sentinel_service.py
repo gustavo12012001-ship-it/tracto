@@ -236,8 +236,9 @@ def get_true_color_overlay(
     date_range_days: int = 30,
     scene_date: str | None = None,
     source: str = "s2",
+    mode: str = "truecolor",
 ) -> bytes | None:
-    cache_key = f"{field_id}_{source}_{scene_date or 'latest'}"
+    cache_key = f"{field_id}_{source}_{scene_date or 'latest'}_{mode}"
     cached = _get_cached_overlay(cache_key)
     if cached:
         return cached
@@ -256,18 +257,34 @@ def get_true_color_overlay(
 //VERSION=3
 function setup() {
   return {
-    input: [{ bands: ["VV", "VH", "dataMask"] }],
+        input: [{ bands: ["VV", "dataMask"] }],
     output: { bands: 4, sampleType: "UINT8" }
   };
 }
 function evaluatePixel(s) {
-  let vv = Math.log(s.VV * s.VV + 0.000001) / Math.log(10) * 10;
-  let norm = Math.round(Math.min(Math.max((vv + 25) / 25, 0), 1) * 255);
-  let alpha = s.dataMask * 255;
-  return [norm, norm, norm, alpha];
+    let vv = Math.sqrt(s.VV);
+    let norm = Math.round(Math.min(Math.max(vv * 2.5, 0), 1) * 255);
+    return [norm, norm, norm, s.dataMask * 255];
 }
 """
         data_type = "sentinel-1-grd"
+        elif mode == "ndvi":
+                evalscript = """
+//VERSION=3
+function setup() {
+    return { input: [{ bands: ["B04", "B08", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+}
+function evaluatePixel(s) {
+    if (s.dataMask === 0) return [0,0,0,0];
+    let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001);
+    if (ndvi < 0)   return [120,120,120,255];
+    if (ndvi < 0.2) return [200,50,25,255];
+    if (ndvi < 0.4) return [230,180,50,255];
+    if (ndvi < 0.6) return [100,190,50,255];
+    return [20,110,20,255];
+}
+"""
+                data_type = "sentinel-2-l2a"
     else:
         # Sentinel-2 True Color com correção de gama
         evalscript = """
