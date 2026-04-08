@@ -268,8 +268,8 @@ function evaluatePixel(s) {
 }
 """
         data_type = "sentinel-1-grd"
-        elif mode == "ndvi":
-                evalscript = """
+    elif mode == "ndvi":
+        evalscript = """
 //VERSION=3
 function setup() {
     return { input: [{ bands: ["B04", "B08", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
@@ -284,7 +284,7 @@ function evaluatePixel(s) {
     return [20,110,20,255];
 }
 """
-                data_type = "sentinel-2-l2a"
+        data_type = "sentinel-2-l2a"
     else:
         # Sentinel-2 True Color com correção de gama
         evalscript = """

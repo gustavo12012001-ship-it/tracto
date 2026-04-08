@@ -1,428 +1,6 @@
-# Código Completo do Projeto Tracto — Inteligência Agronômica
+# Código Completo do Projeto Tracto
 
-> **Data de atualização:** April 6, 2026 — 14:45 UTC  
-> **Versão:** 2.3.1  
-> **Status:** Produção  
-> **Backend:** Railway (Python FastAPI)  
-> **Frontend:** Vite + React 19 + TypeScript  
-> **Database:** Supabase PostgreSQL  
-
-Documentação técnica completa contendo toda a estrutura, configurações, código-fonte e arquitetura do projeto Tracto com snapshot de inteligência de talhão, proxy OAuth de Sentinel-2 e IA agronômica unificada.
-
-## ✅ Últimas Atualizações Aplicadas (April 6, 2026)
-
-### Correção de Build - Resolução de Dependências Vite
-- **Problema:** Erro de resolução de `react-is` no módulo `recharts` durante build com Vite 8.0.0.
-- **Solução:** Atualizado `vite.config.ts` com configuração de `manualChunks` para separar vendors React e Recharts.
-- **Detalhes da correção:**
-  - Adicionado `rollupOptions.output.manualChunks` com função que detecta imports de `node_modules/react` e `node_modules/recharts`.
-  - Chunks separados: `react-vendor-*.js` (500.60 kB gzip: 152.74 kB) e `index-*.js` (774.30 kB gzip: 224.43 kB).
-  - Build agora constrói com sucesso sem warnings de dependências faltantes.
-  - `react-is@19.2.4` já estava em `package.json` como dependência explícita.
-- **Resultado:** Build production concluído com 2220 módulos transformados, sem erros.
-
-### Proxy Sentinel-2 (OAuth + Tiles XYZ)
-- Backend passou a expor `GET /api/sentinel/tile/{z}/{x}/{y}` com limite de `100/minute` e retorno `image/jpeg`.
-- Implementado cache de token OAuth do Copernicus em memória com TTL de 55 minutos e renovação automática em caso de `401`.
-- Conversão de tile `z/x/y` para `BBOX` em `EPSG:4326` no backend para requisição autenticada no `Process API`.
-- Proxy usa `TRUE-COLOR` com janelas crescentes de `5`, `15`, `30` e `60` dias, priorizando a cena real mais nova disponível (`mosaickingOrder=mostRecent`).
-- `maxCloudCoverage` foi elevado para `100` para garantir retorno de imagem real mesmo com cobertura de nuvens alta.
-- Header de resposta do tile foi alterado para `Cache-Control: no-cache` para evitar retenção de tiles brancas no browser.
-
-### Mapa Sentinel no Frontend
-- `FieldMap` consome o proxy de tiles Sentinel via `TileLayer` em `API_URL/api/sentinel/tile/{z}/{x}/{y}?v=2` para cache busting de cliente.
-- O seletor de camadas foi consolidado em um único dropdown `Camadas` no canto superior esquerdo com 3 opções: `OpenStreetMap`, `Mapa Base (Alta Resolução)` e `Sentinel-2 Atualizado`.
-- No modo `sentinel`, o mapa usa pilha explícita: base Esri + overlay do proxy Sentinel por cima.
-- Ao trocar para `sentinel`, o `ZoomLocker` força e mantém `zoom=18` sem remontar o mapa, preservando a posição atual ao trocar de camada.
-- No modo `sentinel`, `scroll`, `double click`, `touch`, `keyboard` e botões `+/-` ficam bloqueados para manter o zoom fixo em `18`.
-- `TileLayer` do proxy Sentinel opera com `minZoom=18`, `maxZoom=18` e `maxNativeZoom=18`.
-- Ao sair do modo `sentinel`, o `ZoomLocker` libera novamente o intervalo de zoom (`minZoom=1`, `maxZoom=20`) para `OSM` e `Mapa Base`.
-
-### Busca por Coordenadas no Mapa
-- O campo de busca do `FieldMap` aceita coordenadas decimais no formato `-18.919139, -49.287722`.
-- O campo de busca também aceita coordenadas DMS no formato `18°55'08.9"S 49°17'15.8"W`.
-- Quando a entrada é coordenada (decimal ou DMS), o frontend não chama `/api/geo/search`; ele navega diretamente para o ponto com `flyTo(..., 15)` e mostra marcador temporário.
-- Quando a entrada é texto normal, a busca geográfica autenticada via backend continua funcionando como antes.
-
-### Diagnóstico Operacional do Sentinel
-- Logging de diagnóstico do `instance_id` foi reforçado no backend (incluindo tipo resolvido e `display_mode`).
-- Adicionado `print(..., flush=True, file=sys.stdout)` para garantir visibilidade em provedores que priorizam stdout.
-- Requisições repetidas de `latest-scene` foram deduplicadas no `FieldMap` por chave de alvo Sentinel.
-- Logging de falha do tile inclui `status`, `bytes` e `body` parcial da resposta do Process API para facilitar diagnóstico em produção.
-- Evalscript do tile foi atualizado para ajuste adaptativo por banda (`adj(v) = pow(clamp(v*2.5), 0.9)`) para evitar imagem "lavada".
-
-### Estabilidade de Startup Backend
-- Type hints críticos de `sentinel_service.py` foram ajustados para compatibilidade de runtime no deploy.
-- Validação local executada com `compileall` e import direto do módulo após ajustes.
-
-### Snapshot de Inteligência do Talhão (Arquitetura Canônica)
-- Novo contrato canônico no backend para consolidar clima, satélite, análise, alertas e resumo textual por talhão.
-- Novo endpoint autenticado `GET /api/fields/{field_id}/intelligence` com resposta tipada (`FieldIntelligenceSnapshot`).
-- Novo serviço dedicado `field_intelligence_service.py` com orquestração de fontes e fallback por bloco.
-
-### Resiliência por Fonte (Timeout + Fallback)
-- Cada fonte (weather, satellite, analysis, ai summary) possui status explícito: `ok`, `fallback` ou `unavailable`.
-- Snapshot permanece útil mesmo com indisponibilidade parcial de uma ou mais fontes.
-- Leitura de cache consolidado adicionada antes da recomputação para reduzir chamadas externas.
-
-### Cache Consolidado do Snapshot
-- Cache de snapshot por talhão com short-circuit no backend.
-- Logs de observabilidade para `cache hit` e `cache miss`.
-- TTL do snapshot consolidado ajustado para 30 minutos (`ttl_hours=0.5`).
-
-### Frontend Unificado pelo Talhão Ativo
-- Store global passou a manter cache de snapshot por `activeFieldId`.
-- `Chat`, `Weather`, `Alerts` e `Reports` priorizam o snapshot canônico do talhão ativo.
-- Fluxos híbridos foram removidos dos pontos críticos para reduzir divergência entre páginas.
-
-### Fechamento Cirúrgico de Pendências
-- `Alerts`: reset do autoload ao trocar talhão e remoção de fallback hardcoded de Londrina.
-- `Chat`: autosave agora persiste exatamente o mesmo `farm_context` usado no envio da mensagem.
-- `Weather`: estratégia explícita snapshot-first para clima atual, com fallback Open-Meteo.
-
-### Commits de Referência (main)
-- `45c922b` — ajuste do evalscript Sentinel (contraste adaptativo) + janela 5/15/30/60 + nuvens até 100%
-- `ee306a6` — cache busting no frontend (`?v=2`) + `Cache-Control: no-cache` no endpoint de tile
-- `e005576` — proxy Sentinel atualizado para `TRUE-COLOR` com janela recente dinâmica (10 dias + fallback 20 dias)
-- `3d20062` — suporte a coordenadas DMS no campo de busca do `FieldMap`
-- `a8b7d25` — liberação completa do zoom ao sair do modo Sentinel no `ZoomLocker`
-- `3b7b85a` — remoção do remount por camada e preservação da posição do mapa ao trocar base
-- `69a4fd3` — `ZoomLocker` refeito com listeners de zoom para reforçar lock em `18`
-- `eeb02b6` — bloqueio total do zoom do Sentinel incluindo botões `+/-`, teclado e interações do mapa
-- `183a215` — suporte a busca por coordenadas decimais no `FieldMap`
-- `2623d97` — remoção do contador temporário e retorno do Sentinel para zoom fixo `18`
-- `3d267d8` — remoção do seletor duplicado e travamento do zoom mínimo do Sentinel
-- `12a3e8a` — reativação do dropdown de camadas no `FieldMap`
-- `728c9c2` — unificação do fluxo de inteligência de talhão (snapshot backend + consumo frontend)
-- `e2d0133` — proxy OAuth de tiles Sentinel no backend + integração no mapa
-- `a8f39f0` — remount do `MapContainer` por camada + stack explícita Esri/Sentinel proxy
-- `9fa629e` — zoom forçado do modo Sentinel para visibilidade imediata dos tiles
-- `e544652` — deduplicação de `latest-scene` e diagnóstico de render do proxy
-- `6fa3750` — bases condicionais do mapa e ligação explícita do proxy Sentinel no frontend
-- `6df1b02` — diagnóstico Sentinel em stdout para observabilidade no Railway
-- `6325c9b` — elevação do diagnóstico Sentinel para nível warning
-- `fc63252` — compatibilidade de startup do backend em `sentinel_service.py`
-- `0e845d8` — normalização ASCII do log de diagnóstico Sentinel
-- `1a968ef` — ajuste final de build no `FieldMap` (import não utilizado)
-
----
-
-## 📊 Stack Crítico Resumido
-
-**Frontend (React + TypeScript)**
-- Orquestração: `App.tsx` com React Router 7 (públicas + protegidas)
-- Estado Global: `useAppStore.ts` com Zustand + localStorage (farms, fields, alerts, weather)
-- Mapa: `FieldMap.tsx` com Leaflet 1.9 + react-leaflet 5
-  - Camadas: dropdown único com `OSM`, `Mapa Base` e `Sentinel-2 Atualizado`
-  - Sentinel: base Esri + proxy autenticado por backend + `ZoomLocker` para manter zoom fixo em `18` sem perder a posição ao trocar camada
-  - Busca: suporta nome de cidade, coordenadas decimais e coordenadas DMS
-  - Interação: click para adicionar coordenadas, desenho de polígonos com área calculada (ha)
-- Serviços: `api.ts` (HTTP centralizado com Bearer JWT Supabase)
-- Páginas: Dashboard (NDVI/alertas), Weather (Open-Meteo + snapshot), Chat (Claude vision), Alerts, Reports, Market
-
-**Backend (FastAPI/Python)**
-- Orquestração: `main.py` com 20+ endpoints REST
-- Autenticação: JWT Supabase + rate limiting por IP
-- Serviços especializados:
-  - `sentinel_service.py`: OAuth 2.0 Copernicus (55min TTL) + Process API `TRUE-COLOR` com janela 5/15/30/60 + NDVI
-  - `weather_service.py`: Open-Meteo (sucesso) → fallback cache
-  - `ai_service.py`: Claude Sonnet 4.5 (visão + alertas + chat tech)
-  - `field_intelligence_service.py`: Consolidação canônica (clima+satélite+análise+alertas) com timeout + fallback
-  - `farm_service.py`: CRUD lazendas/talhões com ownership RLS
-  - `auth_service.py`: Validação JWT Supabase
-- Cache: Redis implied (via slowapi) + memória local (tokens OAuth, snapshots)
-- Banco: Supabase PostgreSQL (RLS policies)
-
-**Integrações Externas Críticas**
-- Supabase: Auth + PostgreSQL
-- Copernicus CDSE: OAuth + Process API (Sentinel-2 L2A)
-- Anthropic: Claude Sonnet 4.5 (visão base64 + JSON parsing)
-- Open-Meteo: Previsões 7 dias (temperatura, umidade, ET0, chuva acumulada)
-- Google reCAPTCHA: Validação em registro
-- Earth Search STAC: Scene metadata
-
----
-
-## 📋 Índice
-1. [Estrutura do Projeto](#estrutura-do-projeto)
-2. [Configuração & Build](#configuração--build)
-3. [Frontend - React + TypeScript](#frontend---react--typescript)
-4. [Backend - FastAPI](#backend---fastapi)
-5. [Banco de Dados & Autenticação](#banco-de-dados--autenticação)
-6. [Variáveis de Ambiente](#variáveis-de-ambiente)
-
----
-
-## 🗂️ Estrutura do Projeto
-
-```
-.
-├── src/                              # Frontend React + TypeScript
-│   ├── pages/
-│   │   ├── Dashboard.tsx             # Painel principal com mapa de talhões
-│   │   ├── Login.tsx                 # Autenticação
-│   │   ├── Register.tsx              # Cadastro de usuário
-│   │   ├── ResetPassword.tsx         # Recuperação de senha
-│   │   ├── LandingPage.tsx           # Página inicial
-│   │   ├── Weather.tsx               # Meteorologia/Clima
-│   │   ├── Chat.tsx                  # Chat IA Agronômico
-│   │   ├── Alerts.tsx                # Centro de alertas
-│   │   ├── Reports.tsx               # Relatórios
-│   │   ├── Market.tsx                # Mercado/Commodities
-│   │   └── Pricing.tsx               # Planos de preço
-│   ├── components/
-│   │   ├── Layout.tsx                # Sidebar e navegação
-│   │   ├── ProtectedRoute.tsx        # Autenticação de rotas
-│   │   ├── FieldMap.tsx              # Mapa interativo de talhões
-│   │   └── Skeleton.tsx              # Componentes de loading
-│   ├── services/
-│   │   ├── api.ts                    # Cliente HTTP para backend
-│   │   ├── supabase.ts               # Configuração Supabase Auth/DB
-│   │   ├── farm_service.ts           # Operações com fazendas/talhões
-│   │   ├── alertsAI.ts               # Processamento de alertas IA
-│   ├── store/
-│   │   └── useAppStore.ts            # Estado global (Zustand)
-│   ├── utils/
-│   │   ├── geo.ts                    # Utilitários de geometria
-│   │   └── geolocation.ts            # Localização do usuário
-│   ├── App.tsx                       # Router principal
-│   ├── main.tsx                      # Entry point
-│   ├── index.css                     # Estilos globais
-│   └── App.css                       # Estilos do App
-├── tracto-backend/
-│   ├── main.py                       # API FastAPI
-│   ├── models.py                     # Esquemas Pydantic
-│   ├── requirements.txt              # Dependências Python
-│   ├── services/
-│   │   ├── ai_service.py             # Integração Claude AI
-│   │   ├── auth_service.py           # Autenticação JWT
-│   │   ├── supabase_service.py       # Cliente Supabase
-│   │   ├── farm_service.py           # CRUD Fazendas/Talhões
-│   │   ├── weather_service.py        # Integração Weather API
-│   │   ├── sentinel_service.py       # Satellite imagery (NDVI)
-│   │   ├── agronomic_engine.py       # Motor determinístico
-│   │   ├── field_intelligence_service.py # Snapshot canônico por talhão
-│   │   ├── billing_service.py        # Cobrança e entitlements
-│   │   └── cache_service.py          # Cache em memória
-│   └── sql/
-│       ├── schema.sql                # DDL do banco de dados
-│       └── 02_commercial.sql         # Triggers e políticas RLS
-├── public/
-│   └── sw.js                         # Service Worker
-├── package.json                      # Dependências frontend
-├── tsconfig.json                     # Config TypeScript
-├── vite.config.ts                    # Config Vite
-├── eslint.config.js                  # Linting
-├── index.html                        # HTML raiz
-└── README.md                         # Documentação
-
----
-
-## 🎨 Frontend - React 19 + TypeScript + Vite
-
-### `package.json`
-
-```json
-{
-  "name": "tracto",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.99.1",
-    "@tailwindcss/vite": "^4.2.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.1",
-    "react-leaflet": "^5.0.0",
-    "leaflet": "^1.9.4",
-    "zustand": "^5.0.11",
-    "framer-motion": "^12.36.0",
-    "recharts": "^3.8.0",
-    "axios": "^1.13.6",
-    "uuid": "^13.0.0"
-  }
-}
-```
-
-### `src/App.tsx`
-
-```typescript
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Weather from './pages/Weather';
-import Chat from './pages/Chat';
-import Alerts from './pages/Alerts';
-import Reports from './pages/Reports';
-import Market from './pages/Market';
-import Layout from './components/Layout';
-import LandingPage from './pages/LandingPage';
-import Register from './pages/Register';
-import ResetPassword from './pages/ResetPassword';
-import Pricing from './pages/Pricing';
-import ProtectedRoute from './components/ProtectedRoute';
-
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route
-          path="/app"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/app/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="weather" element={<Weather />} />
-          <Route path="chat" element={<Chat />} />
-          <Route path="alerts" element={<Alerts />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="market" element={<Market />} />
-          <Route path="billing" element={<Pricing />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
-export default App;
-```
-
-### `src/services/api.ts` (Cliente HTTP)
-
-```typescript
-import { supabase } from './supabase';
-
-export const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
-
-async function buildAuthHeaders() {
-  try {
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      const refreshed = await supabase.auth.refreshSession();
-      session = refreshed.data.session;
-    }
-    return session?.access_token 
-      ? { Authorization: `Bearer ${session.access_token}` }
-      : {};
-  } catch (error) {
-    console.warn('[API] Falha ao construir headers:', error);
-    return {};
-  }
-}
-
-export const apiFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
-  if (!API_URL) throw new Error('Backend não configurado');
-  
-  const url = `${API_URL}${path}`;
-  const authHeaders = await buildAuthHeaders();
-  const headers = new Headers(options.headers ?? {});
-  
-  if (!headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  
-  Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
-
-  try {
-    const response = await fetch(url, { ...options, headers });
-    
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`[${response.status}] ${detail}`);
-    }
-
-    return await response.json() as T;
-  } catch (error) {
-    console.error('[API] Erro:', error);
-    throw error;
-  }
-};
-```
-
-### `src/store/useAppStore.ts` (Zustand State Management)
-
-```typescript
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-export interface Farm {
-  id: string;
-  name: string;
-  fields: Location[];
-}
-
-export interface Location {
-  id?: string;
-  lat: number;
-  lng: number;
-  name?: string;
-  boundaries?: [number, number][];
-  cultura?: string;
-  areaHa?: number;
-}
-
-export interface Alert {
-  id: string;
-  type: 'critical' | 'warning' | 'info';
-  title: string;
-  message: string;
-  timestamp: number;
-  dismissed: boolean;
-}
-
-interface AppState {
-  fields: Location[];
-  alerts: Alert[];
-  weatherCache: any | null;
-  setFields: (fields: Location[]) => void;
-  setAlerts: (alerts: Alert[]) => void;
-  appendAlert: (alert: Alert) => void;
-  dismissAlert: (id: string) => void;
-}
-
-export const useAppStore = create<AppState>()(
-  persist(
-    (set, get) => ({
-      fields: [],
-      alerts: [],
-      weatherCache: null,
-      setFields: (fields) => set({ fields }),
-      setAlerts: (alerts) => set({ alerts }),
-      appendAlert: (alert) => {
-        const current = get().alerts;
-        set({ alerts: [alert, ...current] });
-      },
-      dismissAlert: (id) => {
-        const current = get().alerts;
-        set({ alerts: current.map((a) => a.id === id ? { ...a, dismissed: true } : a) });
-      },
-    }),
-    {
-      name: 'tracto-app-store',
-    }
-  )
-);
-
-export default useAppStore;
-```
-
-## ⚙️ Configuração & Build
+ Aqui estão todos os arquivos de configuração e código fonte do projeto.
 
 ### `eslint.config.js`
 ```js
@@ -434,7 +12,14 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores([
+    'dist/**',
+    'node_modules/**',
+    '.claude/**',
+    'tmp_jsx/**',
+    'tmp_*.tsx',
+    '*.backup.*',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -488,6 +73,7 @@ export default defineConfig([
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "lint:prod": "eslint src eslint.config.js vite.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -532,7 +118,7 @@ export default defineConfig([
 
 ### `vite.config.ts`
 ```ts
-import { defineConfig } from 'vite'
+﻿import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -540,11 +126,24 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules/react')) {
+            return 'react-vendor'
+          }
+          if (id.includes('node_modules/recharts')) {
+            return 'recharts'
+          }
+        }
+      }
+    }
   },
   server: {
-    port: 5174,
+    port: 5173,
   }
 })
+
 
 ```
 
@@ -1185,17 +784,29 @@ export default App;
 
 ### `src/components/FieldMap.tsx`
 ```tsx
-import { useState, useCallback, useEffect, useRef } from 'react';
+// src/components/FieldMap.tsx — Versão 4.0
+// Painel de cenas Sentinel-1 e Sentinel-2 disponíveis por talhão
+// O usuário vê as datas disponíveis e escolhe qual carregar
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  MapContainer, TileLayer, Marker, Popup,
-  Polygon, Polyline, useMapEvents, useMap,
+  ImageOverlay,
+  MapContainer,
+  Marker,
+  Polygon,
+  Polyline,
+  Popup,
+  TileLayer,
+  Tooltip,
+  useMap,
+  useMapEvents,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
+import { API_URL } from '../services/api';
 
-// Fix default Leaflet marker icons
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
@@ -1203,55 +814,159 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-// ── NASA GIBS date: use a recent stable date (D-10) to avoid broken tiles ────
-const gibsDate = (() => {
-  const d = new Date();
-  d.setDate(d.getDate() - 10);
-  return d.toISOString().slice(0, 10); // e.g. "2024-03-21"
-})();
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 
-// ── Map Click Handler ─────────────────────────────────────────────────────────
 type DrawMode = 'none' | 'drawing';
+type MapLayer = 'osm' | 'esri';
+type SceneTab = 's2' | 's1' | 'ndvi';
+type OverlaySource = 's1' | 's2' | 'ndvi';
 
-function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; lng: number }) => void }) {
+interface SentinelScene {
+  scene_id: string;
+  date: string;
+  date_br: string;
+  cloud_coverage: number | null;
+  source: 's1' | 's2';
+  collection: string;
+  thumbnail_url: string | null;
+  orbit?: string;
+}
+
+interface ScenesState {
+  s2: SentinelScene[];
+  s1: SentinelScene[];
+  loading: boolean;
+  error: string | null;
+  fieldId: string | null;
+}
+
+interface OverlayState {
+  url: string | null;
+  bounds: L.LatLngBoundsExpression | null;
+  loading: boolean;
+  error: string | null;
+  sceneKey: string | null; // "field_id|source|date"
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function computeBoundsFromBoundaries(b: [number, number][]): L.LatLngBoundsExpression {
+  const lats = b.map((p) => p[0]);
+  const lngs = b.map((p) => p[1]);
+  return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+}
+
+function parseDecimalCoords(text: string): { lat: number; lng: number } | null {
+  const m = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+function parseDMSCoords(text: string): { lat: number; lng: number } | null {
+  const r = /(\d+)[°º](\d+)'([\d.]+)"?([NSns])\s+(\d+)[°º](\d+)'([\d.]+)"?([EWew])/;
+  const m = text.match(r);
+  if (!m) return null;
+  const dec = (d: number, min: number, sec: number, dir: string) => {
+    const v = d + min / 60 + sec / 3600;
+    return /[SW]/i.test(dir) ? -v : v;
+  };
+  return { lat: dec(+m[1], +m[2], +m[3], m[4]), lng: dec(+m[5], +m[6], +m[7], m[8]) };
+}
+
+function formatOverlaySceneDate(sceneKey: string | null): string | null {
+  if (!sceneKey) return null;
+  const parts = sceneKey.split('|');
+  const date = parts[2];
+  if (!date) return null;
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString('pt-BR');
+}
+
+function getOverlaySourceLabel(sceneKey: string | null): string {
+  if (!sceneKey) return 'Sentinel';
+  if (sceneKey.includes('|s1|')) return 'Sentinel-1 Radar SAR';
+  if (sceneKey.includes('|ndvi|')) return 'NDVI Vegetação';
+  return 'Sentinel-2 True Color';
+}
+
+async function buildAuthHeaders(): Promise<HeadersInit> {
+  try {
+    const { supabase } = await import('../services/supabase');
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      const r = await supabase.auth.refreshSession();
+      session = r.data.session;
+    }
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+// ── Sub-componentes ───────────────────────────────────────────────────────────
+
+function MapClickHandler({ onMapClick }: { onMapClick: (ll: { lat: number; lng: number }) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng) });
   return null;
 }
 
-// ── Map Controller (Auto-centering & Status) ───────────────────────────────
-function MapController() {
+function FlyController({ target }: { target: { lat: number; lng: number; zoom?: number } | null }) {
   const map = useMap();
-  const { currentLocation, locationStatus, fields, activeFieldId } = useAppStore();
-  const hasCenteredInitial = useRef(false);
-
+  const prev = useRef<typeof target>(null);
   useEffect(() => {
-    if (hasCenteredInitial.current) return;
+    if (!target) return;
+    if (prev.current?.lat === target.lat && prev.current?.lng === target.lng) return;
+    prev.current = target;
+    map.flyTo([target.lat, target.lng], target.zoom ?? 15, { duration: 1.2 });
+  }, [target, map]);
+  return null;
+}
 
-    // 1. If we have an active field, go there
-    if (activeFieldId) {
-      const field = fields.find(f => f.id === activeFieldId);
-      if (field) {
-        map.setView([field.lat, field.lng], 15);
-        hasCenteredInitial.current = true;
-        return;
-      }
+function ActiveFieldFlyController() {
+  const map = useMap();
+  const { fields, activeFieldId } = useAppStore();
+  const prevFieldId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeFieldId || prevFieldId.current === activeFieldId) return;
+    prevFieldId.current = activeFieldId;
+    const field = fields.find((f) => f.id === activeFieldId);
+    if (!field) return;
+    if (field.boundaries && field.boundaries.length >= 3) {
+      map.flyToBounds(computeBoundsFromBoundaries(field.boundaries) as L.LatLngBoundsExpression, { padding: [60, 60], duration: 1.2 });
+    } else {
+      map.flyTo([field.lat, field.lng], 15, { duration: 1.2 });
     }
+  }, [activeFieldId, fields, map]);
+  return null;
+}
 
-    // 2. If location is precise, go there
-    if (locationStatus === 'precise' && currentLocation) {
-      map.setView([currentLocation.lat, currentLocation.lng], 13);
-      hasCenteredInitial.current = true;
+function InitialCenterController() {
+  const map = useMap();
+  const { currentLocation, locationStatus, fields } = useAppStore();
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    if (fields.length === 0 && locationStatus === 'loading') return;
+    if (fields.length > 0) {
+      if (fields[0].boundaries && fields[0].boundaries.length >= 3) {
+        map.flyToBounds(computeBoundsFromBoundaries(fields[0].boundaries) as L.LatLngBoundsExpression, { padding: [80, 80], duration: 0 });
+      } else {
+        map.setView([fields[0].lat, fields[0].lng], 15);
+      }
+      done.current = true;
       return;
     }
-
-    // 3. If location is fallback/denied but we have fields, center on first field
-    if ((locationStatus === 'fallback' || locationStatus === 'denied' || locationStatus === 'unavailable') && fields.length > 0) {
-      const firstField = fields[0];
-      map.setView([firstField.lat, firstField.lng], 15);
-      hasCenteredInitial.current = true;
+    if (locationStatus === 'precise' && currentLocation) {
+      map.setView([currentLocation.lat, currentLocation.lng], 13);
+      done.current = true;
+    } else if ((locationStatus === 'fallback' || locationStatus === 'denied' || locationStatus === 'unavailable') && currentLocation) {
+      map.setView([currentLocation.lat, currentLocation.lng], 11);
+      done.current = true;
     }
-  }, [currentLocation, locationStatus, fields, activeFieldId, map]);
-
+  }, [currentLocation, locationStatus, fields, map]);
   return null;
 }
 
@@ -1259,21 +974,9 @@ function ZoomControls() {
   const map = useMap();
   return (
     <div className="absolute bottom-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
-      {[
-        { s: '+', action: () => map.zoomIn() },
-        { s: '−', action: () => map.zoomOut() },
-      ].map(({ s, action }) => (
-        <button
-          key={s}
-          onClick={action}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
-          style={{
-            background: 'rgba(8,8,9,0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: '#94a3b8',
-          }}
-        >
+      {[{ s: '+', a: () => map.zoomIn() }, { s: '−', a: () => map.zoomOut() }].map(({ s, a }) => (
+        <button key={s} onClick={a} className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
+          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
           {s}
         </button>
       ))}
@@ -1281,17 +984,218 @@ function ZoomControls() {
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Card de cena ──────────────────────────────────────────────────────────────
+
+function SceneCard({
+  scene,
+  source,
+  isActive,
+  isLoading,
+  onClick,
+}: {
+  scene: SentinelScene;
+  source: OverlaySource;
+  isActive: boolean;
+  isLoading: boolean;
+  onClick: () => void;
+}) {
+  const isS2 = source === 's2';
+  const isNdvi = source === 'ndvi';
+  const cloudOk = scene.cloud_coverage !== null && scene.cloud_coverage <= 30;
+  const cloudMid = scene.cloud_coverage !== null && scene.cloud_coverage > 30 && scene.cloud_coverage <= 60;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-xl p-2.5 transition-all flex items-center gap-3"
+      style={{
+        background: isActive ? 'rgba(236,91,19,0.15)' : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${isActive ? 'rgba(236,91,19,0.5)' : 'rgba(255,255,255,0.08)'}`,
+      }}
+    >
+      {/* Ícone */}
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{ background: isS2 ? 'rgba(96,165,250,0.15)' : isNdvi ? 'rgba(74,222,128,0.15)' : 'rgba(167,139,250,0.15)' }}>
+        <span className="material-symbols-outlined text-sm" style={{ color: isS2 ? '#60a5fa' : isNdvi ? '#4ade80' : '#a78bfa' }}>
+          {isS2 ? 'satellite_alt' : isNdvi ? 'grass' : 'radar'}
+        </span>
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold text-white leading-tight">{scene.date_br}</p>
+        <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>
+          {isS2
+            ? scene.cloud_coverage !== null
+              ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
+              : 'Cobertura N/D'
+            : isNdvi
+              ? 'Vegetação · NDVI'
+            : scene.orbit
+              ? `Órbita ${scene.orbit}`
+              : 'SAR · Radar'
+          }
+        </p>
+      </div>
+
+      {/* Badge qualidade (S2 e NDVI) */}
+      {(isS2 || isNdvi) && scene.cloud_coverage !== null && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+          style={{
+            background: cloudOk ? 'rgba(74,222,128,0.15)' : cloudMid ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
+            color: cloudOk ? '#4ade80' : cloudMid ? '#fbbf24' : '#f87171',
+          }}>
+          {cloudOk ? 'LIMPO' : cloudMid ? 'PARCIAL' : 'NUBLADO'}
+        </span>
+      )}
+
+      {/* Loading spinner */}
+      {isLoading && (
+        <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
+      )}
+    </button>
+  );
+}
+
+// ── Painel de cenas ───────────────────────────────────────────────────────────
+
+function ScenesPanel({
+  fieldId,
+  fieldName,
+  scenes,
+  activeSceneKey,
+  overlayLoading,
+  onClose,
+  onSelectScene,
+}: {
+  fieldId: string;
+  fieldName: string;
+  scenes: ScenesState;
+  activeSceneKey: string | null;
+  overlayLoading: boolean;
+  onClose: () => void;
+  onSelectScene: (source: OverlaySource, date: string) => void;
+}) {
+  const [tab, setTab] = useState<SceneTab>('s2');
+
+  const currentScenes = tab === 's1' ? scenes.s1 : scenes.s2;
+
+  return (
+    <div
+      className="absolute top-4 right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
+      style={{
+        background: 'rgba(8,8,9,0.95)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        width: 280,
+        maxHeight: 'calc(100vh - 100px)',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <div>
+          <p className="text-xs font-bold text-white">Imagens Satelitais</p>
+          <p className="text-[10px] mt-0.5 truncate max-w-[180px]" style={{ color: '#64748b' }}>{fieldName}</p>
+        </div>
+        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" style={{ color: '#64748b' }}>
+          <span className="material-symbols-outlined text-sm">close</span>
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        {([
+          { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
+          { key: 'ndvi', label: 'NDVI', icon: 'grass', color: '#4ade80', desc: 'Vegetação' },
+          { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
+        ] as const).map(({ key, label, icon, color, desc }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl transition-all"
+            style={{
+              background: tab === key ? `${color}18` : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}`,
+            }}
+          >
+            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>{icon}</span>
+            <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>{label}</span>
+            <span className="text-[9px]" style={{ color: '#475569' }}>{desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Lista de cenas */}
+      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5" style={{ maxHeight: 340 }}>
+        {tab === 'ndvi' && !scenes.loading && !scenes.error && (
+          <div className="rounded-xl p-3 mb-1.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <p className="text-[10px] font-bold mb-2" style={{ color: '#4ade80' }}>Paleta NDVI</p>
+            <div className="grid grid-cols-1 gap-1.5 text-[9px]" style={{ color: '#94a3b8' }}>
+              <p>Cinza = solo</p>
+              <p>Vermelho = crítico</p>
+              <p>Amarelo = estresse</p>
+              <p>Verde claro = saudável</p>
+              <p>Verde escuro = excelente</p>
+            </div>
+          </div>
+        )}
+        {scenes.loading ? (
+          <div className="flex flex-col items-center gap-2 py-8">
+            <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+            <p className="text-[10px]" style={{ color: '#64748b' }}>Buscando imagens disponíveis...</p>
+          </div>
+        ) : scenes.error ? (
+          <div className="py-6 text-center">
+            <p className="text-[10px]" style={{ color: '#f87171' }}>{scenes.error}</p>
+          </div>
+        ) : currentScenes.length === 0 ? (
+          <div className="py-6 text-center">
+            <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#334155' }}>
+              {tab === 's2' ? 'cloud_off' : tab === 'ndvi' ? 'grass' : 'signal_disconnected'}
+            </span>
+            <p className="text-[10px]" style={{ color: '#64748b' }}>
+              Nenhuma imagem {tab === 's2' ? 'Sentinel-2' : tab === 'ndvi' ? 'NDVI' : 'Sentinel-1'} nos últimos 90 dias.
+            </p>
+          </div>
+        ) : (
+          currentScenes.map((scene) => {
+            const selectedSource: OverlaySource = tab === 'ndvi' ? 'ndvi' : scene.source;
+            const key = `${fieldId}|${selectedSource}|${scene.date}`;
+            return (
+              <SceneCard
+                key={scene.scene_id}
+                scene={scene}
+                source={selectedSource}
+                isActive={activeSceneKey === key}
+                isLoading={overlayLoading && activeSceneKey === key}
+                onClick={() => onSelectScene(selectedSource, scene.date || '')}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Footer info */}
+      <div className="px-4 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <p className="text-[9px] text-center" style={{ color: '#334155' }}>
+          Fonte: Copernicus · Earth Search STAC · Grátis
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Componente principal ──────────────────────────────────────────────────────
+
 export default function FieldMap() {
-  const {
-    currentLocation,
-    locationStatus,
-    fields,
-    createField,
-    removeField,
-    activeFarmId,
-    activeMapLayer,
-  } = useAppStore();
+  const { currentLocation, locationStatus, fields, createField, removeField, activeFarmId, activeFieldId, setActiveField } = useAppStore();
+
+  const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [tempMarker, setTempMarker] = useState<{ lat: number; lng: number } | null>(null);
 
   const [drawMode, setDrawMode] = useState<DrawMode>('none');
   const [drawPoints, setDrawPoints] = useState<[number, number][]>([]);
@@ -1301,67 +1205,144 @@ export default function FieldMap() {
   const [fieldDataPlantio, setFieldDataPlantio] = useState('');
   const [fieldVariedade, setFieldVariedade] = useState('');
 
-  const center: [number, number] = currentLocation
-    ? [currentLocation.lat, currentLocation.lng]
-    : [-23.31028, -51.16278];
+  // Painel de cenas
+  const [showScenesPanel, setShowScenesPanel] = useState(false);
+  const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], loading: false, error: null, fieldId: null });
 
-  const handleMapClick = useCallback((latlng: { lat: number; lng: number }) => {
+  // Overlay
+  const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+  const [overlayOpacity, setOverlayOpacity] = useState(0.9);
+  const prevUrlRef = useRef<string | null>(null);
+
+  const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
+
+  // ── Buscar cenas quando painel abre ──────────────────────────────────────
+  useEffect(() => {
+    if (!showScenesPanel || !activeFieldId) return;
+    if (scenes.fieldId === activeFieldId && !scenes.loading) return;
+
+    setScenes({ s2: [], s1: [], loading: true, error: null, fieldId: activeFieldId });
+
+    const fetchScenes = async () => {
+      try {
+        const headers = await buildAuthHeaders();
+        const resp = await fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        setScenes({ s2: data.s2 || [], s1: data.s1 || [], loading: false, error: null, fieldId: activeFieldId });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
+        setScenes({ s2: [], s1: [], loading: false, error: msg, fieldId: activeFieldId });
+      }
+    };
+
+    void fetchScenes();
+  }, [showScenesPanel, activeFieldId]);
+
+  // ── Carregar overlay de cena selecionada ──────────────────────────────────
+  const handleSelectScene = async (source: OverlaySource, date: string) => {
+    if (!activeFieldId) return;
+
+    const sceneKey = `${activeFieldId}|${source}|${date}`;
+    if (overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
+
+    const activeField = fields.find((f) => f.id === activeFieldId);
+    if (!activeField?.boundaries || activeField.boundaries.length < 3) return;
+
+    const bounds = computeBoundsFromBoundaries(activeField.boundaries);
+
+    setOverlay({ url: null, bounds, loading: true, error: null, sceneKey });
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+
+    try {
+      const headers = await buildAuthHeaders();
+      const querySource = source === 'ndvi' ? 's2' : source;
+      const modeQuery = source === 'ndvi' ? '&mode=ndvi' : '';
+      const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${querySource}&scene_date=${date}${modeQuery}`;
+      const resp = await fetch(url, { headers });
+
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => resp.statusText);
+        throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 150)}`);
+      }
+
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      prevUrlRef.current = objectUrl;
+      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao carregar imagem.';
+      console.error('[Sentinel overlay]', msg);
+      setOverlay({ url: null, bounds, loading: false, error: msg, sceneKey });
+    }
+  };
+
+  // Fechar painel e limpar overlay ao trocar talhão
+  useEffect(() => {
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+    setShowScenesPanel(false);
+  }, [activeFieldId]);
+
+  useEffect(() => () => { if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current); }, []);
+
+  // ── Busca geográfica ──────────────────────────────────────────────────────
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearchError(null);
+    setTempMarker(null);
+
+    const decimal = parseDecimalCoords(q);
+    if (decimal) { setFlyTarget({ ...decimal, zoom: 15 }); setTempMarker(decimal); return; }
+
+    const dms = parseDMSCoords(q);
+    if (dms) { setFlyTarget({ ...dms, zoom: 15 }); setTempMarker(dms); return; }
+
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`, { headers: { 'Accept-Language': 'pt-BR' } });
+      const data = await res.json() as Array<{ lat: string; lon: string }>;
+      if (!data?.length) throw new Error('não encontrado');
+      const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+      setFlyTarget({ lat, lng, zoom: 13 });
+      setTempMarker({ lat, lng });
+    } catch {
+      setSearchError('Local não encontrado. Tente outro nome ou coordenadas.');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // ── Desenho ───────────────────────────────────────────────────────────────
+  const handleMapClick = useCallback((ll: { lat: number; lng: number }) => {
     if (drawMode !== 'drawing') return;
-    setDrawPoints((prev) => [...prev, [latlng.lat, latlng.lng]]);
+    setDrawPoints((p) => [...p, [ll.lat, ll.lng]]);
   }, [drawMode]);
 
   const resetForm = () => {
-    setDrawPoints([]);
-    setFieldName('');
-    setFieldCultura('');
-    setFieldDataPlantio('');
-    setFieldVariedade('');
-    setDrawMode('none');
+    setDrawPoints([]); setFieldName(''); setFieldCultura('');
+    setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none');
   };
 
   const finishDrawing = async () => {
-    // Validações obrigatórias (frontend guard)
-    if (!activeFarmId) {
-      alert('Selecione ou crie uma fazenda antes de desenhar talhões.');
-      return;
-    }
-    if (drawPoints.length < 3) {
-      alert('Marque pelo menos 3 pontos para criar um talhão.');
-      return;
-    }
-
+    if (!activeFarmId) { alert('Selecione uma fazenda antes de desenhar.'); return; }
+    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
     const areaHa = polygonAreaHa(drawPoints);
-    if (areaHa < 0.05) {
-      alert('A área desenhada é muito pequena. Desenhe um talhão com pelo menos 0.05 ha.');
-      return;
-    }
+    if (areaHa < 0.05) { alert('Área muito pequena. Mínimo 0.05 ha.'); return; }
 
     const name = fieldName.trim() || `Talhão ${fields.length + 1}`;
     const centroid: [number, number] = [
       drawPoints.reduce((s, p) => s + p[0], 0) / drawPoints.length,
       drawPoints.reduce((s, p) => s + p[1], 0) / drawPoints.length,
     ];
-
-    const newLoc = {
-      lat: centroid[0],
-      lng: centroid[1],
-      name,
-      boundaries: drawPoints,
-      cultura: fieldCultura || undefined,
-      dataPlantio: fieldDataPlantio || undefined,
-      variedade: fieldVariedade || undefined,
-      areaHa,
-    };
-
     try {
       setIsSaving(true);
-      await createField(activeFarmId, newLoc);
-      // Limpeza do formulário APENAS após sucesso confirmado
+      await createField(activeFarmId, { lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, cultura: fieldCultura || undefined, dataPlantio: fieldDataPlantio || undefined, variedade: fieldVariedade || undefined, areaHa });
       resetForm();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao salvar talhão.';
-      alert(`Não foi possível salvar o talhão:\n${msg}`);
-      // Intencionalmente NÃO limpa o formulário — permite corrigir e tentar de novo
+      alert(`Erro ao salvar: ${err instanceof Error ? err.message : 'desconhecido'}`);
     } finally {
       setIsSaving(false);
     }
@@ -1369,318 +1350,204 @@ export default function FieldMap() {
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
+  const activeField = fields.find((f) => f.id === activeFieldId);
 
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="relative w-full h-full overflow-hidden"
-      style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}
-    >
-      <MapContainer
-        center={center}
-        zoom={13}
-        style={{ height: '100%', width: '100%', background: '#080809' }}
-        zoomControl={false}
-      >
-        <MapController />
-        {/* ── Base satellite layer (always visible) ── */}
-        <TileLayer
-          attribution="&copy; Esri"
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={20}
-        />
-        {/* Hybrid labels */}
-        <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-          maxZoom={20}
-          opacity={0.6}
-        />
+    <div className="relative w-full h-full overflow-hidden" style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}>
+      <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', background: '#080809' }} zoomControl={false}>
+        <InitialCenterController />
+        <ActiveFieldFlyController />
+        <FlyController target={flyTarget} />
 
-        {/* ── NDVI layer (NASA GIBS — MODIS Terra 8-day) ── */}
-        {activeMapLayer === 'ndvi' && (
-          <TileLayer
-            url={`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${gibsDate}/GoogleMapsCompatible/{z}/{y}/{x}.jpg`}
-            attribution="NASA GIBS · MODIS Terra NDVI"
-            maxZoom={9}
-            opacity={0.85}
-          />
+        {mapLayer === 'osm' && <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />}
+        {mapLayer === 'esri' && (
+          <>
+            <TileLayer attribution="&copy; Esri" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={20} />
+            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxZoom={20} opacity={0.6} />
+          </>
         )}
 
-        {/* ── Moisture layer (NASA GIBS — MODIS Terra Land Surface Temp as proxy) ── */}
-        {activeMapLayer === 'moisture' && (
-          <TileLayer
-            url={`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_Land_Surface_Temp_Day/default/${gibsDate}/GoogleMapsCompatible/{z}/{y}/{x}.png`}
-            attribution="NASA GIBS · MODIS Terra LST"
-            maxZoom={9}
-            opacity={0.75}
-          />
+        {/* Overlay da cena selecionada */}
+        {overlay.url && overlay.bounds && (
+          <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={overlayOpacity} zIndex={400} />
         )}
 
         <MapClickHandler onMapClick={handleMapClick} />
 
-        {/* Current location marker */}
+        {tempMarker && <Marker position={[tempMarker.lat, tempMarker.lng]}><Popup>📍 {searchQuery}</Popup></Marker>}
         {currentLocation && locationStatus === 'precise' && !fields.some((s) => s.lat === currentLocation.lat) && (
-          <Marker position={[currentLocation.lat, currentLocation.lng]}>
-            <Popup>📍 Sua localização atual</Popup>
-          </Marker>
+          <Marker position={[currentLocation.lat, currentLocation.lng]}><Popup>📍 Sua localização</Popup></Marker>
         )}
 
-        {/* Fields from Supabase (single source of truth) */}
         {fields.map((loc, idx) => {
           const color = FIELD_COLORS[idx % FIELD_COLORS.length];
+          const isActive = loc.id === activeFieldId;
           return (
             <Polygon
-              key={loc.id}  // UUID do banco — nunca usar idx aqui
-              positions={
-                loc.boundaries ??
-                [
-                  [loc.lat - 0.003, loc.lng - 0.003],
-                  [loc.lat - 0.003, loc.lng + 0.003],
-                  [loc.lat + 0.003, loc.lng + 0.003],
-                  [loc.lat + 0.003, loc.lng - 0.003],
-                ]
-              }
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.25, weight: 2 }}
+              key={loc.id}
+              positions={loc.boundaries ?? [[loc.lat - 0.001, loc.lng - 0.001], [loc.lat - 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng - 0.001]]}
+              pathOptions={{ color, fillColor: color, fillOpacity: isActive ? 0.08 : 0.2, weight: isActive ? 3 : 2, dashArray: isActive ? undefined : '4 2' }}
+              eventHandlers={{ click: () => { if (loc.id) setActiveField(loc.id); } }}
             >
+              <Tooltip permanent direction="center" className="leaflet-field-label" offset={[0, 0]}>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                  {loc.name}
+                </span>
+              </Tooltip>
               <Popup>
-                <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 160 }}>
+                <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 190 }}>
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
                   {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}</p>}
-                  {loc.variedade && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🔬 {loc.variedade}</p>}
-                  {loc.dataPlantio && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>📅 Plantio: {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}</p>}
-                  <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-                    {loc.boundaries ? `${loc.boundaries.length} pontos` : 'Talhão'}
-                  </p>
-                  <button
-                    onClick={() => activeFarmId && loc.id && removeField(activeFarmId, loc.id)}
-                    style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                  >
-                    🗑 Remover talhão
-                  </button>
+                  {loc.variedade && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌾 {loc.variedade}</p>}
+                  {loc.dataPlantio && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🗓 {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}</p>}
+                  {loc.boundaries && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>📐 {polygonAreaHa(loc.boundaries).toFixed(2)} ha</p>}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
+                      style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                    >🛰 Ver Imagens</button>
+                    <button
+                      onClick={() => { if (loc.id && activeFarmId && window.confirm(`Remover "${loc.name}"? Esta ação não pode ser desfeita.`)) removeField(activeFarmId, loc.id); }}
+                      style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    >🗑 Remover</button>
+                  </div>
                 </div>
               </Popup>
             </Polygon>
           );
         })}
 
-
-        {/* Preview of drawing */}
         {drawMode === 'drawing' && drawPoints.length > 0 && (
           <>
-            {drawPoints.length > 1 && (
-              <Polyline
-                positions={[...drawPoints, drawPoints[0]]}
-                pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }}
-              />
-            )}
+            {drawPoints.length > 1 && <Polyline positions={[...drawPoints, drawPoints[0]]} pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }} />}
             {drawPoints.map((pt, i) => (
-              <Marker
-                key={i}
-                position={pt}
-                icon={L.divIcon({
-                  className: '',
-                  html: `<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
-                  iconAnchor: [5, 5],
-                })}
-              />
+              <Marker key={i} position={pt} icon={L.divIcon({ className: '', html: '<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>', iconAnchor: [5, 5] })} />
             ))}
           </>
         )}
 
-        {/* Functional zoom controls inside map */}
         <ZoomControls />
       </MapContainer>
 
-      {/* ── Overlays (outside MapContainer) ── */}
+      {/* CSS tooltip transparente */}
+      <style>{`
+        .leaflet-field-label { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+        .leaflet-field-label::before { display: none !important; }
+      `}</style>
 
-      {/* Layer selector pills â€” [ESCONDIDO TEMPORARIAMENTE] */}
-      {/* 
-      {drawMode === 'none' && (
-        <div ...>
-          ...
+      {/* Painel de cenas Sentinel */}
+      {showScenesPanel && activeFieldId && activeField && (
+        <ScenesPanel
+          fieldId={activeFieldId}
+          fieldName={activeField.name || 'Talhão'}
+          scenes={scenes}
+          activeSceneKey={overlay.sceneKey}
+          overlayLoading={overlay.loading}
+          onClose={() => setShowScenesPanel(false)}
+          onSelectScene={handleSelectScene}
+        />
+      )}
+
+      {/* Badge de loading/erro do overlay */}
+      {(overlay.loading || overlay.error) && (
+        <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
+          {overlay.loading && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
+              <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin" />
+              Carregando imagem...
+            </div>
+          )}
+          {!overlay.loading && overlay.error && (
+            <div className="px-3 py-2 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 300 }}>
+              ⚠ {overlay.error}
+            </div>
+          )}
         </div>
-      )} 
-      */}
+      )}
 
-      {/* Draw new field button */}
+      {/* Badge de overlay ativo */}
+      {overlay.url && !overlay.loading && overlay.sceneKey && (
+        <div className="absolute z-[500] pointer-events-auto flex flex-col gap-2" style={{ top: 52, left: 4 }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
+            🛰 {getOverlaySourceLabel(overlay.sceneKey)} · {formatOverlaySceneDate(overlay.sceneKey) ?? 'Data N/D'}
+          </div>
+          <div className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={5}
+              value={overlayOpacity * 100}
+              onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
+              style={{ accentColor: '#ec5b13', width: 120 }}
+            />
+            <span className="text-[10px] font-bold" style={{ color: '#fff' }}>{Math.round(overlayOpacity * 100)}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Barra de busca */}
       {drawMode === 'none' && (
-        <button
-          onClick={() => setDrawMode('drawing')}
-          className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 pointer-events-auto"
-          style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}
-        >
+        <form onSubmit={handleSearch} className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto" style={{ minWidth: 300 }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(16px)', border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+            <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
+            <input className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none" placeholder="Buscar cidade ou coordenadas..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
+            {searchLoading && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />}
+          </div>
+          <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13', flexShrink: 0 }}>Ir</button>
+        </form>
+      )}
+
+      {searchError && drawMode === 'none' && (
+        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none" style={{ top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+          {searchError}
+        </div>
+      )}
+
+      {/* Seletor de camadas */}
+      {drawMode === 'none' && (
+        <div className="absolute top-4 left-4 z-[500] flex gap-1.5 pointer-events-auto">
+          {([{ key: 'osm', label: 'OpenStreetMap' }, { key: 'esri', label: 'Satélite HD' }] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
+            <button key={key} onClick={() => setMapLayer(key)} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+              style={{ background: mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: mapLayer === key ? '#fff' : '#94a3b8' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Botão Desenhar */}
+      {drawMode === 'none' && (
+        <button onClick={() => setDrawMode('drawing')} className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto" style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
           <span className="material-symbols-outlined text-base">add_location_alt</span>
           Desenhar Talhão
         </button>
       )}
 
-      {/* Drawing mode controls */}
+      {/* Controles de desenho */}
       {drawMode === 'drawing' && (
         <>
-          <div
-            className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none"
-            style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(236,91,19,0.3)' }}
-          >
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(236,91,19,0.3)' }}>
             <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>draw</span>
-            Clique no mapa para marcar os vértices &nbsp;·&nbsp; {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+            Clique para marcar vértices · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
           </div>
-
-          <div
-            className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto"
-            style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 420 }}
-          >
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
-              {drawPoints.length} pontos marcados · Novo Talhão
-            </p>
-
-            {/* Nome */}
-            <input
-              type="text"
-              placeholder="Nome do talhão (ex: T01 – Soja Norte)"
-              value={fieldName}
-              onChange={(e) => setFieldName(e.target.value)}
-              className="w-full bg-transparent border-none text-sm focus:outline-none text-white placeholder:text-slate-600 border-b pb-2"
-              style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
-            />
-
-            {/* Cultura + Data */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[10px] mb-1" style={{ color: '#64748b' }}>Cultura</p>
-                <select
-                  value={fieldCultura}
-                  onChange={(e) => setFieldCultura(e.target.value)}
-                  className="w-full bg-transparent text-sm focus:outline-none text-white cursor-pointer"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 10px' }}
-                >
-                  <option value="" style={{ background: '#0c0c0e' }}>Selecionar...</option>
-                  <option value="Soja" style={{ background: '#0c0c0e' }}>Soja</option>
-                  <option value="Milho" style={{ background: '#0c0c0e' }}>Milho</option>
-                  <option value="Algodão" style={{ background: '#0c0c0e' }}>Algodão</option>
-                  <option value="Trigo" style={{ background: '#0c0c0e' }}>Trigo</option>
-                  <option value="Cana-de-açúcar" style={{ background: '#0c0c0e' }}>Cana-de-açúcar</option>
-                  <option value="Café" style={{ background: '#0c0c0e' }}>Café</option>
-                  <option value="Outro" style={{ background: '#0c0c0e' }}>Outro</option>
-                </select>
-              </div>
-              <div>
-                <p className="text-[10px] mb-1" style={{ color: '#64748b' }}>Data de plantio</p>
-                <input
-                  type="date"
-                  value={fieldDataPlantio}
-                  onChange={(e) => setFieldDataPlantio(e.target.value)}
-                  className="w-full text-sm focus:outline-none text-white cursor-pointer"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 10px', colorScheme: 'dark' }}
-                />
-              </div>
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto" style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 420 }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>{drawPoints.length} pontos · Novo Talhão</p>
+            <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Nome do talhão" value={fieldName} onChange={(e) => setFieldName(e.target.value)} />
+            <div className="grid grid-cols-2 gap-2">
+              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Cultura (ex: Soja)" value={fieldCultura} onChange={(e) => setFieldCultura(e.target.value)} />
+              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Variedade" value={fieldVariedade} onChange={(e) => setFieldVariedade(e.target.value)} />
             </div>
-
-            {/* Variedade */}
-            <input
-              type="text"
-              placeholder="Variedade / Cultivar (ex: M7739, DM 66i68)"
-              value={fieldVariedade}
-              onChange={(e) => setFieldVariedade(e.target.value)}
-              className="w-full bg-transparent text-sm focus:outline-none text-white placeholder:text-slate-600"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 10px' }}
-            />
-
-            {/* Botões */}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={() => setDrawPoints((p) => p.slice(0, -1))}
-                disabled={drawPoints.length === 0}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
-              >
-                <span className="material-symbols-outlined text-base">undo</span>
-              </button>
-              <button
-                onClick={finishDrawing}
-                disabled={drawPoints.length < 3 || isSaving}
-                className="flex-1 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                style={{ background: '#ec5b13' }}
-              >
-                {isSaving ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  'Salvar Talhão'
-                )}
-              </button>
-              <button
-                onClick={() => { setDrawPoints([]); setFieldName(''); setFieldCultura(''); setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none'); }}
-                disabled={isSaving}
-                className="px-3 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-30"
-                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
-              >
-                Cancelar
-              </button>
+            <input type="date" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 focus:outline-none focus:border-orange-500/40" value={fieldDataPlantio} onChange={(e) => setFieldDataPlantio(e.target.value)} />
+            {drawPoints.length >= 3 && <p className="text-[10px] text-slate-400 text-center">Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span></p>}
+            <div className="flex gap-2">
+              <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>{isSaving ? 'Salvando...' : 'Salvar Talhão'}</button>
+              <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>Cancelar</button>
             </div>
           </div>
         </>
       )}
-
-      {/* Fields legend */}
-      {drawMode === 'none' && fields.length > 0 && (
-        <div
-          className="absolute bottom-4 left-4 z-[500] p-3 rounded-xl pointer-events-none"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)' }}
-        >
-          <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>Talhões</p>
-          <div className="space-y-1">
-            {fields.map((loc, i) => (
-              <div key={loc.id} className="flex items-center gap-2 text-xs text-white">
-                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: FIELD_COLORS[i % FIELD_COLORS.length] }} />
-                {loc.name ?? `Talhão ${i + 1}`}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* NDVI legend */}
-      {activeMapLayer === 'ndvi' && (
-        <div
-          className="absolute bottom-4 right-16 z-[500] p-3 rounded-xl pointer-events-none text-[10px]"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.07)' }}
-        >
-          <p className="font-bold uppercase tracking-widest mb-2" style={{ color: '#64748b' }}>NDVI — NASA GIBS</p>
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-2 rounded-full" style={{ background: 'linear-gradient(to right, #a52a2a, #ffff00, #00aa00)' }} />
-          </div>
-          <div className="flex justify-between text-[9px] mt-0.5 text-slate-500">
-            <span>Baixo</span><span>Alto</span>
-          </div>
-          <p className="mt-1 text-[9px]" style={{ color: '#475569' }}>
-            Data: {gibsDate.split('-').reverse().join('/')}
-          </p>
-        </div>
-      )}
-      {/* Location Status Badge */}
-      {locationStatus !== 'precise' && locationStatus !== 'loading' && (
-        <div 
-          className="absolute top-16 left-4 z-[500] flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider pointer-events-auto shadow-lg"
-          style={{ 
-            background: 'rgba(15, 23, 42, 0.85)', 
-            border: '1px solid rgba(245,158,11,0.3)',
-            color: '#f59e0b',
-            backdropFilter: 'blur(12px)'
-          }}
-        >
-          <span className="material-symbols-outlined text-xs">location_off</span>
-          {locationStatus === 'denied' ? 'GPS Negado' : 'Usando Localização Padrão'}
-          <button 
-            onClick={() => window.location.reload()}
-            className="ml-2 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
-          >
-            Atualizar
-          </button>
-        </div>
-      )}
-
     </div>
   );
 }
@@ -1694,6 +1561,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 
 
@@ -1853,6 +1721,13 @@ export default function Layout() {
 
   const {
     farms,
+    fields,
+    activeFarmId,
+    activeFieldId,
+    setActiveFarm,
+    setActiveField,
+    focusActiveField,
+    currentLocation,
     resetStore,
     weatherCache,
     syncFromBackend,
@@ -1868,17 +1743,17 @@ export default function Layout() {
         
         syncFromBackend().finally(() => clearTimeout(timeout));
 
-        // Trigger geolocation on mount if not already precise/denied
+        // Sempre tenta geolocalizacao no mount; o util decide fallback em caso de erro/negacao.
         const state = useAppStore.getState();
-        if (state.locationStatus === 'loading' || state.locationStatus === 'fallback') {
-          state.updateGeolocation();
-        }
+        void state.updateGeolocation();
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         syncFromBackend();
+        const state = useAppStore.getState();
+        void state.updateGeolocation();
       }
     });
 
@@ -1892,8 +1767,16 @@ export default function Layout() {
   };
 
   // Determine active farm/field for display
-  const temp = weatherCache ? `${Math.round(weatherCache.temperature)}Â°C` : 'â€”';
-  const humidity = weatherCache ? `${weatherCache.humidity}%` : 'â€”';
+  const temp = weatherCache ? `${Math.round(weatherCache.temperature)}°C` : '–';
+  const humidity = weatherCache ? `${weatherCache.humidity}%` : '–';
+  const activeFarm = farms.find((farm) => farm.id === activeFarmId) ?? null;
+  const activeField = fields.find((field) => field.id === activeFieldId) ?? null;
+  const activeContextTitle = activeField ? 'Talhão ativo' : 'Fazenda ativa';
+  const activeContextLabel = activeField
+    ? `${activeFarm?.name ?? 'Fazenda'} · ${activeField.name ?? 'Talhão'}`
+    : activeFarm
+      ? activeFarm.name
+      : 'Nenhuma fazenda selecionada';
 
 
   return (
@@ -1984,11 +1867,11 @@ export default function Layout() {
 
           {/* TopBar */}
           <header
-            className="header-glass flex items-center justify-between px-4 md:px-6 h-14 border-b flex-shrink-0 z-30"
+            className="header-glass flex items-center justify-between px-4 md:px-6 h-16 border-b flex-shrink-0 z-30"
             style={{ borderColor: 'var(--border)' }}
           >
-            {/* Left Section: User Location & Operational Context */}
-            <div className="flex items-center gap-6">
+            {/* Left Section: Operational Context */}
+            <div className="flex items-center gap-4 md:gap-5">
               {/* Hamburguer â€” mobile only */}
               <button
                 onClick={() => setDrawerOpen(true)}
@@ -1999,20 +1882,54 @@ export default function Layout() {
                 <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>menu</span>
               </button>
 
-              {/* 1. Sua LocalizaÃ§Ã£o (GeogrÃ¡fica) */}
-              <div className="flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>location_on</span>
+              <button
+                type="button"
+                disabled={!activeField}
+                onClick={() => {
+                  if (!activeField?.id) return;
+                  setActiveField(activeField.id);
+                  focusActiveField();
+                  navigate('/app/dashboard');
+                }}
+                title={activeField ? 'Ir para o talhão ativo no mapa' : 'Selecione um talhão para focar no mapa'}
+                className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl transition-all"
+                style={{
+                  background: activeField ? 'rgba(236,91,19,0.12)' : 'rgba(255,255,255,0.02)',
+                  border: activeField ? '1px solid rgba(236,91,19,0.28)' : '1px solid var(--border)',
+                  cursor: activeField ? 'pointer' : 'default',
+                  opacity: activeField ? 1 : 0.8,
+                }}
+              >
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>pin_drop</span>
                 <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Sua LocalizaÃ§Ã£o</p>
-                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[120px] md:max-w-none">
-                    {useAppStore.getState().currentLocation?.name || 'Londrina, PR'}
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: activeField ? '#f97316' : 'var(--muted)' }}>{activeContextTitle}</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[260px]">
+                    {activeContextLabel}
+                  </p>
+                </div>
+              </button>
+
+              <div className="hidden lg:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>home_work</span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Fazenda ativa</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">{activeFarm?.name ?? 'Sem fazenda ativa'}</p>
+                </div>
+              </div>
+
+              <div className="hidden xl:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>location_on</span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
+                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Right Section: Actions & Weather */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 md:gap-4">
               {/* Weather Info â€” hidden on mobile */}
               <div className="hidden lg:flex items-center gap-4 text-xs font-semibold">
                 <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
@@ -2030,20 +1947,18 @@ export default function Layout() {
                 <span className="material-symbols-outlined text-sm pl-3 pointer-events-none" style={{ color: 'var(--primary)' }}>agriculture</span>
                 <select
                   className="appearance-none bg-transparent border-none text-white text-[10px] font-bold py-2 pl-2 pr-8 focus:outline-none cursor-pointer"
-                  value={useAppStore.getState().activeFieldId || useAppStore.getState().activeFarmId || ''}
+                  value={activeFieldId || activeFarmId || ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const store = useAppStore.getState();
-                    // Verificar se é um field ou uma farm
-                    const allFields = store.farms.flatMap(f => f.fields || []);
-                    const isField = allFields.some(f => f.id === val);
+                    const isField = fields.some((f) => f.id === val);
                     if (isField) {
-                      store.setActiveField(val);
+                      setActiveField(val);
+                      focusActiveField();
                       // Navegar para o mapa ao selecionar talhão
                       navigate('/app/dashboard');
                     } else {
-                      store.setActiveFarm(val);
-                      store.setActiveField(null);
+                      setActiveFarm(val);
+                      setActiveField(null);
                     }
                   }}
                 >
@@ -2052,10 +1967,10 @@ export default function Layout() {
                   ) : (
                     farms.map((farm) => (
                       <optgroup key={farm.id} label={farm.name.toUpperCase()} style={{ background: '#0c0c0e' }}>
-                        {(farm.fields || []).length === 0 ? (
+                        {fields.filter((field) => field.farm_id === farm.id).length === 0 ? (
                           <option value={farm.id} style={{ background: '#0c0c0e' }}>Sem talhões cadastrados</option>
                         ) : (
-                          (farm.fields || []).map((field) => (
+                          fields.filter((field) => field.farm_id === farm.id).map((field) => (
                             <option key={field.id} value={field.id} style={{ background: '#0c0c0e' }}>
                               {field.name?.toUpperCase()}
                             </option>
@@ -2364,6 +2279,10 @@ export default { SkeletonLine, SkeletonCard, SkeletonChart, SkeletonMap };
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+html {
+  font-size: 14px;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 font-sans antialiased;
 }
@@ -2418,10 +2337,10 @@ createRoot(document.getElementById('root')!).render(
 
 ### `src/pages/Alerts.tsx`
 ```tsx
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import useAppStore from '../store/useAppStore';
-import { generateAlerts } from '../services/alertsAI';
 import type { Alert } from '../store/useAppStore';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -2457,17 +2376,56 @@ interface AlertExtra extends Alert {
   valueLabel?: string;
 }
 
+function mapSnapshotAlerts(rawAlerts: Array<Record<string, unknown>>): Alert[] {
+  const now = Date.now();
+  return rawAlerts.map((item, index) => {
+    const createdAt = typeof item.createdAt === 'string' ? Date.parse(item.createdAt) : now;
+    const normalizedType = item.type === 'critical' || item.type === 'warning' || item.type === 'info'
+      ? item.type
+      : 'info';
+
+    return {
+      id: String(item.id ?? `snapshot-alert-${index}`),
+      type: normalizedType,
+      title: String(item.title ?? 'Alerta agronômico'),
+      message: String(item.message ?? ''),
+      timestamp: Number.isFinite(createdAt) ? createdAt : now,
+      dismissed: false,
+      field: typeof item.field === 'string' ? item.field : undefined,
+      value: item.value != null ? String(item.value) : undefined,
+      valueLabel: typeof item.valueLabel === 'string' ? item.valueLabel : undefined,
+    };
+  });
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Alerts() {
   const navigate = useNavigate();
-  const { currentLocation, fields, weatherCache, alerts, setAlerts, dismissAlert } = useAppStore();
+  const {
+    currentLocation,
+    fields,
+    weatherCache,
+    alerts,
+    setAlerts,
+    dismissAlert,
+    activeFieldId,
+    fieldIntelligenceById,
+    fetchFieldIntelligence,
+  } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const didAutoLoad = useRef(false);
   
 
-  const loc = fields.length > 0
-    ? fields[fields.length - 1]
-    : (currentLocation || { lat: -23.31028, lng: -51.16278, name: 'Londrina, PR' });
+  const activeField = activeFieldId
+    ? fields.find((field) => field.id === activeFieldId) ?? null
+    : null;
+
+  const loc = activeField
+    || fields[fields.length - 1]
+    || currentLocation
+    || FALLBACK_LOCATION;
+  const snapshot = activeFieldId ? fieldIntelligenceById[activeFieldId] : null;
 
   const visibleAlerts = (alerts as AlertExtra[]).filter((a) => !a.dismissed);
   const criticalCount = visibleAlerts.filter((a) => a.type === 'critical').length;
@@ -2494,26 +2452,39 @@ export default function Alerts() {
   };
   const localAlerts = getLocalAlerts();
 
-  const loadAlerts = async () => {
-    if (fields.length === 0 && !weatherCache) return;
+  const loadAlerts = useCallback(async () => {
+    if (!activeFieldId) {
+      setError('Selecione um talhão ativo para carregar os alertas consolidados.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const generated = await generateAlerts(weatherCache, fields);
+      const intelligence = await fetchFieldIntelligence(activeFieldId, true);
+      const generated = intelligence?.alerts ? mapSnapshotAlerts(intelligence.alerts) : [];
       setAlerts(generated);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao gerar alertas');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeFieldId, fetchFieldIntelligence, setAlerts]);
 
   // Auto-load when mounting if no alerts yet
   useEffect(() => {
-    if (alerts.length === 0 && fields.length > 0 && weatherCache) {
-      loadAlerts();
+    didAutoLoad.current = false;
+    if (!activeFieldId) return;
+    void loadAlerts();
+  }, [activeFieldId, loadAlerts]);
+
+  useEffect(() => {
+    if (didAutoLoad.current) return;
+
+    if (alerts.length === 0 && activeFieldId) {
+      didAutoLoad.current = true;
+      void loadAlerts();
     }
-  }, []);
+  }, [alerts.length, activeFieldId, loadAlerts]);
 
   return (
     <>
@@ -2536,8 +2507,13 @@ export default function Alerts() {
             <div>
               <h1 className="text-white font-bold text-xl">Alertas Inteligentes</h1>
               <p className="text-slate-400 text-xs mt-1">
-                Análise em tempo real via IA · {loc?.name ?? 'Localização atual'}
+                Snapshot do talhão ativo · {loc?.name ?? 'Localização atual'}
               </p>
+              {snapshot && (
+                <p className="text-slate-500 text-[11px] mt-1">
+                  Alertas atualizados em: {snapshot.updated_at ? new Date(snapshot.updated_at).toLocaleString('pt-BR') : 'N/D'}
+                </p>
+              )}
             </div>
             <button
               onClick={loadAlerts}
@@ -2548,7 +2524,7 @@ export default function Alerts() {
               <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
                 {loading ? 'refresh' : 'smart_toy'}
               </span>
-              {loading ? 'Analisando...' : 'Gerar Alertas IA'}
+              {loading ? 'Analisando...' : 'Atualizar talhão'}
             </button>
           </div>
 
@@ -2761,7 +2737,7 @@ export default function Alerts() {
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import useAppStore from '../store/useAppStore';
-import { apiFetch } from '../services/api';
+import { apiFetch, type FieldIntelligenceSnapshot } from '../services/api';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../services/supabase';
 
@@ -2806,26 +2782,88 @@ const INITIAL_MSG = (time: string): Message => ({
 });
 
 function buildFarmContext(
-  fields: ReturnType<typeof useAppStore.getState>['fields']
+  fields: ReturnType<typeof useAppStore.getState>['fields'],
+  activeFieldId: string | null,
+  hasImageInPayload: boolean
 ): string {
-  if (fields.length === 0) return 'Nenhum talhão cadastrado.';
-  return fields
-    .map((l, i) => {
-      const area = l.areaHa ? `${l.areaHa.toFixed(2)} ha` : 'Área N/D';
-      let ctx = `- ${l.name ?? `Talhão ${i + 1}`} (${area})`;
-      const cached = localStorage.getItem(`tracto-ndvi-${l.lat}-${l.lng}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            const ndvi = parsed.data.ndvi_analysis;
-            ctx += `\n  NDVI: ndvi_medio=${ndvi.ndvi_medio?.toFixed(2)}, zona_critica=${ndvi.zona_critica_pct}%, tendencia=${ndvi.tendencia}`;
-          }
-        } catch { /* ignore */ }
-      }
-      return ctx;
-    })
-    .join('\n');
+  if (fields.length === 0) {
+    return [
+      'Nenhum talhão selecionado no momento.',
+      'Demais talhões cadastrados: Nenhum talhão cadastrado.',
+    ].join('\n');
+  }
+
+  const formatDate = (date?: string) => {
+    if (!date) return 'N/D';
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return date;
+    return parsed.toLocaleDateString('pt-BR');
+  };
+
+  const buildFieldLine = (field: (typeof fields)[number], index: number) => {
+    const name = field.name ?? `Talhão ${index + 1}`;
+    const area = field.areaHa != null ? `${field.areaHa.toFixed(1)} ha` : 'Área N/D';
+    const cultura = field.cultura || 'N/D';
+    return `${name} (${area}, ${cultura})`;
+  };
+
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : null;
+  const otherFields = activeField
+    ? fields.filter((field) => field.id !== activeField.id)
+    : fields;
+
+  const activeSection = activeField
+    ? [
+        `TALHÃO ATIVO: ${activeField.name ?? 'Talhão sem nome'} | ${activeField.cultura || 'N/D'} | ${activeField.areaHa != null ? `${activeField.areaHa.toFixed(1)} ha` : 'Área N/D'} | ${formatDate(activeField.dataPlantio)}`,
+        `Variedade: ${activeField.variedade || 'N/D'}`,
+      ].join('\n')
+    : 'Nenhum talhão selecionado no momento.';
+
+  const othersSection = otherFields.length
+    ? `Demais talhões cadastrados:\n${otherFields.map((field, index) => `- ${buildFieldLine(field, index)}`).join('\n')}`
+    : 'Demais talhões cadastrados: Nenhum.';
+
+  const imageSection = hasImageInPayload
+    ? 'Imagem: anexada nesta mensagem (disponivel para analise agora).'
+    : 'Imagem: nenhuma imagem anexada nesta mensagem. Se quiser analise visual, reenvie a foto.';
+
+  return `${activeSection}\n${othersSection}\n${imageSection}`;
+}
+
+function buildFarmContextFromSnapshot(snapshot: FieldIntelligenceSnapshot): string {
+  const weather = snapshot.weather || {};
+  const satellite = snapshot.satellite || {};
+  const analysis = snapshot.analysis || {};
+
+  const safe = (value: unknown, fallback = 'N/D') => {
+    if (value == null) return fallback;
+    const text = String(value).trim();
+    return text.length > 0 ? text : fallback;
+  };
+
+  const toRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+
+  const sprayWindow = toRecord(toRecord(analysis).spray_window).label;
+  const frostRisk = toRecord(toRecord(analysis).frost_risk).label;
+  const waterStress = toRecord(toRecord(analysis).water_stress).label;
+  const alertTitles = Array.isArray(snapshot.alerts)
+    ? snapshot.alerts
+        .map((item) => safe((item as Record<string, unknown>).title, '').trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+
+  return [
+    `TALHÃO ATIVO: ${snapshot.field_name} | ${safe(snapshot.crop_type)} | ${snapshot.area_ha != null ? `${Number(snapshot.area_ha).toFixed(1)} ha` : 'Área N/D'} | ${safe(snapshot.planting_date)}`,
+    `Variedade: ${safe(snapshot.variety)}`,
+    `Clima atual: Temp ${safe((weather as Record<string, unknown>).temperature)}C, Umidade ${safe((weather as Record<string, unknown>).humidity)}%, Vento ${safe((weather as Record<string, unknown>).wind_speed)} km/h`,
+    `Previsão resumida: ${safe((weather as Record<string, unknown>).forecast_7d, 'Previsão indisponível')}`,
+    `Última cena Sentinel: ${safe((satellite as Record<string, unknown>).scene_date_br)} | Nuvens: ${safe((satellite as Record<string, unknown>).cloud_coverage)}`,
+    `Análise consolidada: Pulverização ${safe(sprayWindow)}, Geada ${safe(frostRisk)}, Estresse hídrico ${safe(waterStress)}`,
+    `Alertas relevantes: ${alertTitles.length ? alertTitles.join(' | ') : 'Nenhum alerta relevante no momento.'}`,
+    `Atualizado em: ${safe(snapshot.updated_at)}`,
+  ].join('\n');
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -2839,7 +2877,14 @@ async function fileToBase64(file: File): Promise<string> {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function Chat() {
-  const { addMessage, clearChat, fields, weatherCache } = useAppStore();
+  const {
+    addMessage,
+    clearChat,
+    fields,
+    activeFieldId,
+    weatherCache,
+    fetchFieldIntelligence,
+  } = useAppStore();
 
   // Conversation state
   const [conversationId, setConversationId] = useState<string>(() => uuidv4());
@@ -2848,6 +2893,7 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [showHint, setShowHint] = useState<boolean>(() => !sessionStorage.getItem('chat-hint-dismissed'));
 
   // Sidebar: saved conversations
   const [savedConversations, setSavedConversations] = useState<SavedConversation[]>([]);
@@ -2882,6 +2928,11 @@ export default function Chat() {
     loadConversations();
   }, []);
 
+  useEffect(() => {
+    if (!activeFieldId) return;
+    void fetchFieldIntelligence(activeFieldId, false);
+  }, [activeFieldId, fetchFieldIntelligence]);
+
   const loadConversations = async () => {
     try {
       setLoadingConversations(true);
@@ -2898,7 +2949,7 @@ export default function Chat() {
 
   // ── Auto-save with 3s debounce ──────────────────────────────────────────────
   const scheduleSave = useCallback(
-    (msgs: Message[], cid: string, createdAt: string) => {
+    (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string) => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = setTimeout(async () => {
         const userMessages = msgs.filter((m) => m.role !== 'assistant' || msgs.indexOf(m) > 0);
@@ -2923,7 +2974,7 @@ export default function Chat() {
                 role: m.role === 'assistant' ? 'model' : 'user',
                 text: m.text,
               })),
-              farm_context: buildFarmContext(fields),
+              farm_context: farmContextForSave,
               created_at: createdAt,
               updated_at: nowISO(),
             }),
@@ -2934,7 +2985,7 @@ export default function Chat() {
         }
       }, 3000);
     },
-    [fields]
+    []
   );
 
   // ── Start new conversation ─────────────────────────────────────────────────
@@ -3045,10 +3096,21 @@ export default function Chat() {
         { role: 'user', text: userMsg.text },
       ];
 
-      const farm_context = buildFarmContext(fields);
-      const hourly_weather = weatherCache
-        ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
-        : null;
+      const snapshot = activeFieldId ? await fetchFieldIntelligence(activeFieldId, false) : null;
+      const farm_context = snapshot
+        ? buildFarmContextFromSnapshot(snapshot)
+        : buildFarmContext(fields, activeFieldId, Boolean(imageBase64));
+
+      const weatherFromSnapshot = snapshot?.weather as Record<string, unknown> | undefined;
+      const hourly_weather = weatherFromSnapshot
+        ? {
+            temperature: Number(weatherFromSnapshot.temperature ?? 0),
+            humidity: Number(weatherFromSnapshot.humidity ?? 0),
+            wind_speed: Number(weatherFromSnapshot.wind_speed ?? 0),
+          }
+        : weatherCache
+          ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
+          : null;
 
       const data = await apiFetch<{ reply: string }>('/api/chat', {
         method: 'POST',
@@ -3068,7 +3130,7 @@ export default function Chat() {
 
       setMessages((prev) => {
         const updated = [...prev, aiMsg];
-        scheduleSave(updated, conversationId, conversationCreatedAt);
+        scheduleSave(updated, conversationId, conversationCreatedAt, farm_context);
         return updated;
       });
       addMessage('model', aiText);
@@ -3238,7 +3300,9 @@ export default function Chat() {
               <h2 className="text-sm font-bold text-white">Tracto IA</h2>
               <p className="text-[10px] flex items-center gap-1.5" style={{ color: '#64748b' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
-                Analista Agronômica · Claude Sonnet · Visão Ativa
+                {pendingImage
+                  ? 'Analista Agronômica · Claude Sonnet · Visão ativa nesta mensagem'
+                  : 'Analista Agronômica · Claude Sonnet · Sem imagem anexada'}
               </p>
             </div>
           </div>
@@ -3255,6 +3319,27 @@ export default function Chat() {
             Reiniciar
           </button>
         </div>
+
+        {/* Hint banner */}
+        {showHint && (
+          <div
+            className="flex items-start gap-2 px-4 py-2.5 flex-shrink-0 border-b"
+            style={{ borderColor: 'rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.015)' }}
+          >
+            <span className="material-symbols-outlined text-sm mt-0.5 flex-shrink-0" style={{ color: '#4ade80' }}>info</span>
+            <p className="flex-1 text-[10px] leading-relaxed" style={{ color: '#64748b' }}>
+              A Tracto IA analisa seu talhão com dados reais do Sentinel-2 e clima — independente da camada visual do mapa.
+            </p>
+            <button
+              onClick={() => { sessionStorage.setItem('chat-hint-dismissed', '1'); setShowHint(false); }}
+              className="flex-shrink-0 hover:text-white transition-colors ml-1"
+              style={{ color: '#334155' }}
+              title="Dispensar"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto scrollbar-thin p-5 space-y-4">
@@ -3386,7 +3471,7 @@ export default function Chat() {
                   <span className="material-symbols-outlined text-xs align-middle mr-0.5">
                     visibility
                   </span>
-                  Pronto para análise visual
+                  Válida para esta mensagem
                 </p>
               </div>
             </div>
@@ -3446,6 +3531,9 @@ export default function Chat() {
           <p className="text-center text-[10px] mt-2" style={{ color: '#1e293b' }}>
             Tracto IA · Claude Sonnet 4.6 · JPG · PNG · WEBP até 5MB
           </p>
+          <p className="text-center text-[10px] mt-1" style={{ color: '#334155' }}>
+            A foto enviada vale para a mensagem atual. Para novo diagnóstico visual, envie a imagem novamente.
+          </p>
         </div>
       </div>
     </>
@@ -3499,7 +3587,7 @@ const ALERT_COLORS: Record<Alert['type'], { accent: string; text: string; border
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { fields, weatherCache, alerts } = useAppStore();
+  const { fields, weatherCache, alerts, activeFieldId, focusActiveField } = useAppStore();
   const [market, setMarket] = useState<MarketData>({
     soja: { price: 'Atualizando...', change: '—', up: true },
   });
@@ -3508,9 +3596,21 @@ export default function Dashboard() {
   const [analysisResult, setAnalysisResult] = useState<FieldAnalysisResult | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  const activeField = activeFieldId
+    ? fields.find((field) => field.id === activeFieldId) ?? null
+    : null;
+  const activeFieldArea = activeField?.areaHa
+    ?? (activeField?.boundaries && activeField.boundaries.length >= 3 ? polygonAreaHa(activeField.boundaries) : null);
+
+  useEffect(() => {
+    // Evita exibir resultado de análise de um talhão antigo ao trocar seleção.
+    setAnalysisResult(null);
+    setAnalysisError(null);
+  }, [activeFieldId]);
+
   const handleAnalyze = async () => {
-    if (fields.length === 0) return;
-    const loc = fields[0];
+    if (!activeField) return;
+    const loc = activeField;
     
     setAnalyzing(true);
     setAnalysisError(null);
@@ -3556,7 +3656,7 @@ export default function Dashboard() {
   }, 0);
 
   const areaDisplay = fields.length === 0
-    ? 'N/D'
+    ? 'Sem dados'
     : totalAreaHa >= 1000
       ? `${(totalAreaHa / 1000).toFixed(2)}k`
       : totalAreaHa.toFixed(1);
@@ -3578,7 +3678,7 @@ export default function Dashboard() {
 
   const METRICS = [
     {
-      label: 'Área Total',
+      label: 'Área Monitorada',
       value: areaDisplay,
       unit: areaUnit,
       trend: fields.length > 0 ? `${fields.length} talhão${fields.length > 1 ? 'ões' : ''}` : 'Sem talhões',
@@ -3587,9 +3687,11 @@ export default function Dashboard() {
     },
     {
       label: 'NDVI Médio',
-      value: analysisResult ? analysisResult.ndvi_analysis.ndvi_medio.toFixed(2) : 'N/D',
+      value: analysisResult ? analysisResult.ndvi_analysis.ndvi_medio.toFixed(2) : 'Sem análise',
       unit: '',
-      trend: analysisResult ? 'Análise de satélite' : 'Aguardando análise',
+      trend: activeField
+        ? (analysisResult ? 'Última análise do talhão ativo' : 'Disponível após primeira análise')
+        : 'Selecione um talhão para analisar',
       up: analysisResult ? (analysisResult.ndvi_analysis.ndvi_medio > 0.5) : false,
       color: '#60a5fa',
     },
@@ -3603,9 +3705,9 @@ export default function Dashboard() {
     },
     {
       label: 'Produtividade',
-      value: 'N/D',
+      value: 'Sem base',
       unit: '',
-      trend: 'Aguardando histórico',
+      trend: 'Sem histórico suficiente',
       up: false,
       color: '#64748b',
     },
@@ -3626,6 +3728,31 @@ export default function Dashboard() {
         <div className="p-4 flex flex-col gap-4">
 
           {/* Cards de Métricas */}
+          <div className="p-3 rounded-xl" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#f97316' }}>Talhão ativo</p>
+              <button
+                onClick={() => focusActiveField()}
+                disabled={!activeField}
+                className="text-[10px] font-bold px-2 py-1 rounded"
+                style={{ background: 'rgba(236,91,19,0.2)', color: '#f97316', opacity: activeField ? 1 : 0.5 }}
+              >
+                Focar no mapa
+              </button>
+            </div>
+            <p className="text-sm font-bold text-white">{activeField?.name ?? 'Selecione um talhão no mapa'}</p>
+            <p className="text-[11px]" style={{ color: '#cbd5e1' }}>
+              {activeField
+                ? `${activeFieldArea ? `${activeFieldArea.toFixed(2)} ha` : 'Área disponível após desenho'}${activeField.cultura ? ` · ${activeField.cultura}` : ' · Cultura não informada'}`
+                : 'Análise disponível após selecionar um talhão'}
+            </p>
+            <p className="text-[10px]" style={{ color: '#94a3b8' }}>
+              {activeField
+                ? (activeField.dataPlantio ? `Plantio: ${new Date(activeField.dataPlantio).toLocaleDateString('pt-BR')}` : 'Plantio não informado')
+                : 'Selecione na lista de talhões para começar'}
+            </p>
+          </div>
+
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 px-1" style={{ color: '#64748b' }}>Métricas da Fazenda</p>
             <div className="grid grid-cols-2 gap-2">
@@ -3664,12 +3791,12 @@ export default function Dashboard() {
           </div>
 
           {/* Análise Satélite */}
-          {fields.length > 0 && (
+          {activeField ? (
             <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-white flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[14px]">satellite_alt</span>
-                  Análise Satélite
+                  Análise do Talhão Ativo
                 </p>
                 {analysisResult && (
                   <div className="flex gap-1">
@@ -3756,19 +3883,19 @@ export default function Dashboard() {
                     <div className="p-2 rounded bg-black/20 border border-white/5">
                       <p className="text-[9px] text-slate-400">Janela Pulveriz.</p>
                       <p className={`text-[10px] font-bold ${analysisResult.engine_results?.spray_window?.color === 'green' ? 'text-green-400' : analysisResult.engine_results?.spray_window?.color === 'red' ? 'text-red-400' : 'text-amber-400'}`}>
-                        {analysisResult.engine_results?.spray_window?.label.toUpperCase() || 'N/D'}
+                        {analysisResult.engine_results?.spray_window?.label.toUpperCase() || 'Sem recomendação'}
                       </p>
                     </div>
                     <div className="p-2 rounded bg-black/20 border border-white/5">
                       <p className="text-[9px] text-slate-400">Risco Geada</p>
                       <p className={`text-[10px] font-bold ${analysisResult.engine_results?.frost_risk?.color === 'red' ? 'text-red-400' : 'text-white'}`}>
-                        {analysisResult.engine_results?.frost_risk?.label.toUpperCase() || 'N/D'}
+                        {analysisResult.engine_results?.frost_risk?.label.toUpperCase() || 'Sem risco relevante'}
                       </p>
                     </div>
                     <div className="p-2 rounded bg-black/20 border border-white/5">
                       <p className="text-[9px] text-slate-400">Estresse Hídrico</p>
                       <p className={`text-[10px] font-bold ${analysisResult.engine_results?.water_stress?.color === 'red' ? 'text-red-400' : 'text-white'}`}>
-                        {analysisResult.engine_results?.water_stress?.label.toUpperCase() || 'N/D'}
+                        {analysisResult.engine_results?.water_stress?.label.toUpperCase() || 'Sem estresse relevante'}
                       </p>
                     </div>
                   </div>
@@ -3789,6 +3916,17 @@ export default function Dashboard() {
                   </button>
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white flex items-center gap-1.5 mb-2">
+                <span className="material-symbols-outlined text-[14px]">satellite_alt</span>
+                Análise do Talhão Ativo
+              </p>
+              <div className="rounded-lg px-3 py-3" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.18)' }}>
+                <p className="text-xs font-semibold text-white">Selecione um talhão</p>
+                <p className="text-[11px] mt-1" style={{ color: '#cbd5e1' }}>A análise fica disponível após escolher o talhão ativo no mapa ou no seletor superior.</p>
+              </div>
             </div>
           )}
 
@@ -3876,10 +4014,53 @@ export default function Dashboard() {
 
 ### `src/pages/LandingPage.tsx`
 ```tsx
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../services/supabase';
 
 export default function LandingPage() {
     const navigate = useNavigate();
+    const [checking, setChecking] = useState(true);
+    const [hasSession, setHasSession] = useState(false);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const syncSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!mounted) return;
+
+            if (session) {
+                setHasSession(true);
+                navigate('/app', { replace: true });
+                return;
+            }
+
+            setHasSession(false);
+            setChecking(false);
+        };
+
+        void syncSession();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session) {
+                setHasSession(true);
+                navigate('/app', { replace: true });
+            } else if (mounted) {
+                setHasSession(false);
+                setChecking(false);
+            }
+        });
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [navigate]);
+
+    if (checking || hasSession) {
+        return null;
+    }
 
     return (
         <>
@@ -4197,12 +4378,6 @@ import { useNavigate } from 'react-router-dom';
 import useAppStore from '../store/useAppStore';
 import { supabase } from '../services/supabase';
 
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
-
 // ── Error messages ────────────────────────────────────────────────────────────
 function friendlyError(msg: string): string {
   if (msg.includes('Invalid login credentials')) return 'E-mail ou senha incorretos.';
@@ -4372,7 +4547,7 @@ export default function Login() {
                       onClick={async () => {
                         if (!email) { alert('Digite seu e-mail primeiro.'); return; }
                         await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: `${window.location.origin}/reset-password`,
+                        redirectTo: `${window.location.origin}/reset-password`,
                         });
                         alert('Email de recuperação enviado! Verifique sua caixa de entrada.');
                       }}
@@ -4491,6 +4666,20 @@ interface NewsItem {
   image?: string;
 }
 
+interface RssItem {
+  guid?: string;
+  title?: string;
+  pubDate?: string;
+  link?: string;
+  thumbnail?: string;
+  enclosure?: { link?: string };
+}
+
+interface RssResponse {
+  status?: string;
+  items?: RssItem[];
+}
+
 
 
 // Valores de commodities ref (já que HG/Awesome não cobrem gratuitamente commodities físicas BR)
@@ -4543,16 +4732,16 @@ export default function Market() {
     try {
       const rssUrl = 'https://www.canalrural.com.br/feed/';
       const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
-      const data = await res.json();
-      if (data.status === 'ok') {
-        const formattedNews = data.items.slice(0, 5).map((item: any) => ({
-          id: item.guid,
-          title: item.title,
+      const data = await res.json() as RssResponse;
+      if (data.status === 'ok' && data.items) {
+        const formattedNews = data.items.slice(0, 5).map((item, index) => ({
+          id: item.guid ?? `${item.link ?? 'news'}-${index}`,
+          title: item.title ?? 'Sem título',
           source: 'Canal Rural',
-          time: timeAgo(item.pubDate),
-          url: item.link,
+          time: timeAgo(item.pubDate ?? ''),
+          url: item.link ?? '#',
           // A API rss2json costuma extrair thumbnail/enclosure
-          image: item.thumbnail || item.enclosure?.link || null
+          image: item.thumbnail || item.enclosure?.link || undefined
         }));
         setNews(formattedNews);
         setLastUpdate(new Date());
@@ -4565,12 +4754,19 @@ export default function Market() {
 
 
   useEffect(() => {
-    fetchNews();
+    const initialFetch = window.setTimeout(() => {
+      void fetchNews();
+    }, 0);
     
     // Updates
-    const inv1 = setInterval(fetchNews, 5 * 60 * 1000); // 5 mins
+    const inv1 = window.setInterval(() => {
+      void fetchNews();
+    }, 5 * 60 * 1000); // 5 mins
     
-    return () => { clearInterval(inv1); };
+    return () => {
+      window.clearTimeout(initialFetch);
+      window.clearInterval(inv1);
+    };
   }, []);
 
   const topNews = news[0];
@@ -4835,8 +5031,8 @@ export default function Pricing() {
       });
       setMessage(res.message + " (Integração estrutural pronta. Aguardando chaves do Gateway).");
       // MOCK: Em produção, window.location.href = res.checkout_url;
-    } catch (e: any) {
-      setMessage(e.message);
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Erro ao iniciar checkout.');
     } finally {
       setLoading(false);
     }
@@ -4882,9 +5078,10 @@ export default function Pricing() {
       });
 
       setMessage('Aparelho registrado com sucesso para notificações Push da Tracto!');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setMessage(`Erro na Inscrição Push: ${err.message}`);
+      const pushErrorMessage = err instanceof Error ? err.message : 'Erro desconhecido na inscrição push.';
+      setMessage(`Erro na Inscrição Push: ${pushErrorMessage}`);
     }
   };
 
@@ -4978,13 +5175,6 @@ export default function Pricing() {
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-
-declare global {
-  interface Window {
-    grecaptcha: any;
-  }
-}
-
 
 const maskPhone = (v: string) => {
   let val = v.replace(/\D/g, '');
@@ -5308,19 +5498,21 @@ export default function Register() {
 
 ### `src/pages/Reports.tsx`
 ```tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
 import useAppStore from '../store/useAppStore';
 import type { Location } from '../store/useAppStore';
-import { analyzeField } from '../services/api';
-import type { FieldAnalysisResult } from '../services/api';
+import type { FieldAnalysisResult, FieldIntelligenceSnapshot } from '../services/api';
 import { polygonAreaHa } from '../utils/geo';
 
 // ── Sem dados históricos simulados na Etapa 2 ───────────────────────────────
 
 
 // ── PDF export ────────────────────────────────────────────────────────────────
-function exportPDF(fields: ReturnType<typeof useAppStore.getState>['fields']) {
+function exportPDF(
+  fields: ReturnType<typeof useAppStore.getState>['fields'],
+  activeFieldName?: string | null
+) {
   const doc = new jsPDF();
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
@@ -5331,7 +5523,12 @@ function exportPDF(fields: ReturnType<typeof useAppStore.getState>['fields']) {
   doc.setTextColor(100, 116, 139);
   doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 15, 28);
 
-  let y = 40;
+  if (activeFieldName) {
+    doc.setTextColor(236, 91, 19);
+    doc.text(`Talhão ativo em destaque: ${activeFieldName}`, 15, 34);
+  }
+
+  let y = activeFieldName ? 44 : 40;
   fields.forEach((f, i) => {
     const area = f.boundaries ? polygonAreaHa(f.boundaries) : 0;
     const name = f.name ?? `Talhão ${i + 1}`;
@@ -5366,9 +5563,52 @@ function exportPDF(fields: ReturnType<typeof useAppStore.getState>['fields']) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Reports() {
-  const { fields, weatherCache } = useAppStore();
+  const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
+  const activeField = fields.find((field) => field.id === activeFieldId) || fields[0] || null;
+
+  const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
+    const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
+    const analysis = (snapshot.analysis ?? {}) as Record<string, unknown>;
+    const ndviStats = (satellite.ndvi_stats ?? {}) as Record<string, unknown>;
+
+    return {
+      field_name: snapshot.field_name,
+      ndvi_image_base64: (satellite.ndvi_image_base64 as string | null) ?? null,
+      date_acquired: (satellite.scene_date_br as string | null) ?? null,
+      cloud_coverage: (satellite.cloud_coverage as number | null) ?? null,
+      ndvi_analysis: {
+        ndvi_medio: Number(ndviStats.ndvi_avg ?? 0),
+        zona_critica_pct: 0,
+        zona_estresse_pct: 0,
+        zona_saudavel_pct: 0,
+        zona_excelente_pct: 0,
+        solo_exposto_pct: 0,
+        problemas_detectados: [],
+        areas_atencao: 'Consulte a cena satelital para inspeção visual detalhada.',
+        tendencia: 'estavel',
+        confianca: Number(analysis.confidence ?? 0),
+        janela_pulverizacao: ((analysis.spray_window as Record<string, unknown> | undefined)?.label as string | undefined) ?? 'N/D',
+        risco_geada: ((analysis.frost_risk as Record<string, unknown> | undefined)?.label as string | undefined) ?? 'N/D',
+        deficit_hidrico: ((analysis.water_stress as Record<string, unknown> | undefined)?.label as string | undefined) ?? 'N/D',
+        recomendacao_irrigacao: 'Use o diagnóstico consolidado e valide no campo.',
+      },
+      weather_summary: String((snapshot.weather as Record<string, unknown>)?.condition ?? 'N/D'),
+      ai_report: snapshot.report_summary,
+      alerts: snapshot.alerts,
+      cached: false,
+      is_mock: snapshot.weather_status.status !== 'ok',
+      analyzed_at: snapshot.updated_at,
+      confidence: Number(analysis.confidence ?? 0),
+      engine_results: {
+        spray_window: (analysis.spray_window as { color: string; label: string; level: number }) ?? { color: 'gray', label: 'N/D', level: 0 },
+        frost_risk: (analysis.frost_risk as { color: string; label: string; level: number }) ?? { color: 'gray', label: 'N/D', level: 0 },
+        water_stress: (analysis.water_stress as { color: string; label: string; level: number }) ?? { color: 'gray', label: 'N/D', level: 0 },
+      },
+      source: String(satellite.provider ?? 'Snapshot do talhão'),
+    };
+  };
 
   // Carregar do cache inicial se existir
   useEffect(() => {
@@ -5382,29 +5622,28 @@ export default function Reports() {
           if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
             initial[key] = parsed.data;
           }
-        } catch {}
+        } catch {
+          // Ignora cache inválido e segue com estado inicial vazio.
+        }
       }
     });
     setAnalysisResults(initial);
   }, [fields]);
 
-  const handleAnalyze = async (loc: Location) => {
-    const key = `${loc.lat}-${loc.lng}`;
+  const handleAnalyze = useCallback(async (loc: Location) => {
+    const key = loc.id ?? `${loc.lat}-${loc.lng}`;
     setLoadingAnalysis(prev => ({ ...prev, [key]: true }));
     try {
-      const fieldName = loc.name || 'Setor Base';
-      const cropType = loc.cultura;
-      const result = await analyzeField(
-        loc.lat, 
-        loc.lng, 
-        fieldName, 
-        cropType, 
-        weatherCache,
-        loc.boundaries || null,
-        loc.dataPlantio,
-        loc.variedade,
-        loc.areaHa
-      );
+      if (!loc.id) {
+        throw new Error('Talhão sem identificador válido para snapshot.');
+      }
+
+      const snapshot = await fetchFieldIntelligence(loc.id, true);
+      if (!snapshot) {
+        throw new Error('Snapshot indisponível para o talhão selecionado.');
+      }
+
+      const result = snapshotToFieldAnalysisResult(snapshot);
 
       setAnalysisResults(prev => ({ ...prev, [key]: result }));
       localStorage.setItem(`tracto-ndvi-${key}`, JSON.stringify({
@@ -5416,7 +5655,15 @@ export default function Reports() {
     } finally {
       setLoadingAnalysis(prev => ({ ...prev, [key]: false }));
     }
-  };
+  }, [fetchFieldIntelligence]);
+
+  useEffect(() => {
+    if (!activeFieldId) return;
+    const selected = fields.find((item) => item.id === activeFieldId);
+    if (selected) {
+      void handleAnalyze(selected);
+    }
+  }, [activeFieldId, fields, handleAnalyze]);
 
   const hasFields = fields.length > 0;
 
@@ -5453,9 +5700,14 @@ export default function Reports() {
             <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
               {hasFields ? `${fields.length} talhão${fields.length > 1 ? 'ões' : ''} · Relatórios Determinísticos` : 'Cadastre talhões para gerar relatórios'}
             </p>
+            {activeField && (
+              <p className="text-xs mt-1" style={{ color: '#ec5b13' }}>
+                Talhão em análise: {activeField.name ?? 'Talhão sem nome'}
+              </p>
+            )}
           </div>
           <button
-            onClick={() => exportPDF(fields)}
+            onClick={() => exportPDF(fields, activeField?.name ?? null)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
             style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.28)' }}
           >
@@ -5498,7 +5750,7 @@ export default function Reports() {
             </h2>
             <div className="grid grid-cols-1 gap-4">
               {fields.map((loc, i) => {
-                const key = `${loc.lat}-${loc.lng}`;
+                const key = loc.id ?? `${loc.lat}-${loc.lng}`;
                 const result = analysisResults[key];
                 const isLoading = loadingAnalysis[key];
                 const name = loc.name ?? `Talhão ${i + 1}`;
@@ -5690,7 +5942,7 @@ export default function Reports() {
                       </td>
                       <td className="px-5 py-3">
                         <button
-                          onClick={() => exportPDF([fields[i]])}
+                          onClick={() => exportPDF([fields[i]], activeField?.name ?? null)}
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
                           style={{ background: 'rgba(236,91,19,0.1)', color: '#ec5b13', border: '1px solid rgba(236,91,19,0.15)' }}
                         >
@@ -5706,13 +5958,11 @@ export default function Reports() {
           )}
         </div>
 
-        {/* Precipitation info if available */}
-        {weatherCache && (
-          <div className="p-4 rounded-xl flex items-center gap-3 text-xs" style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.12)' }}>
-            <span className="material-symbols-outlined text-blue-400">water_drop</span>
-            <span style={{ color: '#94a3b8' }}>Precipitação acumulada (7d): <span className="text-white font-semibold">{weatherCache.daily.precipSum.reduce((a, b) => a + (b ?? 0), 0).toFixed(1)} mm</span></span>
-          </div>
-        )}
+        {/* Fonte canônica */}
+        <div className="p-4 rounded-xl flex items-center gap-3 text-xs" style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.12)' }}>
+          <span className="material-symbols-outlined text-blue-400">dataset</span>
+          <span style={{ color: '#94a3b8' }}>Fonte principal: snapshot canônico do talhão ativo ({activeFieldId ? 'ativo' : 'selecione um talhão no mapa'}).</span>
+        </div>
 
       </div>
     </div>
@@ -5966,101 +6216,6 @@ export default function ResetPassword() {
     </>
   );
 }
-```
-
-  const handleReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (password !== confirmPassword) {
-      setError('As senhas nÃ£o coincidem.');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { error: resetError } = await supabase.auth.updateUser({
-        password: password
-      });
-
-      if (resetError) throw resetError;
-
-      setSuccess(true);
-      setTimeout(() => navigate('/login'), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Erro ao redefinir senha.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-6">
-      <div className="w-full max-w-md glass-dark p-8 rounded-[2rem] border border-white/10 shadow-2xl">
-        <div className="text-center mb-8">
-          <span className="text-2xl font-bold tracking-[0.4em] text-white uppercase block mb-2">Tracto</span>
-          <p className="text-slate-400 text-[10px] uppercase tracking-[0.2em] font-medium">Redefinir Senha</p>
-        </div>
-
-        {success ? (
-          <div className="text-center space-y-4 py-8">
-            <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
-              <span className="material-symbols-outlined text-green-400 text-2xl">check_circle</span>
-            </div>
-            <p className="text-sm font-semibold text-white">Senha alterada com sucesso!</p>
-            <p className="text-xs text-slate-400">Você será redirecionado em instantes...</p>
-          </div>
-        ) : (
-          <form onSubmit={handleReset} className="space-y-6">
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase tracking-widest text-slate-400 font-bold ml-1">Nova Senha</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500/50 transition-colors text-sm"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase tracking-widest text-slate-400 font-bold ml-1">Confirmar Nova Senha</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500/50 transition-colors text-sm"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-            {error && (
-              <div className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 px-4 py-3 rounded-xl flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">error</span>
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-full text-xs font-bold uppercase tracking-[0.2em] transition-all disabled:opacity-50"
-            >
-              {loading ? 'Processando...' : 'Redefinir Senha'}
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
 
 ```
 
@@ -6143,14 +6298,33 @@ async function fetchOpenMeteo(lat: number, lng: number): Promise<WeatherCache> {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Weather() {
   const navigate = useNavigate();
-  const { currentLocation, fields, weatherCache, setWeatherCache } = useAppStore();
-  const [loading, setLoading] = useState(true);
+  const {
+    currentLocation,
+    fields,
+    activeFieldId,
+    weatherCache,
+    setWeatherCache,
+    fieldIntelligenceById,
+    fetchFieldIntelligence,
+  } = useAppStore();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windyOverlay, setWindyOverlay] = useState<'temp' | 'rain' | 'humidity' | 'wind' | 'clouds'>('temp');
 
-  const loc = fields.length > 0
-    ? fields[fields.length - 1]
+  const activeField = activeFieldId
+    ? fields.find((field) => field.id === activeFieldId) ?? null
+    : null;
+
+  const loc = activeField
+    ? activeField
     : (currentLocation ?? { lat: -18.9188, lng: -48.2768, name: 'Uberlândia, MG' });
+
+  const snapshot = activeFieldId ? fieldIntelligenceById[activeFieldId] : null;
+
+  useEffect(() => {
+    if (!activeFieldId) return;
+    void fetchFieldIntelligence(activeFieldId, false);
+  }, [activeFieldId, fetchFieldIntelligence]);
 
   useEffect(() => {
     const isCacheValid =
@@ -6160,20 +6334,53 @@ export default function Weather() {
       Date.now() - weatherCache.fetchedAt < CACHE_TTL_MS;
 
     if (isCacheValid) {
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    fetchOpenMeteo(loc.lat, loc.lng)
-      .then((cache) => setWeatherCache(cache))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Erro desconhecido'))
-      .finally(() => setLoading(false));
-  }, [loc.lat, loc.lng]);
+    let mounted = true;
+    const loadWeather = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const cache = await fetchOpenMeteo(loc.lat, loc.lng);
+        if (mounted) setWeatherCache(cache);
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : 'Erro desconhecido');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void loadWeather();
+
+    return () => {
+      mounted = false;
+    };
+  }, [loc.lat, loc.lng, weatherCache, setWeatherCache]);
 
   const w = weatherCache;
-  const { icon, label } = w ? wmo(w.weatherCode) : { icon: 'cloud', label: '' };
+  const snapshotWeather = snapshot?.weather as Record<string, unknown> | undefined;
+  const hasSnapshotWeather = Boolean(snapshot && snapshot.weather_status.status !== 'unavailable' && snapshotWeather);
+
+  const displayTemperature = hasSnapshotWeather
+    ? Number(snapshotWeather?.temperature ?? w?.temperature ?? 0)
+    : (w?.temperature ?? 0);
+  const displayHumidity = hasSnapshotWeather
+    ? Number(snapshotWeather?.humidity ?? w?.humidity ?? 0)
+    : (w?.humidity ?? 0);
+  const displayWindSpeed = hasSnapshotWeather
+    ? Number(snapshotWeather?.wind_speed ?? w?.windSpeed ?? 0)
+    : (w?.windSpeed ?? 0);
+  const displayCondition = hasSnapshotWeather
+    ? String(snapshotWeather?.condition ?? 'Snapshot do talhão')
+    : '';
+
+  const sourceLabel = hasSnapshotWeather ? 'Snapshot do talhão ativo' : 'Open-Meteo direto (fallback)';
+  const sourceTimestamp = hasSnapshotWeather
+    ? (snapshot?.weather_status.updated_at ?? snapshot?.updated_at ?? null)
+    : (w ? new Date(w.fetchedAt).toISOString() : null);
+
+  const { icon, label } = w ? wmo(w.weatherCode) : { icon: 'cloud', label: displayCondition };
 
   // Current hour index for highlighting
   const nowHour = new Date().getHours();
@@ -6188,14 +6395,21 @@ export default function Weather() {
             <h1 className="text-xl font-bold text-white">Meteorologia</h1>
             <p className="text-xs mt-0.5 flex items-center gap-1.5" style={{ color: '#64748b' }}>
               <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>location_on</span>
-              {loc.name ?? 'Localização atual'} · Open-Meteo
+              {loc.name ?? 'Localização atual'} · {activeField ? 'Talhão ativo' : 'Localização atual'} · {sourceLabel}
             </p>
+            {(snapshot || w) && (
+              <p className="text-[11px] mt-1" style={{ color: '#94a3b8' }}>
+                Fonte usada em: {sourceTimestamp ? new Date(sourceTimestamp).toLocaleString('pt-BR') : 'N/D'}{snapshot ? ` · Satélite atualizado em: ${snapshot.satellite_status.updated_at ? new Date(snapshot.satellite_status.updated_at).toLocaleString('pt-BR') : 'N/D'}` : ''}
+              </p>
+            )}
           </div>
           <button
             onClick={() => {
               setLoading(true);
-              fetchOpenMeteo(loc.lat, loc.lng)
-                .then(setWeatherCache)
+              Promise.all([
+                fetchOpenMeteo(loc.lat, loc.lng).then(setWeatherCache),
+                activeFieldId ? fetchFieldIntelligence(activeFieldId, true) : Promise.resolve(null),
+              ])
                 .catch((e) => setError(e.message))
                 .finally(() => setLoading(false));
             }}
@@ -6203,7 +6417,7 @@ export default function Weather() {
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: '#94a3b8' }}
           >
             <span className="material-symbols-outlined text-sm">refresh</span>
-            Atualizar
+            Atualizar talhão
           </button>
         </div>
 
@@ -6261,6 +6475,62 @@ export default function Weather() {
           />
         </div>
 
+        {/* ── Talhões monitorados (referência no Windy) ── */}
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}>
+          <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+            <h2 className="text-sm font-bold text-white">Talhões monitorados</h2>
+            <span className="text-[10px]" style={{ color: '#94a3b8' }}>
+              {fields.length} talhão{fields.length !== 1 ? 'ões' : ''}
+            </span>
+          </div>
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fields.length === 0 && (
+              <div className="p-4 rounded-xl text-xs" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#94a3b8' }}>
+                Nenhum talhão cadastrado. Cadastre no mapa para acompanhar no contexto meteorológico.
+              </div>
+            )}
+
+            {fields.map((field, index) => {
+              const isActive = Boolean(activeFieldId && field.id === activeFieldId);
+              const windyLink = `https://www.windy.com/-${field.lat},${field.lng}?${field.lat},${field.lng},10`;
+
+              return (
+                <div
+                  key={field.id ?? `${field.lat}-${field.lng}-${index}`}
+                  className="p-4 rounded-xl"
+                  style={{
+                    background: isActive ? 'rgba(236,91,19,0.08)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${isActive ? 'rgba(236,91,19,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-bold text-white">{field.name ?? `Talhão ${index + 1}`}</p>
+                    {isActive && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(236,91,19,0.2)', color: '#ec5b13' }}>
+                        ATIVO
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs" style={{ color: '#94a3b8' }}>Lat {field.lat.toFixed(5)} · Lng {field.lng.toFixed(5)}</p>
+                  <p className="text-xs mt-1" style={{ color: '#cbd5e1' }}>
+                    Temperatura: {Math.round(displayTemperature)}° · Vento: {Math.round(displayWindSpeed)} km/h · Chuva hoje: {(w?.daily.precipSum[0] ?? 0).toFixed(1)} mm
+                  </p>
+                  <a
+                    href={windyLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 mt-3 text-xs font-semibold"
+                    style={{ color: '#60a5fa' }}
+                  >
+                    <span className="material-symbols-outlined text-sm">open_in_new</span>
+                    Abrir no Windy
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* ── First Load Loading Skeleton ── */}
         {!w && loading && (
           <div className="space-y-4">
@@ -6293,10 +6563,10 @@ export default function Weather() {
                 <span className="material-symbols-outlined text-5xl" style={{ color: '#ec5b13' }}>{icon}</span>
               </div>
               <div>
-                <p className="text-7xl font-black text-white leading-none">{Math.round(w.temperature)}°</p>
-                <p className="text-sm font-semibold capitalize mt-1" style={{ color: '#e2e8f0' }}>{label}</p>
+                <p className="text-7xl font-black text-white leading-none">{Math.round(displayTemperature)}°</p>
+                <p className="text-sm font-semibold capitalize mt-1" style={{ color: '#e2e8f0' }}>{displayCondition || label}</p>
                 <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
-                  Máx {Math.round(w.daily.tempMax[0] ?? w.temperature)}° · Mín {Math.round(w.daily.tempMin[0] ?? w.temperature)}°
+                  Máx {Math.round(w.daily.tempMax[0] ?? displayTemperature)}° · Mín {Math.round(w.daily.tempMin[0] ?? displayTemperature)}°
                 </p>
               </div>
             </div>
@@ -6306,8 +6576,8 @@ export default function Weather() {
             {/* Quick stats */}
             <div className="flex flex-wrap gap-x-8 gap-y-3 items-center">
               {[
-                { icon: 'air', label: 'Vento', val: `${Math.round(w.windSpeed)} km/h`, color: '#94a3b8' },
-                { icon: 'water_drop', label: 'Umidade', val: `${w.humidity}%`, color: '#60a5fa' },
+                { icon: 'air', label: 'Vento', val: `${Math.round(displayWindSpeed)} km/h`, color: '#94a3b8' },
+                { icon: 'water_drop', label: 'Umidade', val: `${Math.round(displayHumidity)}%`, color: '#60a5fa' },
                 { icon: 'umbrella', label: 'Precip. hoje', val: `${(w.daily.precipSum[0] ?? 0).toFixed(1)} mm`, color: '#818cf8' },
               ].map((s) => (
                 <div key={s.label}>
@@ -6711,7 +6981,7 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
   } catch (err) {
     console.error('[API] fetch error:', url, err);
     if (err instanceof TypeError && err.message === 'Failed to fetch') {
-      throw new Error(`O servidor Backend/API não está acessível em ${url}. Possível CORS ou URL incorreta. Detalhes: ${err.message}`);
+      throw new Error(`Falha de conexão com o backend em ${url}. Verifique se o servidor está online, se a URL/API está correta e se o CORS está configurado corretamente.`);
     }
     if (err instanceof Error) {
       throw new Error(`Erro de requisição para ${url}: ${err.message}`);
@@ -6748,8 +7018,43 @@ export interface FieldAnalysisResult {
   is_mock: boolean;
   analyzed_at: string;
   confidence: number;
-  engine_results: Record<string, any>;
+  engine_results: Record<string, {
+    color: string;
+    label: string;
+    level: number;
+    [key: string]: unknown;
+  }>;
   source: string;
+}
+
+export interface SnapshotSourceStatus {
+  status: 'ok' | 'fallback' | 'unavailable';
+  message: string;
+  updated_at: string | null;
+}
+
+export interface FieldIntelligenceSnapshot {
+  field_id: string;
+  field_name: string;
+  farm_id: string | null;
+  farm_name: string | null;
+  lat: number;
+  lng: number;
+  boundaries: [number, number][] | null;
+  crop_type: string | null;
+  planting_date: string | null;
+  variety: string | null;
+  area_ha: number | null;
+  weather: Record<string, unknown>;
+  satellite: Record<string, unknown>;
+  analysis: Record<string, unknown>;
+  alerts: Array<Record<string, unknown>>;
+  report_summary: string;
+  weather_status: SnapshotSourceStatus;
+  satellite_status: SnapshotSourceStatus;
+  analysis_status: SnapshotSourceStatus;
+  ai_summary_status: SnapshotSourceStatus;
+  updated_at: string;
 }
 
 export async function analyzeField(
@@ -6778,6 +7083,12 @@ export async function analyzeField(
       variety,
       area_ha: areaHa
     }),
+  });
+}
+
+export async function fetchFieldIntelligenceSnapshot(fieldId: string) {
+  return apiFetch<FieldIntelligenceSnapshot>(`/api/fields/${fieldId}/intelligence`, {
+    method: 'GET',
   });
 }
 
@@ -6955,6 +7266,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../services/supabase';
 import { apiFetch } from '../services/api';
+import { fetchFieldIntelligenceSnapshot, type FieldIntelligenceSnapshot } from '../services/api';
 import { type LocationStatus, fetchCurrentLocation } from '../utils/geolocation';
 
 export interface Entitlements {
@@ -6983,7 +7295,17 @@ export interface Farm {
   fields: Location[];
 }
 
-export type MapLayer = 'satellite' | 'ndvi' | 'moisture';
+export type MapLayer = 'osm' | 'satellite' | 'sentinel';
+
+function normalizeMapLayer(layer: unknown): MapLayer {
+  if (layer === 'osm' || layer === 'satellite' || layer === 'sentinel') {
+    return layer;
+  }
+  if (layer === 'ndvi' || layer === 'moisture') {
+    return 'sentinel';
+  }
+  return 'sentinel';
+}
 
 export interface Alert {
   id: string;
@@ -7065,8 +7387,12 @@ interface AppState {
   chatHistory: { role: 'user' | 'model'; text: string }[];
   alerts: Alert[];
   weatherCache: WeatherCache | null;
+  fieldIntelligenceById: Record<string, FieldIntelligenceSnapshot>;
+  fieldIntelligenceLoadingById: Record<string, boolean>;
+  fieldIntelligenceErrorById: Record<string, string | null>;
   activeFarmId: string | null;
   activeFieldId: string | null;
+  activeFieldFocusToken: number;
   activeMapLayer: MapLayer;
   currentLocation: Location | null;
   locationStatus: LocationStatus;
@@ -7077,6 +7403,7 @@ interface AppState {
   setFarms: (farms: Farm[]) => void;
   setActiveFarm: (id: string | null) => void;
   setActiveField: (id: string | null) => void;
+  focusActiveField: () => void;
   setMapLayer: (layer: MapLayer) => void;
   setCurrentLocation: (loc: Location | null) => void;
   setLocationStatus: (status: LocationStatus) => void;
@@ -7090,6 +7417,8 @@ interface AppState {
   setAlerts: (alerts: Alert[]) => void;
   dismissAlert: (id: string) => void;
   setWeatherCache: (cache: WeatherCache) => void;
+  fetchFieldIntelligence: (fieldId: string, forceRefresh?: boolean) => Promise<FieldIntelligenceSnapshot | null>;
+  refreshActiveFieldIntelligence: () => Promise<FieldIntelligenceSnapshot | null>;
   fetchEntitlements: () => Promise<void>;
   syncFromBackend: () => Promise<void>;
   resetStore: () => void;
@@ -7105,9 +7434,13 @@ export const useAppStore = create<AppState>()(
       chatHistory: [],
       alerts: [],
       weatherCache: null,
+      fieldIntelligenceById: {},
+      fieldIntelligenceLoadingById: {},
+      fieldIntelligenceErrorById: {},
       activeFarmId: null,
       activeFieldId: null,
-      activeMapLayer: 'satellite',
+      activeFieldFocusToken: 0,
+      activeMapLayer: 'sentinel',
       currentLocation: null,
       locationStatus: 'loading',
       isSyncing: false,
@@ -7124,8 +7457,21 @@ export const useAppStore = create<AppState>()(
           activeFieldId: null,
         }),
 
-      setActiveField: (id) => set({ activeFieldId: id }),
-      setMapLayer: (layer) => set({ activeMapLayer: layer }),
+      setActiveField: (id) =>
+        set((state) => {
+          if (!id) {
+            return { activeFieldId: null };
+          }
+
+          const selectedField = state.fields.find((field) => field.id === id);
+          return {
+            activeFieldId: id,
+            activeFarmId: selectedField?.farm_id ?? state.activeFarmId,
+          };
+        }),
+      focusActiveField: () =>
+        set((state) => ({ activeFieldFocusToken: state.activeFieldFocusToken + 1 })),
+      setMapLayer: (layer) => set({ activeMapLayer: normalizeMapLayer(layer) }),
       setCurrentLocation: (loc) => set({ currentLocation: loc }),
       setLocationStatus: (status) => set({ locationStatus: status }),
 
@@ -7164,7 +7510,21 @@ export const useAppStore = create<AppState>()(
         }
 
         const mappedFields = (data ?? []).map(mapDbToField);
-        set({ fields: mappedFields });
+        const currentActiveFieldId = get().activeFieldId;
+        const activeField = currentActiveFieldId
+          ? mappedFields.find((field) => field.id === currentActiveFieldId) ?? null
+          : null;
+        const farms = get().farms;
+        const currentActiveFarmId = get().activeFarmId;
+
+        set({
+          fields: mappedFields,
+          activeFieldId: activeField?.id ?? null,
+          activeFarmId: activeField?.farm_id
+            ?? (currentActiveFarmId && farms.some((farm) => farm.id === currentActiveFarmId)
+              ? currentActiveFarmId
+              : farms[0]?.id ?? null),
+        });
       },
 
       // ── createField: insert no Supabase com validações obrigatórias ──────────
@@ -7199,6 +7559,8 @@ export const useAppStore = create<AppState>()(
         // Atualizar o estado local APENAS com a resposta confirmada do banco
         const mapped = mapDbToField(newField);
         set((state) => ({ fields: [...state.fields, mapped] }));
+        // Seleciona imediatamente o talhão criado e sincroniza fazenda ativa.
+        get().setActiveField(mapped.id ?? null);
       },
 
       // ── removeField: delete no Supabase + garantia de consistência ───────────
@@ -7243,6 +7605,48 @@ export const useAppStore = create<AppState>()(
         })),
 
       setWeatherCache: (cache) => set({ weatherCache: cache }),
+
+      fetchFieldIntelligence: async (fieldId, forceRefresh = false) => {
+        if (!fieldId) return null;
+
+        const currentSnapshot = get().fieldIntelligenceById[fieldId];
+        const currentTime = Date.now();
+        const snapshotAgeMs = currentSnapshot
+          ? currentTime - new Date(currentSnapshot.updated_at).getTime()
+          : Number.POSITIVE_INFINITY;
+
+        if (!forceRefresh && currentSnapshot && snapshotAgeMs < 5 * 60 * 1000) {
+          return currentSnapshot;
+        }
+
+        set((state) => ({
+          fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: true },
+          fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: null },
+        }));
+
+        try {
+          const snapshot = await fetchFieldIntelligenceSnapshot(fieldId);
+          set((state) => ({
+            fieldIntelligenceById: { ...state.fieldIntelligenceById, [fieldId]: snapshot },
+            fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
+            fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: null },
+          }));
+          return snapshot;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Falha ao carregar snapshot do talhão.';
+          set((state) => ({
+            fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
+            fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: message },
+          }));
+          return currentSnapshot ?? null;
+        }
+      },
+
+      refreshActiveFieldIntelligence: async () => {
+        const fieldId = get().activeFieldId;
+        if (!fieldId) return null;
+        return get().fetchFieldIntelligence(fieldId, true);
+      },
 
       fetchEntitlements: async () => {
         try {
@@ -7291,8 +7695,12 @@ export const useAppStore = create<AppState>()(
           chatHistory: [],
           alerts: [],
           weatherCache: null,
+          fieldIntelligenceById: {},
+          fieldIntelligenceLoadingById: {},
+          fieldIntelligenceErrorById: {},
           activeFarmId: null,
           activeFieldId: null,
+          activeFieldFocusToken: 0,
           currentLocation: null,
           locationStatus: 'loading',
           syncError: null,
@@ -7302,10 +7710,27 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'tracto-app-storage',
+      version: 2,
       storage: createJSONStorage(() => localStorage),
+      migrate: (persistedState, version) => {
+        const state = (persistedState ?? {}) as Partial<AppState>;
+
+        if (version < 2) {
+          return {
+            ...state,
+            activeMapLayer: normalizeMapLayer(state.activeMapLayer),
+          } as AppState;
+        }
+
+        return {
+          ...state,
+          activeMapLayer: normalizeMapLayer(state.activeMapLayer),
+        } as AppState;
+      },
       partialize: (state) => ({
         activeFarmId: state.activeFarmId,
         activeFieldId: state.activeFieldId,
+        activeFieldFocusToken: state.activeFieldFocusToken,
         activeMapLayer: state.activeMapLayer,
         currentLocation: state.currentLocation,
         locationStatus: state.locationStatus,
@@ -7317,6 +7742,18 @@ export const useAppStore = create<AppState>()(
 
 export default useAppStore;
 
+```
+
+
+### `src/types/grecaptcha.d.ts`
+```ts
+interface Grecaptcha {
+  execute: (siteKey: string, options: { action: string }) => Promise<string>;
+}
+
+interface Window {
+  grecaptcha?: Grecaptcha;
+}
 ```
 
 
@@ -7361,7 +7798,7 @@ export interface GeolocationResult {
   status: LocationStatus;
 }
 
-const FALLBACK_LOCATION: GeolocationResult = {
+export const FALLBACK_LOCATION: GeolocationResult = {
   lat: -18.9188,
   lng: -48.2768,
   name: 'Uberlândia, MG',
@@ -7514,14 +7951,17 @@ except Exception as e:
 
 ### `tracto-backend/main.py`
 ```py
-import json
+﻿import json
 import logging
 import os
 from datetime import datetime
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request
+
+load_dotenv()
+
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -7545,26 +7985,30 @@ from models import (
     CheckoutRequest,
     PushSubscriptionCreate,
     WhatsAppWebhookPayload,
+    GeoSearchRequest,
+    FieldIntelligenceSnapshot,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image
+from services.sentinel_service import get_ndvi_image, get_true_color_overlay, get_available_scenes
+from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
-
-load_dotenv()
-
-# --- Security & Rate Limiting ---
+from services.field_intelligence_service import build_field_intelligence_snapshot
 
 # --- Security & Rate Limiting ---
 
-# O limitador usa IP (get_remote_address) como chave primária para governança econômica.
-# A identidade do usuário (context_user_id) é usada apenas para contexto em logs.
+# --- Security & Rate Limiting ---
+
+# O limitador usa IP (get_remote_address) como chave primÃ¡ria para governanÃ§a econÃ´mica.
+# A identidade do usuÃ¡rio (context_user_id) Ã© usada apenas para contexto em logs.
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", version="2.2.1")
+APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
+
+app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", version=APP_VERSION)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -7574,7 +8018,7 @@ async def structured_log_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.time()
     
-    # Extração leve do sub_claim para contexto (nao confiavel ate verificado pelo auth_service)
+    # ExtraÃ§Ã£o leve do sub_claim para contexto (nao confiavel ate verificado pelo auth_service)
     unverified_uid = get_unverified_user_id_from_header(request.headers.get("Authorization")) or "anonymous"
 
     response = await call_next(request)
@@ -7596,24 +8040,46 @@ async def structured_log_middleware(request: Request, call_next):
     return response
 
 
-origins = [
-    "https://tracto-eta.vercel.app",       # seu domínio Vercel
-    "http://localhost:5173",            # dev local
-    "http://localhost:3000",
-]
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    allow_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+else:
+    allow_origins = [
+        "https://tracto-eta.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "http://127.0.0.1:5176",
+    ]
+
+# Matches all Vercel preview and production deployments for the tracto project
+# e.g. tracto-eta.vercel.app, tracto-git-main-abc123.vercel.app
+allow_origin_regex = os.getenv("ALLOWED_ORIGINS_REGEX", r"https://tracto[-a-z0-9]*\.vercel\.app")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allow_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 @app.get("/")
 def health_check():
-    return {"status": "Tracto backend online", "version": "2.1.0"}
+    return {
+        "status": "Tracto backend online",
+        "version": APP_VERSION,
+        "service": "tracto-backend",
+        "timestamp": datetime.now().isoformat(),
+    }
 
 # --- Stage 3: Commercial, Push & WhatsApp ---
 
@@ -7623,13 +8089,13 @@ async def get_entitlements(user: AuthenticatedUser = Depends(get_current_user)):
 
 @app.post("/api/billing/checkout")
 async def create_checkout(req: CheckoutRequest, user: AuthenticatedUser = Depends(get_current_user)):
-    # MOCK ESTRUTURAL: Nenhum gateway real está conectado (Stripe/Asaas).
+    # MOCK ESTRUTURAL: Nenhum gateway real estÃ¡ conectado (Stripe/Asaas).
     if req.plan_id not in ["pro", "premium"]:
         raise HTTPException(status_code=400, detail="Plano invalido")
     
     return {
         "checkout_url": "https://sandbox.gateway.com/pay/mock_123",
-        "message": f"MOCK: Checkout do plano {req.plan_id} via {req.payment_method}. Pagamento não efetuado na realidade."
+        "message": f"MOCK: Checkout do plano {req.plan_id} via {req.payment_method}. Pagamento nÃ£o efetuado na realidade."
     }
 
 @app.post("/api/push/subscribe")
@@ -7661,12 +8127,12 @@ async def whatsapp_webhook(request: Request):
         
     user_id = contact_res.data[0]["user_id"]
     
-    # Buscar contexto agronômico do usuário
+    # Buscar contexto agronÃ´mico do usuÃ¡rio
     farms_res = billing_service.supabase.table("farms").select("id, name").eq("user_id", user_id).execute()
     farm_context = f"Fazendas do produtor: {[f['name'] for f in (farms_res.data or [])]}"
     
     # Repassar para ai_service passando o contexto
-    # Neste mock completo, a resposta seria enviada de volta à API do WhatsApp/Twilio
+    # Neste mock completo, a resposta seria enviada de volta Ã  API do WhatsApp/Twilio
     try:
         reply = generate_chat_response(
             message=body,
@@ -7675,9 +8141,9 @@ async def whatsapp_webhook(request: Request):
         )
     except Exception as e:
         reply = f"Erro na Tracto AI: {str(e)}"
-    # MOCK ESTRUTURAL DE SAÍDA:
-    # A Tracto AI roda perfeitamente o contexto, mas a resposta NÃO é devolvida
-    # pois não temos a API do WhatsApp/Twilio configurada e tokenizada.
+    # MOCK ESTRUTURAL DE SAÃDA:
+    # A Tracto AI roda perfeitamente o contexto, mas a resposta NÃƒO Ã© devolvida
+    # pois nÃ£o temos a API do WhatsApp/Twilio configurada e tokenizada.
     # O despache morre em um logger seguro.
     print(f"[WHATSAPP OUT] (MOCK DE ENVIO) Para: {phone} | Msg: {reply}")
     return {"status": "ok", "message": "Recebido e processado no backend Tracto AI. Retorno para Meta bloqueado intencionalmente (Sem Provedor)."}
@@ -7750,17 +8216,17 @@ def _is_production() -> bool:
 
 @app.post("/api/chat")
 @limiter.limit("5/minute")
-async def chat_endpoint(request: ChatRequest, _request: Request, _user: AuthenticatedUser = Depends(get_current_user)):
+async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        if not request.messages:
+        if not chat_req.messages:
             raise HTTPException(status_code=400, detail="O historico de mensagens esta vazio.")
 
         reply = generate_chat_response(
-            messages=[message.model_dump() for message in request.messages],
-            farm_context=request.farm_context,
-            image_base64=request.image_base64,
-            image_mime_type=request.image_mime_type or "image/jpeg",
-            hourly_weather=request.hourly_weather,
+            messages=[message.model_dump() for message in chat_req.messages],
+            farm_context=chat_req.farm_context,
+            image_base64=chat_req.image_base64,
+            image_mime_type=chat_req.image_mime_type or "image/jpeg",
+            hourly_weather=chat_req.hourly_weather,
         )
         return {"reply": reply}
     except HTTPException:
@@ -7787,14 +8253,154 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
         raise HTTPException(status_code=500, detail="Erro ao analisar o mapa climatico.") from exc
 
 
+@app.get("/api/sentinel/scenes")
+@limiter.limit("30/minute")
+async def sentinel_scenes_endpoint(
+    request: Request,
+    field_id: str,
+    lookback_days: int = 90,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Retorna cenas Sentinel-1 e Sentinel-2 disponíveis para o talhão
+    nos últimos `lookback_days` dias, via Earth Search STAC (gratuito).
+    """
+    try:
+        lookback_days = min(max(lookback_days, 7), 180)
+
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Talhão não encontrado ou sem permissão de acesso.",
+            )
+
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+
+        scenes = get_available_scenes(
+            lat=lat,
+            lng=lng,
+            boundaries=boundaries,
+            lookback_days=lookback_days,
+            max_results_per_source=5,
+        )
+
+        return {
+            "field_id": field_id,
+            "lookback_days": lookback_days,
+            "s2": scenes.get("s2", []),
+            "s1": scenes.get("s1", []),
+            "total": len(scenes.get("s2", [])) + len(scenes.get("s1", [])),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/sentinel/scenes] Erro field_id=%s: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar cenas disponíveis.") from exc
+
+
+@app.get("/api/sentinel/overlay")
+@limiter.limit("20/minute")
+async def sentinel_overlay_endpoint(
+    request: Request,
+    field_id: str,
+    source: str = "s2",
+    scene_date: str | None = None,
+    mode: str = "truecolor",
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Gera e retorna PNG recortado no polígono do talhão via Sentinel Hub Process API.
+    source: 's2' (True Color) ou 's1' (Radar SAR). scene_date: ISO date opcional.
+    """
+    if source not in ("s1", "s2"):
+        raise HTTPException(status_code=400, detail="source deve ser 's1' ou 's2'.")
+
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Talhão não encontrado ou sem permissão de acesso.",
+            )
+
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+
+        image_bytes = get_true_color_overlay(
+            field_id=field_id,
+            lat=lat,
+            lng=lng,
+            boundaries=boundaries,
+            date_range_days=30,
+            scene_date=scene_date,
+            source=source,
+            mode=mode,
+        )
+
+        if not image_bytes:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Imagem Sentinel-{'2' if source == 's2' else '1'} não disponível para este talhão no momento.",
+            )
+
+        return Response(
+            content=image_bytes,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=1800",
+                "X-Field-ID": field_id,
+                "X-Source": source,
+                "X-Scene-Date": scene_date or "latest",
+                "X-Mode": mode,
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/sentinel/overlay] Erro field_id=%s source=%s: %s", field_id, source, exc)
+        raise HTTPException(status_code=500, detail="Erro interno ao gerar overlay Sentinel.") from exc
+
+
+@app.post("/api/geo/search")
+@limiter.limit("10/minute")
+async def geo_search_endpoint(
+    request: Request,
+    body: GeoSearchRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        result = await search_location(body.query)
+        if not result:
+            raise HTTPException(status_code=404, detail="Local nao encontrado para a busca informada.")
+        return result
+    except HTTPException:
+        raise
+    except GeoProviderError as exc:
+        logging.warning("Falha no provedor de geocoding. query=%s erro=%s", body.query, str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Erro temporario ao consultar o provedor de localizacao.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Local nao encontrado para a busca informada.") from exc
+    except Exception as exc:
+        logging.error("Erro na busca geografica: %s", exc)
+        raise HTTPException(status_code=502, detail="Erro temporario ao consultar o provedor de localizacao.") from exc
+
+
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)
 @limiter.limit("3/minute")
-async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Request, _user: AuthenticatedUser = Depends(get_current_user)):
+async def analyze_field_endpoint(request: Request, field_req: FieldAnalysisRequest, _user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        effective_crop_type = request.crop_type or "Não informada"
+        effective_crop_type = field_req.crop_type or "NÃ£o informada"
         # Cache key based on location, crop and current date (24h validity semantic)
         date_str = datetime.now().strftime("%Y%m%d")
-        cache_key = f"{request.lat:.4f}_{request.lng:.4f}_{effective_crop_type}_{date_str}"
+        cache_key = f"{field_req.lat:.4f}_{field_req.lng:.4f}_{effective_crop_type}_{date_str}"
         cached_result = analysis_cache.get(cache_key)
 
         if cached_result:
@@ -7803,19 +8409,19 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
             return FieldAnalysisResponse(**data)
 
         is_mock_weather = False
-        weather_data = extract_weather_snapshot(request.hourly_weather, request.forecast_7d)
+        weather_data = extract_weather_snapshot(field_req.hourly_weather, field_req.forecast_7d)
         if not weather_data:
-            weather_data = await fetch_weather_snapshot(request.lat, request.lng)
+            weather_data = await fetch_weather_snapshot(field_req.lat, field_req.lng)
         if not weather_data:
-            weather_data = _get_mock_weather(request.lat, request.lng)
+            weather_data = _get_mock_weather(field_req.lat, field_req.lng)
             is_mock_weather = True
 
         season = _get_season()
         now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
         weather_summary = _build_weather_summary(weather_data, season, now_str)
-        forecast_str = request.forecast_7d or weather_data.get("forecast_7d") or season
+        forecast_str = field_req.forecast_7d or weather_data.get("forecast_7d") or season
 
-        sentinel_data = get_ndvi_image(request.lat, request.lng, request.boundaries, request.date_range_days)
+        sentinel_data = get_ndvi_image(field_req.lat, field_req.lng, field_req.boundaries, field_req.date_range_days)
 
         ndvi_analysis = None
         image_base64 = None
@@ -7846,7 +8452,7 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
         confidence = engine.calculate_confidence(
             sat_data=sentinel_data is not None,
             weather_data=not is_mock_weather,
-            boundaries_data=request.boundaries is not None and len(request.boundaries) >= 3
+            boundaries_data=field_req.boundaries is not None and len(field_req.boundaries) >= 3
         )
 
         engine_results = {
@@ -7859,10 +8465,10 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
         if sentinel_data:
             ndvi_analysis = analyze_ndvi_image(
                 image_base64=image_base64,
-                field_name=request.field_name,
+                field_name=field_req.field_name,
                 crop_type=effective_crop_type,
                 weather_context=weather_summary,
-                hourly_weather=request.hourly_weather,
+                hourly_weather=field_req.hourly_weather,
                 forecast_7d=forecast_str,
                 ndvi_stats=stats,
                 engine_results=engine_results
@@ -7875,11 +8481,11 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
             wind_speed = weather_data["wind_speed"]
             crop_type = effective_crop_type
             et0 = weather_data.get("et0")
-            fields = [{"name": request.field_name, "crop": request.crop_type, "lat": request.lat, "lng": request.lng}]
+            fields = [{"name": field_req.field_name, "crop": field_req.crop_type, "lat": field_req.lat, "lng": field_req.lng}]
             weather_forecast = forecast_str
             engine_results = [engine_results]
 
-        alerts = generate_alerts_claude(AlertLike(), {request.field_name: ndvi_analysis} if ndvi_analysis else {})
+        alerts = generate_alerts_claude(AlertLike(), {field_req.field_name: ndvi_analysis} if ndvi_analysis else {})
 
         try:
             client = _get_client()
@@ -7887,7 +8493,7 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
                 model=MODEL,
                 max_tokens=800,
                 temperature=0.3,
-                messages=[{"role": "user", "content": _build_report_prompt(request, now_str, season, weather_summary, forecast_str, ndvi_analysis)}],
+                messages=[{"role": "user", "content": _build_report_prompt(field_req, now_str, season, weather_summary, forecast_str, ndvi_analysis)}],
             )
             ai_report = response.content[0].text
         except Exception as exc:
@@ -7895,7 +8501,7 @@ async def analyze_field_endpoint(request: FieldAnalysisRequest, _request: Reques
             ai_report = "Relatorio nao disponivel no momento."
 
         result = {
-            "field_name": request.field_name,
+            "field_name": field_req.field_name,
             "ndvi_image_base64": image_base64,
             "date_acquired": date_acquired,
             "cloud_coverage": cloud_coverage,
@@ -7930,7 +8536,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
         engine = AgronomicEngine()
         fields_context = []
         
-        # Se nao houver campos, usamos os dados genéricos da request
+        # Se nao houver campos, usamos os dados genÃ©ricos da request
         if not request.fields:
         # Fallback para dados globais da fazenda na request
             et0_global = getattr(request, 'et0', None)
@@ -7947,7 +8553,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
             for f in request.fields:
                 lat = f.get("lat")
                 lng = f.get("lng")
-                item_crop = f.get("crop") or request.crop_type or "Não informada"
+                item_crop = f.get("crop") or request.crop_type or "NÃ£o informada"
                 et0_field = getattr(request, 'et0', None)
                 
                 engine_res = {
@@ -7968,7 +8574,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
             date_str = datetime.now().strftime("%Y%m%d")
             for field in request.fields:
                 if "lat" in field and "lng" in field:
-                    item_crop = field.get("crop") or request.crop_type or "Não informada"
+                    item_crop = field.get("crop") or request.crop_type or "NÃ£o informada"
                     cache_key = f"{field['lat']:.4f}_{field['lng']:.4f}_{item_crop}_{date_str}"
                     cached = analysis_cache.get(cache_key)
                     if cached and cached.get("ndvi_analysis"):
@@ -8018,8 +8624,8 @@ async def delete_conversation_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
-    Remove uma conversa garantindo que pertença ao usuário autenticado.
-    Retorna 404 se a conversa não existir ou não pertencer ao usuário.
+    Remove uma conversa garantindo que pertenÃ§a ao usuÃ¡rio autenticado.
+    Retorna 404 se a conversa nÃ£o existir ou nÃ£o pertencer ao usuÃ¡rio.
     """
     try:
         success = supabase_service.delete_conversation(conversation_id, user_id=user.id)
@@ -8046,7 +8652,7 @@ async def get_farms_endpoint(user: AuthenticatedUser = Depends(get_current_user)
 @app.post("/api/farms/bootstrap")
 async def bootstrap_farm_endpoint(user: AuthenticatedUser = Depends(get_current_user)):
     """
-    Endpoint explícito para garantir a criação da fazenda padrão (idempotente).
+    Endpoint explÃ­cito para garantir a criaÃ§Ã£o da fazenda padrÃ£o (idempotente).
     """
     try:
         return farm_service.ensure_default_farm(user.id)
@@ -8090,6 +8696,25 @@ async def get_fields_endpoint(farm_id: str | None = None, user: AuthenticatedUse
     except Exception as exc:
         logging.error("Erro ao buscar talhoes: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar talhoes.") from exc
+
+
+@app.get("/api/fields/{field_id}/intelligence", response_model=FieldIntelligenceSnapshot)
+@limiter.limit("20/minute")
+async def get_field_intelligence_endpoint(
+    request: Request,
+    field_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        snapshot = await build_field_intelligence_snapshot(user_id=user.id, field_id=field_id)
+        return snapshot
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("Erro ao montar snapshot de inteligencia do talhao %s: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao montar inteligencia do talhao.") from exc
 
 @app.post("/api/fields")
 async def save_field_endpoint(request: FieldCreate, user: AuthenticatedUser = Depends(get_current_user)):
@@ -8158,6 +8783,7 @@ async def verify_recaptcha(request: RecaptchaRequest):
         logging.error("Erro na verificacao do reCAPTCHA: %s", exc)
         raise HTTPException(status_code=500, detail="Erro interno na verificacao de seguranca.") from exc
 
+
 ```
 
 
@@ -8205,6 +8831,18 @@ class FieldAnalysisRequest(BaseModel):
     date_range_days: int = 21
     hourly_weather: dict | None = None
     forecast_7d: str | None = None
+
+
+class LatestSceneRequest(BaseModel):
+    lat: float
+    lng: float
+    boundaries: list[list[float]] | None = None
+    lookback_days: int = 21
+    max_cloud_coverage: int = 40
+
+
+class GeoSearchRequest(BaseModel):
+    query: str = Field(validation_alias=AliasChoices("query", "q"))
 
 
 class FieldAnalysisResponse(BaseModel):
@@ -8288,6 +8926,36 @@ class WhatsAppWebhookPayload(BaseModel):
     From: str
     Body: str
     ProfileName: str | None = None
+
+
+class SnapshotSourceStatus(BaseModel):
+    status: Literal["ok", "fallback", "unavailable"]
+    message: str
+    updated_at: str | None = None
+
+
+class FieldIntelligenceSnapshot(BaseModel):
+    field_id: str
+    field_name: str
+    farm_id: str | None = None
+    farm_name: str | None = None
+    lat: float
+    lng: float
+    boundaries: list[list[float]] | None = None
+    crop_type: str | None = None
+    planting_date: str | None = None
+    variety: str | None = None
+    area_ha: float | None = None
+    weather: dict[str, Any]
+    satellite: dict[str, Any]
+    analysis: dict[str, Any]
+    alerts: list[dict[str, Any]]
+    report_summary: str
+    weather_status: SnapshotSourceStatus
+    satellite_status: SnapshotSourceStatus
+    analysis_status: SnapshotSourceStatus
+    ai_summary_status: SnapshotSourceStatus
+    updated_at: str
 
 ```
 
@@ -8545,6 +9213,16 @@ from typing import Any, Dict, List, Optional
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
 ALLOWED_ALERT_TYPES = {"critical", "warning", "info"}
+IMAGE_FOLLOW_UP_KEYWORDS = {
+    "foto",
+    "imagem",
+    "print",
+    "anexo",
+    "anexei",
+    "mandei",
+    "essa imagem",
+    "essa foto",
+}
 
 
 def _get_client() -> anthropic.Anthropic:
@@ -8552,6 +9230,13 @@ def _get_client() -> anthropic.Anthropic:
     if not key:
         raise ValueError("ANTHROPIC_API_KEY nao configurada.")
     return anthropic.Anthropic(api_key=key)
+
+
+def _looks_like_image_follow_up(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return False
+    return any(keyword in normalized for keyword in IMAGE_FOLLOW_UP_KEYWORDS)
 
 
 def generate_chat_response(
@@ -8562,58 +9247,65 @@ def generate_chat_response(
     image_mime_type: str = "image/jpeg",
     hourly_weather: dict | None = None,
 ) -> str:
-    client = _get_client()
-
-    system_parts = [
-        "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
-        "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
-        f"\nContexto da fazenda:\n{farm_context}",
-    ]
-    if ndvi_context:
-        system_parts.append(f"\nAnalise NDVI recente:\n{ndvi_context}")
-    if hourly_weather:
-        system_parts.append(
-            f"\nDados climaticos atuais:\n{json.dumps(hourly_weather, ensure_ascii=False)}"
-        )
-
-    anthropic_messages: list[dict[str, Any]] = []
-    # Iterate through all but the last message
-    # Use a manual loop to avoid slicing issues in the linter
-    count = len(messages)
-    for i in range(count - 1):
-        msg = messages[i]
-        role = "assistant" if msg.get("role") in ("model", "assistant") else "user"
-        anthropic_messages.append({"role": role, "content": msg.get("text", "")})
-
     last_msg = messages[-1] if messages else None
     last_text = last_msg.get("text", "") if last_msg else ""
 
-    if image_base64:
-        last_content: Any = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": image_mime_type,
-                    "data": image_base64,
-                },
-            },
-            {
-                "type": "text",
-                "text": (
-                    "O produtor enviou uma foto da lavoura. Analise visualmente e identifique "
-                    "pragas, doencas, deficiencias nutricionais, estadio fenologico e qualquer "
-                    "problema agronomico visivel. Seja especifico e traga recomendacao pratica.\n\n"
-                    f"Mensagem do produtor: {last_text}"
-                ).strip(),
-            },
-        ]
-    else:
-        last_content = last_text
-
-    anthropic_messages.append({"role": "user", "content": last_content})
+    if not image_base64 and _looks_like_image_follow_up(last_text):
+        return (
+            "Nao recebi uma imagem nesta mensagem. "
+            "Consigo analisar foto apenas quando ela e enviada junto com a pergunta atual. "
+            "Reenvie a imagem para eu fazer a analise visual com precisao."
+        )
 
     try:
+        client = _get_client()
+
+        system_parts = [
+            "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
+            "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
+            f"\nContexto da fazenda:\n{farm_context}",
+        ]
+        if ndvi_context:
+            system_parts.append(f"\nAnalise NDVI recente:\n{ndvi_context}")
+        if hourly_weather:
+            system_parts.append(
+                f"\nDados climaticos atuais:\n{json.dumps(hourly_weather, ensure_ascii=False)}"
+            )
+
+        anthropic_messages: list[dict[str, Any]] = []
+        # Iterate through all but the last message
+        # Use a manual loop to avoid slicing issues in the linter
+        count = len(messages)
+        for i in range(count - 1):
+            msg = messages[i]
+            role = "assistant" if msg.get("role") in ("model", "assistant") else "user"
+            anthropic_messages.append({"role": role, "content": msg.get("text", "")})
+
+        if image_base64:
+            last_content: Any = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_mime_type,
+                        "data": image_base64,
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "O produtor enviou uma foto da lavoura. Analise visualmente e identifique "
+                        "pragas, doencas, deficiencias nutricionais, estadio fenologico e qualquer "
+                        "problema agronomico visivel. Seja especifico e traga recomendacao pratica.\n\n"
+                        f"Mensagem do produtor: {last_text}"
+                    ).strip(),
+                },
+            ]
+        else:
+            last_content = last_text
+
+        anthropic_messages.append({"role": "user", "content": last_content})
+
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
@@ -8622,9 +9314,12 @@ def generate_chat_response(
             messages=anthropic_messages,
         )
         return response.content[0].text
+    except ValueError as exc:
+        logging.error("Erro de configuracao da IA (chat): %s", exc)
+        return "Desculpe, a IA esta indisponivel por configuracao do servidor (ANTHROPIC_API_KEY)."
     except Exception as exc:
         logging.error("Erro no chat Claude: %s", exc)
-        return "Desculpe, ocorreu um erro ao processar sua mensagem."
+        return "Desculpe, a IA esta indisponivel no momento (falha no provedor Anthropic)."
 
 
 def _clean_json_text(raw: str) -> str:
@@ -9299,6 +9994,26 @@ def get_fields(user_id: str, farm_id: str | None = None) -> List[Dict[str, Any]]
         raise
 
 
+def get_field_by_id(user_id: str, field_id: str) -> dict | None:
+    try:
+        response = requests.get(
+            _supabase_url("fields"),
+            headers=_get_supabase_headers(),
+            params={
+                "id": f"eq.{field_id}",
+                "user_id": f"eq.{user_id}",
+                "select": "id,name,latitude,longitude,boundaries,crop_type",
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else None
+    except Exception as exc:
+        logging.error("Erro ao buscar talhao por ID field_id=%s: %s", field_id, exc)
+        return None
+
+
 def save_field(user_id: str, field_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # field_data ALREADY comes correctly mapped from Pydantic models in main.py
@@ -9386,263 +10101,1091 @@ def ensure_default_farm(user_id: str) -> Dict[str, Any]:
 ```
 
 
+### `tracto-backend/services/field_intelligence_service.py`
+```py
+import asyncio
+import logging
+from datetime import datetime
+from typing import Any
+
+from models import FieldIntelligenceSnapshot, SnapshotSourceStatus
+from services import farm_service
+from services.agronomic_engine import AgronomicEngine
+from services.ai_service import generate_alerts_claude
+from services.cache_service import analysis_cache
+from services.sentinel_service import get_ndvi_image
+from services.weather_service import fetch_weather_snapshot
+
+WEATHER_TIMEOUT_SECONDS = 5.0
+SATELLITE_TIMEOUT_SECONDS = 8.0
+ANALYSIS_TIMEOUT_SECONDS = 6.0
+AI_SUMMARY_TIMEOUT_SECONDS = 4.0
+
+
+def _first_or_default(value: Any, default: float = 0.0) -> float:
+	try:
+		if value is None:
+			return default
+		return float(value)
+	except (TypeError, ValueError):
+		return default
+
+
+def _now_iso() -> str:
+	return datetime.now().isoformat()
+
+
+def _cache_key(prefix: str, field_id: str) -> str:
+	return f"field_intelligence:{prefix}:{field_id}"
+
+
+def _safe_boundaries(value: Any) -> list[list[float]] | None:
+	if not isinstance(value, list):
+		return None
+
+	parsed: list[list[float]] = []
+	for point in value:
+		if not isinstance(point, (list, tuple)) or len(point) < 2:
+			continue
+		try:
+			parsed.append([float(point[0]), float(point[1])])
+		except (TypeError, ValueError):
+			continue
+	return parsed if len(parsed) >= 3 else None
+
+
+def _build_weather_fallback() -> dict[str, Any]:
+	return {
+		"temperature": None,
+		"humidity": None,
+		"wind_speed": None,
+		"rain_accumulation": None,
+		"et0": None,
+		"condition": "Dados climaticos indisponiveis",
+		"forecast_7d": None,
+		"updated_at": _now_iso(),
+	}
+
+
+def _build_satellite_fallback(message: str) -> dict[str, Any]:
+	return {
+		"status": "fallback",
+		"provider": "Sentinel-2",
+		"scene_date": None,
+		"scene_date_br": None,
+		"scene_id": None,
+		"cloud_coverage": None,
+		"message": message,
+		"ndvi_image_base64": None,
+		"updated_at": _now_iso(),
+	}
+
+
+async def _resolve_weather(lat: float, lng: float, field_id: str) -> tuple[dict[str, Any], SnapshotSourceStatus]:
+	cache_key = _cache_key("weather", field_id)
+	cached = analysis_cache.get(cache_key)
+
+	try:
+		weather = await asyncio.wait_for(fetch_weather_snapshot(lat, lng), timeout=WEATHER_TIMEOUT_SECONDS)
+		if weather:
+			weather["updated_at"] = _now_iso()
+			analysis_cache.set(cache_key, weather, ttl_hours=2)
+			return weather, SnapshotSourceStatus(
+				status="ok",
+				message="Clima atualizado com sucesso.",
+				updated_at=weather["updated_at"],
+			)
+	except asyncio.TimeoutError:
+		logging.warning("Timeout ao buscar clima do talhao %s", field_id)
+	except Exception as exc:
+		logging.warning("Falha ao buscar clima do talhao %s: %s", field_id, exc)
+
+	if isinstance(cached, dict):
+		return cached, SnapshotSourceStatus(
+			status="fallback",
+			message="Clima em fallback de cache.",
+			updated_at=cached.get("updated_at"),
+		)
+
+	fallback = _build_weather_fallback()
+	return fallback, SnapshotSourceStatus(
+		status="unavailable",
+		message="Clima indisponivel no momento.",
+		updated_at=fallback["updated_at"],
+	)
+
+
+async def _resolve_satellite(
+	lat: float,
+	lng: float,
+	boundaries: list[list[float]] | None,
+	field_id: str,
+) -> tuple[dict[str, Any], SnapshotSourceStatus]:
+	cache_key = _cache_key("satellite", field_id)
+	cached = analysis_cache.get(cache_key)
+
+	try:
+		scene_meta = await asyncio.wait_for(
+			asyncio.to_thread(get_latest_scene_metadata, lat, lng, boundaries, 21, 40),
+			timeout=SATELLITE_TIMEOUT_SECONDS,
+		)
+		ndvi_data = await asyncio.wait_for(
+			asyncio.to_thread(get_ndvi_image, lat, lng, boundaries, 15),
+			timeout=SATELLITE_TIMEOUT_SECONDS,
+		)
+
+		if isinstance(scene_meta, dict):
+			satellite = {
+				**scene_meta,
+				"ndvi_image_base64": ndvi_data.get("image_base64") if isinstance(ndvi_data, dict) else None,
+				"ndvi_stats": ndvi_data.get("stats") if isinstance(ndvi_data, dict) else None,
+				"updated_at": _now_iso(),
+			}
+			analysis_cache.set(cache_key, satellite, ttl_hours=12)
+			return satellite, SnapshotSourceStatus(
+				status="ok",
+				message="Imagem satelital atualizada.",
+				updated_at=satellite["updated_at"],
+			)
+	except asyncio.TimeoutError:
+		logging.warning("Timeout ao buscar satelite do talhao %s", field_id)
+	except Exception as exc:
+		logging.warning("Falha ao buscar satelite do talhao %s: %s", field_id, exc)
+
+	if isinstance(cached, dict):
+		return cached, SnapshotSourceStatus(
+			status="fallback",
+			message="Satelite em fallback da ultima cena em cache.",
+			updated_at=cached.get("updated_at"),
+		)
+
+	fallback = _build_satellite_fallback("Nenhuma cena Sentinel-2 disponivel no momento.")
+	return fallback, SnapshotSourceStatus(
+		status="unavailable",
+		message="Satelite indisponivel no momento.",
+		updated_at=fallback["updated_at"],
+	)
+
+
+def _build_analysis(
+	weather: dict[str, Any],
+	crop_type: str | None,
+	has_satellite_data: bool,
+	has_boundaries: bool,
+) -> dict[str, Any]:
+	engine = AgronomicEngine()
+	effective_crop = crop_type or "Nao informada"
+
+	temperature = _first_or_default(weather.get("temperature"), 25.0)
+	humidity = _first_or_default(weather.get("humidity"), 60.0)
+	wind_speed = _first_or_default(weather.get("wind_speed"), 10.0)
+	rain_accumulation = _first_or_default(weather.get("rain_accumulation"), 0.0)
+
+	spray_window = engine.calculate_spray_window(temperature, humidity, wind_speed)
+	frost_risk = engine.calculate_frost_risk(temperature, effective_crop)
+	water_stress = engine.calculate_water_stress(
+		rain_accumulation,
+		temperature,
+		effective_crop,
+		weather.get("et0"),
+	)
+	confidence = engine.calculate_confidence(
+		sat_data=has_satellite_data,
+		weather_data=weather.get("temperature") is not None,
+		boundaries_data=has_boundaries,
+	)
+
+	return {
+		"spray_window": spray_window,
+		"frost_risk": frost_risk,
+		"water_stress": water_stress,
+		"confidence": confidence,
+		"generated_at": _now_iso(),
+	}
+
+
+def _build_alerts(
+	weather: dict[str, Any],
+	crop_type: str | None,
+	field_name: str,
+	lat: float,
+	lng: float,
+	analysis: dict[str, Any],
+) -> list[dict[str, Any]]:
+	class AlertLike:
+		pass
+
+	alert_like = AlertLike()
+	alert_like.temperature = _first_or_default(weather.get("temperature"), 25.0)
+	alert_like.humidity = _first_or_default(weather.get("humidity"), 60.0)
+	alert_like.rain_accumulation = _first_or_default(weather.get("rain_accumulation"), 0.0)
+	alert_like.wind_speed = _first_or_default(weather.get("wind_speed"), 10.0)
+	alert_like.crop_type = crop_type or "Nao informada"
+	alert_like.et0 = weather.get("et0")
+	alert_like.fields = [{"name": field_name, "crop": crop_type, "lat": lat, "lng": lng}]
+	alert_like.weather_forecast = weather.get("forecast_7d")
+	alert_like.engine_results = [analysis]
+
+	try:
+		return generate_alerts_claude(alert_like, {})
+	except Exception as exc:
+		logging.warning("Falha ao gerar alertas IA para %s: %s", field_name, exc)
+		return [
+			{
+				"id": "A-FALLBACK-001",
+				"type": "info",
+				"title": "Analise parcial",
+				"message": "Algumas fontes externas estao indisponiveis. Revise os dados do talhao antes da acao.",
+				"field": field_name,
+				"value": "PARCIAL",
+				"valueLabel": "status",
+				"createdAt": _now_iso(),
+			}
+		]
+
+
+async def _build_ai_summary(
+	field_name: str,
+	crop_type: str | None,
+	weather: dict[str, Any],
+	satellite: dict[str, Any],
+	analysis: dict[str, Any],
+) -> tuple[str, SnapshotSourceStatus]:
+	base_ready = weather.get("temperature") is not None and analysis.get("confidence") is not None
+	if not base_ready:
+		return (
+			"Dados insuficientes para analise completa.",
+			SnapshotSourceStatus(
+				status="unavailable",
+				message="Resumo textual indisponivel por falta de dados minimos.",
+				updated_at=_now_iso(),
+			),
+		)
+
+	def _compose() -> str:
+		forecast = weather.get("forecast_7d") or "Previsao indisponivel"
+		scene = satellite.get("scene_date_br") or "N/D"
+		return (
+			f"Talhao {field_name} ({crop_type or 'Nao informada'}): "
+			f"temperatura atual {_first_or_default(weather.get('temperature')):.1f}C, "
+			f"umidade {_first_or_default(weather.get('humidity')):.0f}%, "
+			f"janela de pulverizacao {analysis.get('spray_window', {}).get('label', 'N/D')}, "
+			f"risco de geada {analysis.get('frost_risk', {}).get('label', 'N/D')}, "
+			f"estresse hidrico {analysis.get('water_stress', {}).get('label', 'N/D')}. "
+			f"Ultima cena Sentinel: {scene}. Previsao resumida: {forecast}."
+		)
+
+	try:
+		summary = await asyncio.wait_for(asyncio.to_thread(_compose), timeout=AI_SUMMARY_TIMEOUT_SECONDS)
+		return (
+			summary,
+			SnapshotSourceStatus(
+				status="ok",
+				message="Resumo consolidado gerado.",
+				updated_at=_now_iso(),
+			),
+		)
+	except asyncio.TimeoutError:
+		return (
+			"Dados insuficientes para analise completa.",
+			SnapshotSourceStatus(
+				status="fallback",
+				message="Resumo textual em fallback por timeout.",
+				updated_at=_now_iso(),
+			),
+		)
+	except Exception as exc:
+		logging.warning("Falha ao gerar resumo textual do snapshot: %s", exc)
+		return (
+			"Dados insuficientes para analise completa.",
+			SnapshotSourceStatus(
+				status="fallback",
+				message="Resumo textual em fallback por indisponibilidade.",
+				updated_at=_now_iso(),
+			),
+		)
+
+
+async def build_field_intelligence_snapshot(user_id: str, field_id: str) -> FieldIntelligenceSnapshot:
+	snapshot_cache_key = _cache_key("snapshot", field_id)
+	cached_snapshot = analysis_cache.get(snapshot_cache_key)
+	if isinstance(cached_snapshot, dict):
+		try:
+			logging.info("field_intelligence_snapshot cache hit field_id=%s", field_id)
+			return FieldIntelligenceSnapshot(**cached_snapshot)
+		except Exception as exc:
+			logging.warning("Snapshot em cache invalido para field_id=%s. Recalculando. erro=%s", field_id, exc)
+	else:
+		logging.info("field_intelligence_snapshot cache miss field_id=%s", field_id)
+
+	field = farm_service.get_field_by_id(user_id=user_id, field_id=field_id)
+	if not field:
+		raise ValueError("Talhao nao encontrado para o usuario autenticado.")
+
+	farms = farm_service.get_farms(user_id=user_id)
+	farm_name = None
+	farm_id = field.get("farm_id")
+	if farm_id:
+		for farm in farms:
+			if farm.get("id") == farm_id:
+				farm_name = farm.get("name")
+				break
+
+	lat = _first_or_default(field.get("latitude"))
+	lng = _first_or_default(field.get("longitude"))
+	boundaries = _safe_boundaries(field.get("boundaries"))
+
+	weather, weather_status = await _resolve_weather(lat, lng, field_id)
+	satellite, satellite_status = await _resolve_satellite(lat, lng, boundaries, field_id)
+
+	try:
+		analysis = await asyncio.wait_for(
+			asyncio.to_thread(
+				_build_analysis,
+				weather,
+				field.get("crop_type"),
+				satellite.get("scene_date") is not None,
+				boundaries is not None,
+			),
+			timeout=ANALYSIS_TIMEOUT_SECONDS,
+		)
+		analysis_status = SnapshotSourceStatus(
+			status="ok",
+			message="Analise deterministico-consolidada gerada.",
+			updated_at=analysis.get("generated_at"),
+		)
+	except asyncio.TimeoutError:
+		analysis = {
+			"spray_window": {"label": "Dados insuficientes", "level": 0, "color": "gray"},
+			"frost_risk": {"label": "Nao avaliado", "level": 0, "color": "gray"},
+			"water_stress": {"label": "Nao avaliado", "level": 0, "color": "gray"},
+			"confidence": 0.0,
+			"generated_at": _now_iso(),
+		}
+		analysis_status = SnapshotSourceStatus(
+			status="fallback",
+			message="Analise em fallback por timeout.",
+			updated_at=analysis.get("generated_at"),
+		)
+	except Exception as exc:
+		logging.warning("Falha na analise deterministica do talhao %s: %s", field_id, exc)
+		analysis = {
+			"spray_window": {"label": "Dados insuficientes", "level": 0, "color": "gray"},
+			"frost_risk": {"label": "Nao avaliado", "level": 0, "color": "gray"},
+			"water_stress": {"label": "Nao avaliado", "level": 0, "color": "gray"},
+			"confidence": 0.0,
+			"generated_at": _now_iso(),
+		}
+		analysis_status = SnapshotSourceStatus(
+			status="fallback",
+			message="Analise em fallback por indisponibilidade.",
+			updated_at=analysis.get("generated_at"),
+		)
+
+	alerts = _build_alerts(
+		weather=weather,
+		crop_type=field.get("crop_type"),
+		field_name=field.get("name") or "Talhao",
+		lat=lat,
+		lng=lng,
+		analysis=analysis,
+	)
+
+	report_summary, ai_summary_status = await _build_ai_summary(
+		field_name=field.get("name") or "Talhao",
+		crop_type=field.get("crop_type"),
+		weather=weather,
+		satellite=satellite,
+		analysis=analysis,
+	)
+
+	snapshot = FieldIntelligenceSnapshot(
+		field_id=field_id,
+		field_name=field.get("name") or "Talhao",
+		farm_id=farm_id,
+		farm_name=farm_name,
+		lat=lat,
+		lng=lng,
+		boundaries=boundaries,
+		crop_type=field.get("crop_type"),
+		planting_date=field.get("planting_date"),
+		variety=field.get("variety"),
+		area_ha=field.get("area_ha"),
+		weather=weather,
+		satellite=satellite,
+		analysis=analysis,
+		alerts=alerts,
+		report_summary=report_summary,
+		weather_status=weather_status,
+		satellite_status=satellite_status,
+		analysis_status=analysis_status,
+		ai_summary_status=ai_summary_status,
+		updated_at=_now_iso(),
+	)
+
+	analysis_cache.set(snapshot_cache_key, snapshot.model_dump(), ttl_hours=0.5)
+	return snapshot
+
+```
+
+
+### `tracto-backend/services/geo_service.py`
+```py
+import asyncio
+import time
+from typing import Any
+
+import httpx
+
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_CACHE_TTL_SECONDS = 600
+
+_geo_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_last_external_call_ts = 0.0
+
+
+class GeoProviderError(Exception):
+    def __init__(self, message: str, provider_status: int | None = None):
+        super().__init__(message)
+        self.provider_status = provider_status
+
+
+def _parse_bbox(raw_bbox: list[str] | None) -> list[float] | None:
+    if not raw_bbox or len(raw_bbox) != 4:
+        return None
+
+    try:
+        south = float(raw_bbox[0])
+        north = float(raw_bbox[1])
+        west = float(raw_bbox[2])
+        east = float(raw_bbox[3])
+    except (TypeError, ValueError):
+        return None
+
+    return [south, north, west, east]
+
+
+async def search_location(query: str) -> dict[str, Any] | None:
+    global _last_external_call_ts
+
+    normalized = query.strip()
+    if len(normalized) < 2:
+        return None
+
+    cache_key = normalized.lower()
+    now = time.time()
+    cached = _geo_cache.get(cache_key)
+    if cached and (now - cached[0]) <= _CACHE_TTL_SECONDS:
+        return cached[1]
+
+    elapsed = now - _last_external_call_ts
+    if elapsed < 1.0:
+        await asyncio.sleep(1.0 - elapsed)
+
+    headers = {
+        "User-Agent": "Tracto AgTech/1.0 (tracto@tracto.app)",
+        "Accept-Language": "pt-BR",
+    }
+    params = {
+        "q": normalized,
+        "format": "json",
+        "limit": "1",
+        "countrycodes": "br",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
+            response = await client.get(_NOMINATIM_URL, params=params)
+            response.raise_for_status()
+            results = response.json()
+        _last_external_call_ts = time.time()
+    except httpx.TimeoutException as exc:
+        raise GeoProviderError("Timeout ao consultar Nominatim.") from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        raise GeoProviderError("Erro HTTP retornado pelo Nominatim.", provider_status=status_code) from exc
+    except httpx.RequestError as exc:
+        raise GeoProviderError("Falha de rede ao consultar Nominatim.") from exc
+    except Exception as exc:
+        raise GeoProviderError("Erro inesperado ao consultar Nominatim.") from exc
+
+    if not isinstance(results, list) or not results:
+        return None
+
+    top = results[0]
+    payload = {
+        "name": str(top.get("display_name") or normalized),
+        "lat": float(top.get("lat")),
+        "lng": float(top.get("lon")),
+        "bbox": _parse_bbox(top.get("boundingbox")),
+    }
+
+    _geo_cache[cache_key] = (time.time(), payload)
+    return payload
+
+```
+
+
 ### `tracto-backend/services/sentinel_service.py`
 ```py
-import os
-import httpx
+"""
+tracto-backend/services/sentinel_service.py — Versão 4.1
+Correção: indentação do bloco S1, evalscript S1 com 4 bandas RGBA, sem maxCloudCoverage no S1
+"""
+
+import base64
 import logging
-import json
+import os
+import threading
+import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-def get_oauth_token():
-    client_id = os.getenv("SENTINEL_CLIENT_ID")
-    client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
-    
-    if not client_id or not client_secret:
-        logging.error("SENTINEL credentials not configured.")
-        return None
-        
-    try:
-        with httpx.Client() as client:
-            response = client.post(
-                "https://services.sentinel-hub.com/oauth/token",
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": client_id,
-                    "client_secret": client_secret
-                }
-            )
-            response.raise_for_status()
-            return response.json().get("access_token")
-    except Exception as e:
-        logging.error(f"Error getting Sentinel OAuth token: {str(e)}")
-        return None
+import httpx
 
-def get_bbox_from_boundaries(boundaries: list[list[float]] | None, lat: float, lng: float) -> list[float]:
-    """
-    Calcula o BBox [min_lng, min_lat, max_lng, max_lat] a partir das boundaries.
-    Caso nao existam boundaries, usa um offset de 0.005 (~500m).
-    """
+# ── Cache de token OAuth ──────────────────────────────────────────────────────
+
+_token_lock = threading.Lock()
+_token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
+
+
+def get_oauth_token() -> str | None:
+    with _token_lock:
+        now = time.time()
+        if _token_cache["access_token"] and now < _token_cache["expires_at"]:
+            return _token_cache["access_token"]
+
+        client_id = os.getenv("SENTINEL_CLIENT_ID")
+        client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            logging.error("[Sentinel] SENTINEL_CLIENT_ID or SENTINEL_CLIENT_SECRET not configured.")
+            return None
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                response = client.post(
+                    "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            token = data.get("access_token")
+            expires_in = int(data.get("expires_in", 3600))
+            _token_cache["access_token"] = token
+            _token_cache["expires_at"] = now + max(expires_in - 300, 60)
+            logging.info("[Sentinel] OAuth token refreshed. TTL=%ss", max(expires_in - 300, 60))
+            return token
+        except Exception as exc:
+            logging.error("[Sentinel] OAuth token error: %s", exc)
+            return None
+
+
+# ── Cache de overlay ──────────────────────────────────────────────────────────
+
+_overlay_lock = threading.Lock()
+_overlay_cache: dict[str, dict[str, Any]] = {}
+OVERLAY_TTL_SECONDS = 30 * 60
+
+
+def _get_cached_overlay(cache_key: str) -> bytes | None:
+    with _overlay_lock:
+        entry = _overlay_cache.get(cache_key)
+        if entry and time.time() < entry["expires_at"]:
+            logging.info("[Sentinel] Cache HIT overlay key=%s", cache_key)
+            return entry["image_bytes"]
+        if entry:
+            del _overlay_cache[cache_key]
+    return None
+
+
+def _set_cached_overlay(cache_key: str, image_bytes: bytes) -> None:
+    with _overlay_lock:
+        _overlay_cache[cache_key] = {
+            "image_bytes": image_bytes,
+            "expires_at": time.time() + OVERLAY_TTL_SECONDS,
+        }
+    logging.info("[Sentinel] Overlay cacheado key=%s size=%d bytes", cache_key, len(image_bytes))
+
+
+# ── Utilitários de geometria ──────────────────────────────────────────────────
+
+def get_bbox_from_boundaries(
+    boundaries: list[list[float]] | None,
+    lat: float,
+    lng: float,
+) -> list[float]:
     if not boundaries or len(boundaries) < 3:
-        # Fallback para aprox 1km x 1km (0.01 grau total)
         return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
-    
-    if boundaries is not None:
-        lats: List[float] = [p[0] for p in boundaries if p is not None and len(p) >= 1]
-        lngs: List[float] = [p[1] for p in boundaries if p is not None and len(p) >= 2]
-    else:
-        return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
-    
-    # Adiciona uma pequena margem de 10% ou 0.0005 graus
-    margin = 0.0005
-    return [
-        min(lngs) - margin,
-        min(lats) - margin,
-        max(lngs) + margin,
-        max(lats) + margin
-    ]
 
-def get_ndvi_stats(bbox: list[float], boundaries: list[list[float]] | None = None):
-    """
-    Obtem estatisticas reais de NDVI via Sentinel Hub Statistics API.
-    Retorna media, classes e cobertura de nuvens deterministica.
-    """
+    lats = [float(p[0]) for p in boundaries if p and len(p) >= 2]
+    lngs = [float(p[1]) for p in boundaries if p and len(p) >= 2]
+    if not lats or not lngs:
+        return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
+
+    margin = 0.0005
+    return [min(lngs) - margin, min(lats) - margin, max(lngs) + margin, max(lats) + margin]
+
+
+def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | None:
+    valid: list[list[float]] = []
+    for p in boundaries:
+        if p and len(p) >= 2:
+            valid.append([float(p[1]), float(p[0])])
+    if len(valid) < 3:
+        return None
+    if valid[0] != valid[-1]:
+        valid.append(valid[0])
+    return {"type": "Polygon", "coordinates": [valid]}
+
+
+# ── Busca de cenas via STAC ───────────────────────────────────────────────────
+
+STAC_URL = "https://earth-search.aws.element84.com/v1/search"
+
+
+def get_available_scenes(
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    lookback_days: int = 90,
+    max_results_per_source: int = 5,
+) -> dict[str, list[dict]]:
+    now = datetime.utcnow()
+    from_dt = (now - timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
+    to_dt = now.strftime("%Y-%m-%dT23:59:59Z")
+
+    def build_intersects() -> dict:
+        if boundaries and len(boundaries) >= 3:
+            ring = []
+            for p in boundaries:
+                if p and len(p) >= 2:
+                    ring.append([float(p[1]), float(p[0])])
+            if len(ring) >= 3:
+                if ring[0] != ring[-1]:
+                    ring.append(ring[0])
+                return {"type": "Polygon", "coordinates": [ring]}
+        return {"type": "Point", "coordinates": [float(lng), float(lat)]}
+
+    intersects = build_intersects()
+    results: dict[str, list[dict]] = {"s2": [], "s1": []}
+
+    # Sentinel-2
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.post(STAC_URL, json={
+                "collections": ["sentinel-2-l2a"],
+                "limit": max_results_per_source,
+                "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+                "datetime": f"{from_dt}/{to_dt}",
+                "intersects": intersects,
+            })
+            res.raise_for_status()
+            features = res.json().get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            dt_str = props.get("datetime") or props.get("created")
+            date_iso, date_br = None, None
+            if dt_str:
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    date_iso = dt.date().isoformat()
+                    date_br = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            cloud = props.get("eo:cloud_cover")
+            assets = feat.get("assets", {})
+            thumbnail = assets.get("thumbnail", {}).get("href") or assets.get("overview", {}).get("href")
+            results["s2"].append({
+                "scene_id": feat.get("id"),
+                "date": date_iso,
+                "date_br": date_br,
+                "cloud_coverage": round(float(cloud), 1) if cloud is not None else None,
+                "source": "s2",
+                "collection": "sentinel-2-l2a",
+                "thumbnail_url": thumbnail,
+            })
+    except Exception as exc:
+        logging.warning("[Sentinel] Erro S2 STAC: %s", exc)
+
+    # Sentinel-1
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.post(STAC_URL, json={
+                "collections": ["sentinel-1-grd"],
+                "limit": max_results_per_source,
+                "sortby": [{"field": "properties.datetime", "direction": "desc"}],
+                "datetime": f"{from_dt}/{to_dt}",
+                "intersects": intersects,
+            })
+            res.raise_for_status()
+            features = res.json().get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            dt_str = props.get("datetime") or props.get("created")
+            date_iso, date_br = None, None
+            if dt_str:
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    date_iso = dt.date().isoformat()
+                    date_br = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            orbit = props.get("sat:orbit_state", "")
+            assets = feat.get("assets", {})
+            thumbnail = assets.get("thumbnail", {}).get("href")
+            results["s1"].append({
+                "scene_id": feat.get("id"),
+                "date": date_iso,
+                "date_br": date_br,
+                "cloud_coverage": None,
+                "orbit": orbit,
+                "source": "s1",
+                "collection": "sentinel-1-grd",
+                "thumbnail_url": thumbnail,
+            })
+    except Exception as exc:
+        logging.warning("[Sentinel] Erro S1 STAC: %s", exc)
+
+    logging.info("[Sentinel] Cenas: S2=%d S1=%d lat=%.4f lng=%.4f",
+                 len(results["s2"]), len(results["s1"]), lat, lng)
+    return results
+
+
+# ── Overlay por cena específica ───────────────────────────────────────────────
+
+def get_true_color_overlay(
+    field_id: str,
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    date_range_days: int = 30,
+    scene_date: str | None = None,
+    source: str = "s2",
+    mode: str = "truecolor",
+) -> bytes | None:
+    cache_key = f"{field_id}_{source}_{scene_date or 'latest'}_{mode}"
+    cached = _get_cached_overlay(cache_key)
+    if cached:
+        return cached
+
     token = get_oauth_token()
     if not token:
         return None
-        
-    # Se tivermos polígono real, podemos usar no 'geometry' da API para masking
-    bounds_payload: Dict[str, Any] = {
-        "bbox": bbox,
-        "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}
-    }
-    
-    if boundaries and len(boundaries) >= 3:
-        # GeoJSON Polygon: [[ [lng, lat], [lng, lat]... ]]
-        # Add real geometry for masking if available
-        # Explicit float conversion and safe indexing
-        valid_poly = []
-        for p in boundaries:
-            if p is not None and len(p) >= 2:
-                valid_poly.append([float(p[1]), float(p[0])])
-        
-        if len(valid_poly) >= 3:
-            polygon = [valid_poly]
-            if polygon[0][0] != polygon[0][-1]:
-                polygon[0].append(polygon[0][0])
-            # Ensure bounds_payload is a dict (linter fix)
-            if isinstance(bounds_payload, dict): # This check is redundant as bounds_payload is initialized as Dict[str, Any]
-                bounds_payload["geometry"] = {"type": "Polygon", "coordinates": polygon}
 
-    # Evalscript que calcula NDVI e retorna stats
-    evalscript = """
-    //VERSION=3
-    function setup() {
-      return {
-        input: [{ bands: ["B04", "B08", "dataMask"] }],
-        output: [
-          { id: "ndvi", bands: 1 },
-          { id: "dataMask", bands: 1 }
+    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+    geojson_polygon = _build_geojson_polygon(boundaries) if boundaries else None
+
+    # ── Evalscripts ───────────────────────────────────────────────────────────
+    if source == "s1":
+        # Sentinel-1 SAR — VV em escala de cinza, 4 bandas RGBA
+        evalscript = """
+//VERSION=3
+function setup() {
+  return {
+        input: [{ bands: ["VV", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+    let vv = Math.sqrt(s.VV);
+    let norm = Math.round(Math.min(Math.max(vv * 2.5, 0), 1) * 255);
+    return [norm, norm, norm, s.dataMask * 255];
+}
+"""
+        data_type = "sentinel-1-grd"
+    elif mode == "ndvi":
+        evalscript = """
+//VERSION=3
+function setup() {
+    return { input: [{ bands: ["B04", "B08", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+}
+function evaluatePixel(s) {
+    if (s.dataMask === 0) return [0,0,0,0];
+    let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001);
+    if (ndvi < 0)   return [120,120,120,255];
+    if (ndvi < 0.2) return [200,50,25,255];
+    if (ndvi < 0.4) return [230,180,50,255];
+    if (ndvi < 0.6) return [100,190,50,255];
+    return [20,110,20,255];
+}
+"""
+        data_type = "sentinel-2-l2a"
+    else:
+        # Sentinel-2 True Color com correção de gama
+        evalscript = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B04", "B03", "B02", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+  function adj(v) {
+    return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255);
+  }
+  return [adj(s.B04), adj(s.B03), adj(s.B02), s.dataMask * 255];
+}
+"""
+        data_type = "sentinel-2-l2a"
+
+    # ── Janela de tempo ───────────────────────────────────────────────────────
+    if scene_date:
+        try:
+            sd = datetime.fromisoformat(scene_date)
+            from_date = (sd - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+            to_date = (sd + timedelta(days=1)).strftime("%Y-%m-%dT23:59:59Z")
+        except Exception:
+            from_date = (datetime.utcnow() - timedelta(days=date_range_days)).strftime("%Y-%m-%dT00:00:00Z")
+            to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+        windows = [(from_date, to_date)]
+    else:
+        to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+        windows = [
+            ((datetime.utcnow() - timedelta(days=d)).strftime("%Y-%m-%dT00:00:00Z"), to_date)
+            for d in [date_range_days, 60, 90]
         ]
-      };
+
+    bounds_input: dict = {
+        "bbox": bbox,
+        "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
     }
-    function evaluatePixel(samples) {
-      let ndvi = (samples.B08 - samples.B04) / (samples.B08 + samples.B04);
-      return {
-        ndvi: [ndvi],
-        dataMask: [samples.dataMask]
-      };
+    if geojson_polygon:
+        bounds_input["geometry"] = geojson_polygon
+
+    # dataFilter: S2 tem maxCloudCoverage e mosaickingOrder, S1 não suporta esses filtros
+    if source == "s2":
+        data_filter_base: dict = {
+            "timeRange": {"from": "", "to": ""},
+            "maxCloudCoverage": 100,
+            "mosaickingOrder": "mostRecent",
+        }
+    else:
+        data_filter_base = {
+            "timeRange": {"from": "", "to": ""},
+        }
+
+    payload: dict = {
+        "input": {
+            "bounds": bounds_input,
+            "data": [
+                {
+                    "type": data_type,
+                    "dataFilter": dict(data_filter_base),
+                }
+            ],
+        },
+        "output": {
+            "width": 1024,
+            "height": 1024,
+            "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
+        },
+        "evalscript": evalscript,
     }
-    """
+
+    for from_dt, to_dt in windows:
+        payload["input"]["data"][0]["dataFilter"]["timeRange"]["from"] = from_dt
+        payload["input"]["data"][0]["dataFilter"]["timeRange"]["to"] = to_dt
+
+        try:
+            logging.info("[Sentinel] overlay POST source=%s field_id=%s from=%s to=%s",
+                         source, field_id, from_dt, to_dt)
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            with httpx.Client(timeout=60.0) as http_client:
+                resp = http_client.post(
+                    "https://sh.dataspace.copernicus.eu/api/v1/process",
+                    headers=headers,
+                    json=payload,
+                )
+
+            if resp.status_code == 200:
+                ct = resp.headers.get("content-type", "")
+                if "image" in ct:
+                    image_bytes = resp.content
+                    _set_cached_overlay(cache_key, image_bytes)
+                    return image_bytes
+                logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
+
+            elif resp.status_code == 401:
+                logging.warning("[Sentinel] 401 — renovando token")
+                with _token_lock:
+                    _token_cache["access_token"] = None
+                    _token_cache["expires_at"] = 0.0
+                token = get_oauth_token() or token
+                continue
+
+            else:
+                logging.warning("[Sentinel] HTTP %d from=%s body=%s",
+                                resp.status_code, from_dt, resp.text[:300])
+
+        except httpx.TimeoutException:
+            logging.warning("[Sentinel] Timeout source=%s from=%s", source, from_dt)
+        except Exception as exc:
+            logging.error("[Sentinel] Erro source=%s from=%s: %s", source, from_dt, exc)
+
+    logging.error("[Sentinel] Todas as janelas falharam field_id=%s source=%s", field_id, source)
+    return None
+
+
+# ── NDVI (mantida para /api/analyze-field) ────────────────────────────────────
+
+def get_ndvi_stats(
+    bbox: list[float],
+    boundaries: list[list[float]] | None = None,
+) -> dict[str, Any] | None:
+    token = get_oauth_token()
+    if not token:
+        return None
+
+    bounds_payload: dict[str, Any] = {
+        "bbox": bbox,
+        "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+    }
+    geojson = _build_geojson_polygon(boundaries) if boundaries else None
+    if geojson:
+        bounds_payload["geometry"] = geojson
+
+    evalscript = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B04", "B08", "dataMask"] }],
+    output: [{ id: "ndvi", bands: 1 }, { id: "dataMask", bands: 1 }]
+  };
+}
+function evaluatePixel(s) {
+  let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
+  return { ndvi: [ndvi], dataMask: [s.dataMask] };
+}
+"""
+    to_dt = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
+    from_dt = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
 
     payload = {
         "input": {
             "bounds": bounds_payload,
-            "data": [
-                {
-                    "type": "sentinel-2-l2a",
-                    "dataFilter": {
-                        "maxCloudCoverage": 30,
-                        "timeRange": {
-                            "from": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z"),
-                            "to": datetime.now().strftime("%Y-%m-%dT23:59:59Z")
-                        }
-                    }
-                }
-            ]
+            "data": [{"type": "sentinel-2-l2a", "dataFilter": {
+                "maxCloudCoverage": 30,
+                "timeRange": {"from": from_dt, "to": to_dt},
+            }}],
         },
         "aggregation": {
-            "timeRange": {
-                "from": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z"),
-                "to": datetime.now().strftime("%Y-%m-%dT23:59:59Z")
-            },
+            "timeRange": {"from": from_dt, "to": to_dt},
             "aggregationInterval": {"of": "P30D"},
             "evalscript": evalscript,
-            "resx": 10,
-            "resy": 10
-        }
+            "resx": 10, "resy": 10,
+        },
     }
 
     try:
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        with httpx.Client() as client:
-            response = client.post("https://services.sentinel-hub.com/api/v1/statistics", headers=headers, json=payload, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
-        
-        # Parseando o resultado (simplificado para pegar o primeiro entry)
-        output = data.get("data", [])[0].get("outputs", {}).get("ndvi", {}).get("bands", {}).get("B0", {}).get("stats", {})
-        
-        # Se nao houver dados reais, retornamos None para o fallback cuidar
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(
+                "https://sh.dataspace.copernicus.eu/api/v1/statistics",
+                headers=headers, json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        output = (
+            data.get("data", [{}])[0]
+            .get("outputs", {}).get("ndvi", {})
+            .get("bands", {}).get("B0", {})
+            .get("stats", {})
+        )
         if not output or output.get("count", 0) == 0:
             return None
-            
+
         return {
             "ndvi_avg": output.get("mean", 0),
             "ndvi_max": output.get("max", 0),
             "ndvi_min": output.get("min", 0),
             "count": output.get("count", 0),
-            "cloud_coverage": None # Indisponivel sem extracao explicita de nuvens
+            "cloud_coverage": None,
         }
-    except Exception as e:
-        logging.warning(f"Erro ao buscar estatisticas Sentinel: {str(e)}")
+    except Exception as exc:
+        logging.warning("[Sentinel] NDVI stats error: %s", exc)
         return None
 
-def get_ndvi_image(lat: float, lng: float, boundaries: list[list[float]] | None = None, date_range_days: int = 15):
+
+def get_ndvi_image(
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    date_range_days: int = 15,
+) -> dict[str, Any] | None:
     token = get_oauth_token()
     if not token:
         return None
-        
+
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
-    
-    # Deterministic stats first!
     stats = get_ndvi_stats(bbox, boundaries)
-    
-    to_date = datetime.now().strftime("%Y-%m-%d")
-    
+    geojson = _build_geojson_polygon(boundaries) if boundaries else None
+
     evalscript = """
-    //VERSION=3
-    function setup() {
-      return { input: ["B04","B08","dataMask"], output: { bands: 4 } };
-    }
-    function evaluatePixel(s) {
-      let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
-      if (s.dataMask === 0) return [0,0,0,0];
-      if (ndvi < 0)    return [0.5, 0.5, 0.5, 1]; // solo/água
-      if (ndvi < 0.2)  return [0.8, 0.2, 0.1, 1]; // vermelho: crítico
-      if (ndvi < 0.4)  return [0.9, 0.7, 0.1, 1]; // amarelo: estresse
-      if (ndvi < 0.6)  return [0.4, 0.8, 0.2, 1]; // verde claro: ok
-      return [0.1, 0.5, 0.1, 1];                   // verde escuro: ótimo
-    }
-    """
-    
-    # Attempt with date_range_days then fallback to 30
-    attempts = [date_range_days, 30]
-    
-    for days in attempts:
-        f_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+//VERSION=3
+function setup() {
+  return { input: ["B04","B08","dataMask"], output: { bands: 4 } };
+}
+function evaluatePixel(s) {
+  let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
+  if (s.dataMask === 0) return [0,0,0,0];
+  if (ndvi < 0)   return [0.5, 0.5, 0.5, 1];
+  if (ndvi < 0.2) return [0.8, 0.2, 0.1, 1];
+  if (ndvi < 0.4) return [0.9, 0.7, 0.1, 1];
+  if (ndvi < 0.6) return [0.4, 0.8, 0.2, 1];
+  return [0.1, 0.5, 0.1, 1];
+}
+"""
+    to_date = datetime.utcnow().strftime("%Y-%m-%d")
+
+    for days in [date_range_days, 30]:
+        f_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        bounds_input: dict[str, Any] = {
+            "bbox": bbox,
+            "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+        }
+        if geojson:
+            bounds_input["geometry"] = geojson
+
         payload = {
             "input": {
-                "bounds": {
-                    "bbox": bbox,
-                    "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}
-                },
-                "data": [
-                    {
-                        "type": "sentinel-2-l2a",
-                        "dataFilter": {
-                            "timeRange": {"from": f"{f_date}T00:00:00Z", "to": f"{to_date}T23:59:59Z"},
-                            "maxCloudCoverage": 30
-                        }
-                    }
-                ]
+                "bounds": bounds_input,
+                "data": [{"type": "sentinel-2-l2a", "dataFilter": {
+                    "timeRange": {"from": f"{f_date}T00:00:00Z", "to": f"{to_date}T23:59:59Z"},
+                    "maxCloudCoverage": 30,
+                }}],
             },
             "output": {
                 "width": 512, "height": 512,
-                "responses": [{"identifier": "default", "format": {"type": "image/png"}}]
+                "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
             },
-            "evalscript": evalscript
+            "evalscript": evalscript,
         }
-        
-        # Add real geometry for masking if available
-        if boundaries is not None and len(boundaries) >= 3:
-            # Explicit float conversion and safe indexing
-            valid_poly = []
-            for p in boundaries:
-                if p is not None and len(p) >= 2:
-                    valid_poly.append([float(p[1]), float(p[0])])
-            
-            if len(valid_poly) >= 3:
-                polygon = [valid_poly]
-                if polygon[0][0] != polygon[0][-1]:
-                    polygon[0].append(polygon[0][0])
-                # Ensure payload is a dict (linter fix)
-                if isinstance(payload, dict):
-                    payload["input"]["bounds"]["geometry"] = {"type": "Polygon", "coordinates": polygon}
 
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        
         try:
-            logging.info(f"Fetching Sentinel NDVI for {lat}, {lng} (Polygon-based)")
-            with httpx.Client() as client:
-                response = client.post("https://services.sentinel-hub.com/api/v1/process", headers=headers, json=payload, timeout=60.0)
-                response.raise_for_status()
-                
-                import base64
-                image_base64 = base64.b64encode(response.content).decode('utf-8')
-            
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(
+                    "https://sh.dataspace.copernicus.eu/api/v1/process",
+                    headers=headers, json=payload,
+                )
+                resp.raise_for_status()
             return {
-                "image_base64": image_base64,
-                "date_acquired": f"{to_date} (Aproximado)", # Explicit fallback date
-                "cloud_coverage": None, # Fallback explicitly empty so UI shows N/D instead of fake 20
+                "image_base64": base64.b64encode(resp.content).decode("utf-8"),
+                "date_acquired": f"{to_date} (Aproximado)",
+                "cloud_coverage": None,
                 "stats": stats,
-                "is_polygonal": boundaries is not None and len(boundaries) >= 3
+                "is_polygonal": bool(geojson),
             }
-        except Exception as e:
-            logging.error(f"Error fetching Sentinel NDVI: {str(e)}")
-            continue
-            
+        except Exception as exc:
+            logging.error("[Sentinel] NDVI image error window=%sd: %s", days, exc)
+
     return None
 
 ```
