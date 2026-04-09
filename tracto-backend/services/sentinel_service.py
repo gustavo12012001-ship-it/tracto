@@ -272,9 +272,8 @@ function evaluatePixel(s) {
 }
 """
         data_type = "sentinel-1-grd"
-
-        elif mode == "ndvi":
-                evalscript = """
+    elif mode == "ndvi":
+        evalscript = """
 //VERSION=3
 function setup() {
     return {
@@ -292,9 +291,8 @@ function evaluatePixel(s) {
     return [20,110,20,255];
 }
 """
-                data_type = "sentinel-2-l2a"
-
-        else:
+        data_type = "sentinel-2-l2a"
+    else:
         evalscript = """
 //VERSION=3
 function setup() {
