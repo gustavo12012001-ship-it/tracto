@@ -17,7 +17,7 @@ _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
 
 PROCESS_API_URL = "https://services.sentinel-hub.com/api/v1/process"
 STATISTICS_API_URL = "https://services.sentinel-hub.com/api/v1/statistics"
-OAUTH_URL = "https://services.sentinel-hub.com/oauth/token"
+OAUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 
 
 def get_oauth_token() -> str | None:
