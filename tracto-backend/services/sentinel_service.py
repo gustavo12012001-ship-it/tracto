@@ -4,7 +4,6 @@ sentinel_service.py — Versão 4.3
 
 import base64
 import logging
-import math
 import os
 import threading
 import time
@@ -16,9 +15,14 @@ import httpx
 _token_lock = threading.Lock()
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
 
-PROCESS_API_URL = "https://services.sentinel-hub.com/api/v1/process"
-STATISTICS_API_URL = "https://services.sentinel-hub.com/api/v1/statistics"
+# OAuth — Copernicus CDSE
 OAUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+
+# Process API — Sentinel Hub
+PROCESS_API_URL = "https://services.sentinel-hub.com/api/v1/process"
+
+# Statistics API — Sentinel Hub
+STATISTICS_API_URL = "https://services.sentinel-hub.com/api/v1/statistics"
 
 
 def get_oauth_token() -> str | None:
@@ -91,28 +95,6 @@ def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | No
     if valid[0] != valid[-1]:
         valid.append(valid[0])
     return {"type": "Polygon", "coordinates": [valid]}
-
-
-def _estimate_output_size_from_bbox(bbox: list[float], source: str) -> int:
-    """
-    Estima resolução de saída a partir do tamanho do talhão para reduzir blur/pixelização.
-    Sentinel-2 usa alvo ~10m/px; Sentinel-1 usa alvo ~20m/px.
-    """
-    lon_min, lat_min, lon_max, lat_max = bbox
-    lon_span = abs(lon_max - lon_min)
-    lat_span = abs(lat_max - lat_min)
-    center_lat = (lat_min + lat_max) / 2.0
-
-    meters_per_deg_lat = 111_320.0
-    meters_per_deg_lng = 111_320.0 * max(math.cos(math.radians(center_lat)), 0.2)
-    max_span_m = max(lat_span * meters_per_deg_lat, lon_span * meters_per_deg_lng)
-
-    target_m_per_px = 20.0 if source == "s1" else 10.0
-    px = int(max_span_m / target_m_per_px)
-
-    # Mantem faixa segura da Process API e arredonda para blocos previsiveis.
-    px = max(512, min(1536, px))
-    return int((px + 63) // 64 * 64)
 
 
 STAC_URL = "https://earth-search.aws.element84.com/v1/search"
@@ -229,82 +211,61 @@ def get_true_color_overlay(
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
     geojson_polygon = _build_geojson_polygon(boundaries) if boundaries else None
 
-    if source == "s1":
-        evalscript = """
+        if source == "s1":
+                evalscript = """
 //VERSION=3
 function setup() {
-  return {
-    input: [{ bands: ["VV", "dataMask"] }],
-    output: { bands: 4, sampleType: "UINT8" },
-    mosaicking: "ORBIT"
-  };
-}
-function evaluatePixel(samples) {
-  let vvSum = 0, count = 0;
-  for (let s of samples) {
-    if (s.dataMask > 0) { vvSum += Math.sqrt(Math.max(s.VV, 0)); count++; }
-  }
-  if (count === 0) return [0, 0, 0, 0];
-  let norm = Math.round(Math.min(Math.max((vvSum / count) * 2.8, 0), 1) * 255);
-  return [norm, norm, norm, 255];
-}
-"""
-        data_type = "sentinel-1-grd"
-    else:
-        if mode == "ndvi":
-            evalscript = """
-//VERSION=3
-function setup() {
-  return { input: [{ bands: ["B04", "B08", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+    return {
+        input: [{ bands: ["VV", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
 }
 function evaluatePixel(s) {
-  if (s.dataMask === 0) return [0,0,0,0];
-  let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001);
-  if (ndvi < 0)   return [120,120,120,255];
-  if (ndvi < 0.2) return [200,50,25,255];
-  if (ndvi < 0.4) return [230,180,50,255];
-  if (ndvi < 0.6) return [100,190,50,255];
-  return [20,110,20,255];
+    let vv = Math.sqrt(s.VV);
+    let norm = Math.round(Math.min(Math.max(vv * 2.5, 0), 1) * 255);
+    return [norm, norm, norm, s.dataMask * 255];
 }
 """
-        elif mode == "falsecolor":
-            # Infravermelho Colorido — vegetação aparece em vermelho vibrante
-            evalscript = """
+                data_type = "sentinel-1-grd"
+
+        elif mode == "ndvi":
+                evalscript = """
 //VERSION=3
 function setup() {
-  return { input: [{ bands: ["B08", "B04", "B03", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+    return {
+        input: [{ bands: ["B04", "B08", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
 }
 function evaluatePixel(s) {
-  if (s.dataMask === 0) return [0,0,0,0];
-  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
-  return [adj(s.B08), adj(s.B04), adj(s.B03), 255];
+    if (s.dataMask === 0) return [0,0,0,0];
+    let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001);
+    if (ndvi < 0)   return [120,120,120,255];
+    if (ndvi < 0.2) return [200,50,25,255];
+    if (ndvi < 0.4) return [230,180,50,255];
+    if (ndvi < 0.6) return [100,190,50,255];
+    return [20,110,20,255];
 }
 """
-        elif mode == "agriculture":
-            # Bandas SWIR — diferencia solo, vegetação e áreas colhidas
-            evalscript = """
-//VERSION=3
-function setup() {
-  return { input: [{ bands: ["B11", "B08", "B02", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
-}
-function evaluatePixel(s) {
-  if (s.dataMask === 0) return [0,0,0,0];
-  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
-  return [adj(s.B11), adj(s.B08), adj(s.B02), 255];
-}
-"""
+                data_type = "sentinel-2-l2a"
+
         else:
-            evalscript = """
+                evalscript = """
 //VERSION=3
 function setup() {
-  return { input: [{ bands: ["B04", "B03", "B02", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+    return {
+        input: [{ bands: ["B04", "B03", "B02", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
 }
 function evaluatePixel(s) {
-  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
-  return [adj(s.B04), adj(s.B03), adj(s.B02), s.dataMask * 255];
+    function adj(v) {
+        return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255);
+    }
+    return [adj(s.B04), adj(s.B03), adj(s.B02), s.dataMask * 255];
 }
 """
-        data_type = "sentinel-2-l2a"
+                data_type = "sentinel-2-l2a"
 
     if scene_date:
         try:
@@ -323,12 +284,18 @@ function evaluatePixel(s) {
     if geojson_polygon:
         bounds_input["geometry"] = geojson_polygon
 
-    data_filter_base: dict = {"timeRange": {"from": "", "to": ""}}
     if source == "s2":
-        data_filter_base["maxCloudCoverage"] = 100
-        data_filter_base["mosaickingOrder"] = "mostRecent"
+        data_filter_base = {
+            "timeRange": {"from": "", "to": ""},
+            "maxCloudCoverage": 100,
+            "mosaickingOrder": "mostRecent",
+        }
+    else:
+        data_filter_base = {
+            "timeRange": {"from": "", "to": ""},
+        }
 
-    output_size = _estimate_output_size_from_bbox(bbox, source)
+    output_size = 512 if source == "s1" else 1024
 
     payload: dict = {
         "input": {"bounds": bounds_input, "data": [{"type": data_type, "dataFilter": dict(data_filter_base)}]},
@@ -339,43 +306,30 @@ function evaluatePixel(s) {
     for from_dt, to_dt in windows:
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["from"] = from_dt
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["to"] = to_dt
-        for attempt in range(1, 4):
-            try:
-                logging.info(
-                    "[Sentinel] overlay POST source=%s mode=%s field_id=%s from=%s size=%sx%s attempt=%d",
-                    source,
-                    mode,
-                    field_id,
-                    from_dt,
-                    output_size,
-                    output_size,
-                    attempt,
-                )
-                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                with httpx.Client(timeout=60.0) as http_client:
-                    resp = http_client.post(PROCESS_API_URL, headers=headers, json=payload)
-
-                if resp.status_code == 200:
-                    ct = resp.headers.get("content-type", "")
-                    if "image" in ct:
-                        _set_cached_overlay(cache_key, resp.content)
-                        return resp.content
-                    logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
-                elif resp.status_code == 401:
-                    logging.warning("[Sentinel] 401 — renovando token")
-                    with _token_lock:
-                        _token_cache["access_token"] = None
-                        _token_cache["expires_at"] = 0.0
-                    token = get_oauth_token() or token
-                else:
-                    logging.warning("[Sentinel] HTTP %d body=%s", resp.status_code, resp.text[:300])
-            except httpx.TimeoutException:
-                logging.warning("[Sentinel] Timeout source=%s from=%s attempt=%d", source, from_dt, attempt)
-            except Exception as exc:
-                logging.error("[Sentinel] Erro source=%s attempt=%d: %s", source, attempt, exc)
-
-            if attempt < 3:
-                time.sleep(0.5 * attempt)
+        try:
+            logging.info("[Sentinel] overlay POST source=%s mode=%s field_id=%s from=%s", source, mode, field_id, from_dt)
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            with httpx.Client(timeout=60.0) as http_client:
+                resp = http_client.post(PROCESS_API_URL, headers=headers, json=payload)
+            if resp.status_code == 200:
+                ct = resp.headers.get("content-type", "")
+                if "image" in ct:
+                    _set_cached_overlay(cache_key, resp.content)
+                    return resp.content
+                logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
+            elif resp.status_code == 401:
+                logging.warning("[Sentinel] 401 — renovando token")
+                with _token_lock:
+                    _token_cache["access_token"] = None
+                    _token_cache["expires_at"] = 0.0
+                token = get_oauth_token() or token
+                continue
+            else:
+                logging.warning("[Sentinel] HTTP %d body=%s", resp.status_code, resp.text[:300])
+        except httpx.TimeoutException:
+            logging.warning("[Sentinel] Timeout source=%s from=%s", source, from_dt)
+        except Exception as exc:
+            logging.error("[Sentinel] Erro source=%s: %s", source, exc)
 
     logging.error("[Sentinel] Todas as janelas falharam field_id=%s source=%s mode=%s", field_id, source, mode)
     return None
