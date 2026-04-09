@@ -371,6 +371,7 @@ async def sentinel_scenes_endpoint(
             "lookback_days": lookback_days,
             "s2": scenes.get("s2", []),
             "s1": scenes.get("s1", []),
+            "s1_available": False,
             "total": len(scenes.get("s2", [])) + len(scenes.get("s1", [])),
         }
 
