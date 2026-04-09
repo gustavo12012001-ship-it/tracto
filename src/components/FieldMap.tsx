@@ -88,17 +88,16 @@ function parseDMSCoords(text: string): { lat: number; lng: number } | null {
 }
 
 async function buildAuthHeaders(): Promise<HeadersInit> {
-  try {
-    const { supabase } = await import('../services/supabase');
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      const r = await supabase.auth.refreshSession();
-      session = r.data.session;
-    }
-    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-  } catch {
-    return {};
+  const { supabase } = await import('../services/supabase');
+  let { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    const r = await supabase.auth.refreshSession();
+    session = r.data.session;
   }
+  if (!session?.access_token) {
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
+  return { Authorization: `Bearer ${session.access_token}` };
 }
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
