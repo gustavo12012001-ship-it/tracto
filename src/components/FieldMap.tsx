@@ -1,8 +1,4 @@
-// src/components/FieldMap.tsx — Versão 4.0
-// Painel de cenas Sentinel-1 e Sentinel-2 disponíveis por talhão
-// O usuário vê as datas disponíveis e escolhe qual carregar
-
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImageOverlay,
   MapContainer,
@@ -28,7 +24,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-// ── Tipos ─────────────────────────────────────────────────────────────────────
+//  Tipos 
 
 type DrawMode = 'none' | 'drawing';
 type MapLayer = 'osm' | 'esri';
@@ -40,7 +36,7 @@ interface SentinelScene {
   date: string;
   date_br: string;
   cloud_coverage: number | null;
-  source: 's1' | 's2';
+  source: 's1' | 's2' | 'ndvi';
   collection: string;
   thumbnail_url: string | null;
   orbit?: string;
@@ -59,10 +55,10 @@ interface OverlayState {
   bounds: L.LatLngBoundsExpression | null;
   loading: boolean;
   error: string | null;
-  sceneKey: string | null; // "field_id|source|date"
+  sceneKey: string | null;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 function computeBoundsFromBoundaries(b: [number, number][]): L.LatLngBoundsExpression {
   const lats = b.map((p) => p[0]);
@@ -73,7 +69,8 @@ function computeBoundsFromBoundaries(b: [number, number][]): L.LatLngBoundsExpre
 function parseDecimalCoords(text: string): { lat: number; lng: number } | null {
   const m = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
   if (!m) return null;
-  const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
   if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
   return { lat, lng };
 }
@@ -89,29 +86,12 @@ function parseDMSCoords(text: string): { lat: number; lng: number } | null {
   return { lat: dec(+m[1], +m[2], +m[3], m[4]), lng: dec(+m[5], +m[6], +m[7], m[8]) };
 }
 
-function formatOverlaySceneDate(sceneKey: string | null): string | null {
-  if (!sceneKey) return null;
-  const parts = sceneKey.split('|');
-  const date = parts[2];
-  if (!date) return null;
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return parsed.toLocaleDateString('pt-BR');
-}
-
-function getOverlaySourceLabel(sceneKey: string | null, filter?: string): string {
-  if (!sceneKey) return 'Sentinel';
-  if (sceneKey.includes('|s1|')) return 'Sentinel-1 Radar SAR';
-  if (filter === 'ndvi') return 'Sentinel-2 NDVI';
-  if (filter === 'falsecolor') return 'Sentinel-2 Inf. Vermelho';
-  if (filter === 'agriculture') return 'Sentinel-2 Agricultura';
-  return 'Sentinel-2 True Color';
-}
-
 async function buildAuthHeaders(): Promise<HeadersInit> {
   try {
     const { supabase } = await import('../services/supabase');
-    let { data: { session } } = await supabase.auth.getSession();
+    let {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (!session) {
       const r = await supabase.auth.refreshSession();
       session = r.data.session;
@@ -122,7 +102,29 @@ async function buildAuthHeaders(): Promise<HeadersInit> {
   }
 }
 
-// ── Sub-componentes ───────────────────────────────────────────────────────────
+function getOverlaySourceLabel(
+  sceneKey: string | null,
+  filter?: 'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture',
+): string {
+  if (!sceneKey) return '';
+  const source = sceneKey.split('|')[1];
+  if (source === 's1') return 'Sentinel-1  Radar SAR';
+  if (filter === 'ndvi') return 'Sentinel-2  NDVI';
+  if (filter === 'falsecolor') return 'Sentinel-2  Inf. Vermelho';
+  if (filter === 'agriculture') return 'Sentinel-2  Agricultura';
+  return 'Sentinel-2  True Color';
+}
+
+function formatOverlaySceneDate(sceneKey: string | null): string {
+  if (!sceneKey) return '';
+  const dateStr = sceneKey.split('|')[2];
+  if (!dateStr || dateStr === 'latest') return 'Última cena';
+  const [year, month, day] = dateStr.split('-');
+  if (!year || !month || !day) return dateStr;
+  return `${day}/${month}/${year}`;
+}
+
+//  Sub-componentes 
 
 function MapClickHandler({ onMapClick }: { onMapClick: (ll: { lat: number; lng: number }) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng) });
@@ -151,7 +153,10 @@ function ActiveFieldFlyController() {
     const field = fields.find((f) => f.id === activeFieldId);
     if (!field) return;
     if (field.boundaries && field.boundaries.length >= 3) {
-      map.flyToBounds(computeBoundsFromBoundaries(field.boundaries) as L.LatLngBoundsExpression, { padding: [60, 60], duration: 1.2 });
+      map.flyToBounds(computeBoundsFromBoundaries(field.boundaries) as L.LatLngBoundsExpression, {
+        padding: [60, 60],
+        duration: 1.2,
+      });
     } else {
       map.flyTo([field.lat, field.lng], 15, { duration: 1.2 });
     }
@@ -165,10 +170,12 @@ function InitialCenterController() {
   const done = useRef(false);
   useEffect(() => {
     if (done.current) return;
-    if (fields.length === 0 && locationStatus === 'loading') return;
     if (fields.length > 0) {
       if (fields[0].boundaries && fields[0].boundaries.length >= 3) {
-        map.flyToBounds(computeBoundsFromBoundaries(fields[0].boundaries) as L.LatLngBoundsExpression, { padding: [80, 80], duration: 0 });
+        map.flyToBounds(computeBoundsFromBoundaries(fields[0].boundaries) as L.LatLngBoundsExpression, {
+          padding: [80, 80],
+          duration: 0,
+        });
       } else {
         map.setView([fields[0].lat, fields[0].lng], 15);
       }
@@ -178,7 +185,10 @@ function InitialCenterController() {
     if (locationStatus === 'precise' && currentLocation) {
       map.setView([currentLocation.lat, currentLocation.lng], 13);
       done.current = true;
-    } else if ((locationStatus === 'fallback' || locationStatus === 'denied' || locationStatus === 'unavailable') && currentLocation) {
+    } else if (
+      (locationStatus === 'fallback' || locationStatus === 'denied' || locationStatus === 'unavailable') &&
+      currentLocation
+    ) {
       map.setView([currentLocation.lat, currentLocation.lng], 11);
       done.current = true;
     }
@@ -190,9 +200,18 @@ function ZoomControls() {
   const map = useMap();
   return (
     <div className="absolute bottom-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
-      {[{ s: '+', a: () => map.zoomIn() }, { s: '−', a: () => map.zoomOut() }].map(({ s, a }) => (
-        <button key={s} onClick={a} className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
-          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+      {[{ s: '+', a: () => map.zoomIn() }, { s: '', a: () => map.zoomOut() }].map(({ s, a }) => (
+        <button
+          key={s}
+          onClick={a}
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
+          style={{
+            background: 'rgba(8,8,9,0.85)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#94a3b8',
+          }}
+        >
           {s}
         </button>
       ))}
@@ -200,23 +219,19 @@ function ZoomControls() {
   );
 }
 
-// ── Card de cena ──────────────────────────────────────────────────────────────
-
 function SceneCard({
   scene,
-  source,
   isActive,
   isLoading,
   onClick,
 }: {
   scene: SentinelScene;
-  source: OverlaySource;
   isActive: boolean;
   isLoading: boolean;
   onClick: () => void;
 }) {
-  const isS2 = source === 's2';
-  const isNdvi = source === 'ndvi';
+  const isS2 = scene.source === 's2';
+  const isNdvi = scene.source === 'ndvi';
   const cloudOk = scene.cloud_coverage !== null && scene.cloud_coverage <= 30;
   const cloudMid = scene.cloud_coverage !== null && scene.cloud_coverage > 30 && scene.cloud_coverage <= 60;
 
@@ -230,9 +245,20 @@ function SceneCard({
       }}
     >
       {/* Ícone */}
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: isS2 ? 'rgba(96,165,250,0.15)' : isNdvi ? 'rgba(74,222,128,0.15)' : 'rgba(167,139,250,0.15)' }}>
-        <span className="material-symbols-outlined text-sm" style={{ color: isS2 ? '#60a5fa' : isNdvi ? '#4ade80' : '#a78bfa' }}>
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{
+          background: isS2
+            ? 'rgba(96,165,250,0.15)'
+            : isNdvi
+              ? 'rgba(74,222,128,0.15)'
+              : 'rgba(167,139,250,0.15)',
+        }}
+      >
+        <span
+          className="material-symbols-outlined text-sm"
+          style={{ color: isS2 ? '#60a5fa' : isNdvi ? '#4ade80' : '#a78bfa' }}
+        >
           {isS2 ? 'satellite_alt' : isNdvi ? 'grass' : 'radar'}
         </span>
       </div>
@@ -243,24 +269,29 @@ function SceneCard({
         <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>
           {isS2
             ? scene.cloud_coverage !== null
-              ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
+              ? ` ${scene.cloud_coverage.toFixed(0)}% nuvens`
               : 'Cobertura N/D'
             : isNdvi
-              ? 'Vegetação · NDVI'
-            : scene.orbit
-              ? `Órbita ${scene.orbit}`
-              : 'SAR · Radar'
-          }
+              ? 'Vegetação  NDVI'
+              : scene.orbit
+                ? `Órbita ${scene.orbit}`
+                : 'SAR  Radar'}
         </p>
       </div>
 
       {/* Badge qualidade (S2 e NDVI) */}
       {(isS2 || isNdvi) && scene.cloud_coverage !== null && (
-        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+        <span
+          className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
           style={{
-            background: cloudOk ? 'rgba(74,222,128,0.15)' : cloudMid ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
+            background: cloudOk
+              ? 'rgba(74,222,128,0.15)'
+              : cloudMid
+                ? 'rgba(251,191,36,0.15)'
+                : 'rgba(239,68,68,0.15)',
             color: cloudOk ? '#4ade80' : cloudMid ? '#fbbf24' : '#f87171',
-          }}>
+          }}
+        >
           {cloudOk ? 'LIMPO' : cloudMid ? 'PARCIAL' : 'NUBLADO'}
         </span>
       )}
@@ -273,7 +304,7 @@ function SceneCard({
   );
 }
 
-// ── Painel de cenas ───────────────────────────────────────────────────────────
+//  Painel de cenas 
 
 function ScenesPanel({
   fieldId,
@@ -308,12 +339,21 @@ function ScenesPanel({
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+      <div
+        className="flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+      >
         <div>
           <p className="text-xs font-bold text-white">Imagens Satelitais</p>
-          <p className="text-[10px] mt-0.5 truncate max-w-[180px]" style={{ color: '#64748b' }}>{fieldName}</p>
+          <p className="text-[10px] mt-0.5 truncate max-w-[180px]" style={{ color: '#64748b' }}>
+            {fieldName}
+          </p>
         </div>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" style={{ color: '#64748b' }}>
+        <button
+          onClick={onClose}
+          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all"
+          style={{ color: '#64748b' }}
+        >
           <span className="material-symbols-outlined text-sm">close</span>
         </button>
       </div>
@@ -321,8 +361,8 @@ function ScenesPanel({
       {/* Tabs */}
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
-          { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
-          { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
+          { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico  RGB' },
+          { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar  SAR' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button
             key={key}
@@ -333,9 +373,15 @@ function ScenesPanel({
               border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}`,
             }}
           >
-            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>{icon}</span>
-            <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>{label}</span>
-            <span className="text-[9px]" style={{ color: '#475569' }}>{desc}</span>
+            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>
+              {icon}
+            </span>
+            <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>
+              {label}
+            </span>
+            <span className="text-[9px]" style={{ color: '#475569' }}>
+              {desc}
+            </span>
           </button>
         ))}
       </div>
@@ -345,11 +391,15 @@ function ScenesPanel({
         {scenes.loading ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-            <p className="text-[10px]" style={{ color: '#64748b' }}>Buscando imagens disponíveis...</p>
+            <p className="text-[10px]" style={{ color: '#64748b' }}>
+              Buscando imagens disponíveis...
+            </p>
           </div>
         ) : scenes.error ? (
           <div className="py-6 text-center">
-            <p className="text-[10px]" style={{ color: '#f87171' }}>{scenes.error}</p>
+            <p className="text-[10px]" style={{ color: '#f87171' }}>
+              {scenes.error}
+            </p>
           </div>
         ) : currentScenes.length === 0 ? (
           <div className="py-6 text-center">
@@ -368,7 +418,6 @@ function ScenesPanel({
               <SceneCard
                 key={scene.scene_id}
                 scene={scene}
-                source={selectedSource}
                 isActive={activeSceneKey === key}
                 isLoading={overlayLoading && activeSceneKey === key}
                 onClick={() => onSelectScene(selectedSource, scene.date || '')}
@@ -381,17 +430,26 @@ function ScenesPanel({
       {/* Footer info */}
       <div className="px-4 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          Fonte: Copernicus · Earth Search STAC · Grátis
+          Fonte: Copernicus  Earth Search STAC  Grátis
         </p>
       </div>
     </div>
   );
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
+//  Componente principal 
 
 export default function FieldMap() {
-  const { currentLocation, locationStatus, fields, createField, removeField, activeFarmId, activeFieldId, setActiveField } = useAppStore();
+  const {
+    currentLocation,
+    locationStatus,
+    fields,
+    createField,
+    removeField,
+    activeFarmId,
+    activeFieldId,
+    setActiveField,
+  } = useAppStore();
 
   const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
   const [searchQuery, setSearchQuery] = useState('');
@@ -410,17 +468,31 @@ export default function FieldMap() {
 
   // Painel de cenas
   const [showScenesPanel, setShowScenesPanel] = useState(false);
-  const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], loading: false, error: null, fieldId: null });
+  const [scenes, setScenes] = useState<ScenesState>({
+    s2: [],
+    s1: [],
+    loading: false,
+    error: null,
+    fieldId: null,
+  });
 
   // Overlay
-  const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+  const [overlay, setOverlay] = useState<OverlayState>({
+    url: null,
+    bounds: null,
+    loading: false,
+    error: null,
+    sceneKey: null,
+  });
   const [overlayOpacity, setOverlayOpacity] = useState(0.9);
-  const [activeFilter, setActiveFilter] = useState<'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'>('truecolor');
+  const [activeFilter, setActiveFilter] = useState<'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'>(
+    'truecolor',
+  );
   const prevUrlRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
 
-  // ── Buscar cenas quando painel abre ──────────────────────────────────────
+  //  Buscar cenas quando painel abre 
   useEffect(() => {
     if (!showScenesPanel || !activeFieldId) return;
     if (scenes.fieldId === activeFieldId && !scenes.loading) return;
@@ -430,10 +502,18 @@ export default function FieldMap() {
     const fetchScenes = async () => {
       try {
         const headers = await buildAuthHeaders();
-        const resp = await fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers });
+        const resp = await fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, {
+          headers,
+        });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        setScenes({ s2: data.s2 || [], s1: data.s1 || [], loading: false, error: null, fieldId: activeFieldId });
+        setScenes({
+          s2: data.s2 || [],
+          s1: data.s1 || [],
+          loading: false,
+          error: null,
+          fieldId: activeFieldId,
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
         setScenes({ s2: [], s1: [], loading: false, error: msg, fieldId: activeFieldId });
@@ -441,10 +521,14 @@ export default function FieldMap() {
     };
 
     void fetchScenes();
-  }, [showScenesPanel, activeFieldId]);
+  }, [showScenesPanel, activeFieldId, scenes.fieldId, scenes.loading]);
 
-  // ── Carregar overlay de cena selecionada ──────────────────────────────────
-  const handleSelectScene = async (source: 's1' | 's2' | 'ndvi', date: string, filterOverride?: typeof activeFilter) => {
+  //  Carregar overlay de cena selecionada 
+  const handleSelectScene = async (
+    source: 's1' | 's2' | 'ndvi',
+    date: string,
+    filterOverride?: typeof activeFilter,
+  ) => {
     const filter = filterOverride ?? activeFilter;
     if (!activeFieldId) return;
 
@@ -458,7 +542,10 @@ export default function FieldMap() {
     const bounds = computeBoundsFromBoundaries(activeField.boundaries);
 
     setOverlay({ url: null, bounds, loading: true, error: null, sceneKey });
-    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    if (prevUrlRef.current) {
+      URL.revokeObjectURL(prevUrlRef.current);
+      prevUrlRef.current = null;
+    }
 
     try {
       const headers = await buildAuthHeaders();
@@ -484,15 +571,23 @@ export default function FieldMap() {
 
   // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
-    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    if (prevUrlRef.current) {
+      URL.revokeObjectURL(prevUrlRef.current);
+      prevUrlRef.current = null;
+    }
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
     setActiveFilter('truecolor');
   }, [activeFieldId]);
 
-  useEffect(() => () => { if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current); }, []);
+  useEffect(
+    () => () => {
+      if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+    },
+    [],
+  );
 
-  // ── Busca geográfica ──────────────────────────────────────────────────────
+  //  Busca geográfica 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const q = searchQuery.trim();
@@ -501,17 +596,29 @@ export default function FieldMap() {
     setTempMarker(null);
 
     const decimal = parseDecimalCoords(q);
-    if (decimal) { setFlyTarget({ ...decimal, zoom: 15 }); setTempMarker(decimal); return; }
+    if (decimal) {
+      setFlyTarget({ ...decimal, zoom: 15 });
+      setTempMarker(decimal);
+      return;
+    }
 
     const dms = parseDMSCoords(q);
-    if (dms) { setFlyTarget({ ...dms, zoom: 15 }); setTempMarker(dms); return; }
+    if (dms) {
+      setFlyTarget({ ...dms, zoom: 15 });
+      setTempMarker(dms);
+      return;
+    }
 
     setSearchLoading(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`, { headers: { 'Accept-Language': 'pt-BR' } });
-      const data = await res.json() as Array<{ lat: string; lon: string }>;
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`,
+        { headers: { 'Accept-Language': 'pt-BR' } },
+      );
+      const data = (await res.json()) as Array<{ lat: string; lon: string }>;
       if (!data?.length) throw new Error('não encontrado');
-      const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
       setFlyTarget({ lat, lng, zoom: 13 });
       setTempMarker({ lat, lng });
     } catch {
@@ -521,22 +628,38 @@ export default function FieldMap() {
     }
   };
 
-  // ── Desenho ───────────────────────────────────────────────────────────────
-  const handleMapClick = useCallback((ll: { lat: number; lng: number }) => {
-    if (drawMode !== 'drawing') return;
-    setDrawPoints((p) => [...p, [ll.lat, ll.lng]]);
-  }, [drawMode]);
+  //  Desenho 
+  const handleMapClick = useCallback(
+    (ll: { lat: number; lng: number }) => {
+      if (drawMode !== 'drawing') return;
+      setDrawPoints((p) => [...p, [ll.lat, ll.lng]]);
+    },
+    [drawMode],
+  );
 
   const resetForm = () => {
-    setDrawPoints([]); setFieldName(''); setFieldCultura('');
-    setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none');
+    setDrawPoints([]);
+    setFieldName('');
+    setFieldCultura('');
+    setFieldDataPlantio('');
+    setFieldVariedade('');
+    setDrawMode('none');
   };
 
   const finishDrawing = async () => {
-    if (!activeFarmId) { alert('Selecione uma fazenda antes de desenhar.'); return; }
-    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
+    if (!activeFarmId) {
+      alert('Selecione uma fazenda antes de desenhar.');
+      return;
+    }
+    if (drawPoints.length < 3) {
+      alert('Marque pelo menos 3 pontos.');
+      return;
+    }
     const areaHa = polygonAreaHa(drawPoints);
-    if (areaHa < 0.05) { alert('Área muito pequena. Mínimo 0.05 ha.'); return; }
+    if (areaHa < 0.05) {
+      alert('Área muito pequena. Mínimo 0.05 ha.');
+      return;
+    }
 
     const name = fieldName.trim() || `Talhão ${fields.length + 1}`;
     const centroid: [number, number] = [
@@ -545,7 +668,16 @@ export default function FieldMap() {
     ];
     try {
       setIsSaving(true);
-      await createField(activeFarmId, { lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, cultura: fieldCultura || undefined, dataPlantio: fieldDataPlantio || undefined, variedade: fieldVariedade || undefined, areaHa });
+      await createField(activeFarmId, {
+        lat: centroid[0],
+        lng: centroid[1],
+        name,
+        boundaries: drawPoints,
+        cultura: fieldCultura || undefined,
+        dataPlantio: fieldDataPlantio || undefined,
+        variedade: fieldVariedade || undefined,
+        areaHa,
+      });
       resetForm();
     } catch (err: unknown) {
       alert(`Erro ao salvar: ${err instanceof Error ? err.message : 'desconhecido'}`);
@@ -557,27 +689,45 @@ export default function FieldMap() {
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
   const SENTINEL_FILTERS: { key: 'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'; label: string }[] = [
-    { key: 'truecolor',   label: '🎨 True Color' },
-    { key: 'ndvi',        label: '🌿 NDVI' },
-    { key: 'falsecolor',  label: '🌡 Inf. Vermelho' },
-    { key: 'agriculture', label: '🌾 Agricultura' },
+    { key: 'truecolor', label: ' True Color' },
+    { key: 'ndvi', label: ' NDVI' },
+    { key: 'falsecolor', label: ' Inf. Vermelho' },
+    { key: 'agriculture', label: ' Agricultura' },
   ];
 
   const activeField = fields.find((f) => f.id === activeFieldId);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  //  Render 
   return (
-    <div className="relative w-full h-full overflow-hidden" style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}>
-      <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', background: '#080809' }} zoomControl={false}>
+    <div
+      className="relative w-full h-full overflow-hidden"
+      style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}
+    >
+      <MapContainer
+        center={center}
+        zoom={13}
+        style={{ height: '100%', width: '100%', background: '#080809' }}
+        zoomControl={false}
+      >
         <InitialCenterController />
         <ActiveFieldFlyController />
         <FlyController target={flyTarget} />
 
-        {mapLayer === 'osm' && <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />}
+        {mapLayer === 'osm' && (
+          <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />
+        )}
         {mapLayer === 'esri' && (
           <>
-            <TileLayer attribution="&copy; Esri" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={20} />
-            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxZoom={20} opacity={0.6} />
+            <TileLayer
+              attribution="&copy; Esri"
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+            />
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={20}
+              opacity={0.6}
+            />
           </>
         )}
 
@@ -588,9 +738,15 @@ export default function FieldMap() {
 
         <MapClickHandler onMapClick={handleMapClick} />
 
-        {tempMarker && <Marker position={[tempMarker.lat, tempMarker.lng]}><Popup>📍 {searchQuery}</Popup></Marker>}
+        {tempMarker && (
+          <Marker position={[tempMarker.lat, tempMarker.lng]}>
+            <Popup> {searchQuery}</Popup>
+          </Marker>
+        )}
         {currentLocation && locationStatus === 'precise' && !fields.some((s) => s.lat === currentLocation.lat) && (
-          <Marker position={[currentLocation.lat, currentLocation.lng]}><Popup>📍 Sua localização</Popup></Marker>
+          <Marker position={[currentLocation.lat, currentLocation.lng]}>
+            <Popup> Sua localização</Popup>
+          </Marker>
         )}
 
         {fields.map((loc, idx) => {
@@ -599,31 +755,99 @@ export default function FieldMap() {
           return (
             <Polygon
               key={loc.id}
-              positions={loc.boundaries ?? [[loc.lat - 0.001, loc.lng - 0.001], [loc.lat - 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng - 0.001]]}
-              pathOptions={{ color, fillColor: color, fillOpacity: isActive ? 0.08 : 0.2, weight: isActive ? 3 : 2, dashArray: isActive ? undefined : '4 2' }}
-              eventHandlers={{ click: () => { if (loc.id) setActiveField(loc.id); } }}
+              positions={
+                loc.boundaries ?? [
+                  [loc.lat - 0.001, loc.lng - 0.001],
+                  [loc.lat - 0.001, loc.lng + 0.001],
+                  [loc.lat + 0.001, loc.lng + 0.001],
+                  [loc.lat + 0.001, loc.lng - 0.001],
+                ]
+              }
+              pathOptions={{
+                color,
+                fillColor: color,
+                fillOpacity: isActive ? 0.08 : 0.2,
+                weight: isActive ? 3 : 2,
+                dashArray: isActive ? undefined : '4 2',
+              }}
+              eventHandlers={{
+                click: () => {
+                  if (loc.id) setActiveField(loc.id);
+                },
+              }}
             >
               <Tooltip permanent direction="center" className="leaflet-field-label" offset={[0, 0]}>
-                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                <span
+                  style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: '#fff',
+                    textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+                    whiteSpace: 'nowrap',
+                    pointerEvents: 'none',
+                  }}
+                >
                   {loc.name}
                 </span>
               </Tooltip>
               <Popup>
                 <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 190 }}>
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
-                  {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}</p>}
-                  {loc.variedade && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌾 {loc.variedade}</p>}
-                  {loc.dataPlantio && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🗓 {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}</p>}
-                  {loc.boundaries && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>📐 {polygonAreaHa(loc.boundaries).toFixed(2)} ha</p>}
+                  {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}> {loc.cultura}</p>}
+                  {loc.variedade && (
+                    <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}> {loc.variedade}</p>
+                  )}
+                  {loc.dataPlantio && (
+                    <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>
+                       {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
+                  {loc.boundaries && (
+                    <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                       {polygonAreaHa(loc.boundaries).toFixed(2)} ha
+                    </p>
+                  )}
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
-                      onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
-                      style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
-                    >🛰 Ver Imagens</button>
+                      onClick={() => {
+                        if (loc.id) {
+                          setActiveField(loc.id);
+                          setShowScenesPanel(true);
+                        }
+                      }}
+                      style={{
+                        fontSize: 11,
+                        color: '#ec5b13',
+                        background: 'rgba(236,91,19,0.1)',
+                        border: '1px solid rgba(236,91,19,0.3)',
+                        borderRadius: 6,
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                       Ver Imagens
+                    </button>
                     <button
-                      onClick={() => { if (loc.id && activeFarmId && window.confirm(`Remover "${loc.name}"? Esta ação não pode ser desfeita.`)) removeField(activeFarmId, loc.id); }}
-                      style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                    >🗑 Remover</button>
+                      onClick={() => {
+                        if (
+                          loc.id &&
+                          activeFarmId &&
+                          window.confirm(`Remover "${loc.name}"? Esta ação não pode ser desfeita.`)
+                        )
+                          removeField(activeFarmId, loc.id);
+                      }}
+                      style={{
+                        fontSize: 11,
+                        color: '#ef4444',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                       Remover
+                    </button>
                   </div>
                 </div>
               </Popup>
@@ -633,9 +857,22 @@ export default function FieldMap() {
 
         {drawMode === 'drawing' && drawPoints.length > 0 && (
           <>
-            {drawPoints.length > 1 && <Polyline positions={[...drawPoints, drawPoints[0]]} pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }} />}
+            {drawPoints.length > 1 && (
+              <Polyline
+                positions={[...drawPoints, drawPoints[0]]}
+                pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }}
+              />
+            )}
             {drawPoints.map((pt, i) => (
-              <Marker key={i} position={pt} icon={L.divIcon({ className: '', html: '<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>', iconAnchor: [5, 5] })} />
+              <Marker
+                key={i}
+                position={pt}
+                icon={L.divIcon({
+                  className: '',
+                  html: '<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>',
+                  iconAnchor: [5, 5],
+                })}
+              />
             ))}
           </>
         )}
@@ -666,14 +903,30 @@ export default function FieldMap() {
       {(overlay.loading || overlay.error) && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           {overlay.loading && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white"
+              style={{
+                background: 'rgba(8,8,9,0.88)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(236,91,19,0.3)',
+              }}
+            >
               <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin" />
               Carregando imagem...
             </div>
           )}
           {!overlay.loading && overlay.error && (
-            <div className="px-3 py-2 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 300 }}>
-              ⚠ {overlay.error}
+            <div
+              className="px-3 py-2 rounded-xl text-[10px] font-semibold"
+              style={{
+                background: 'rgba(8,8,9,0.88)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                color: '#f87171',
+                maxWidth: 300,
+              }}
+            >
+               {overlay.error}
             </div>
           )}
         </div>
@@ -682,13 +935,25 @@ export default function FieldMap() {
       {/* Badge de overlay ativo */}
       {overlay.url && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-auto flex flex-col gap-2" style={{ top: 52, left: 4 }}>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {getOverlaySourceLabel(overlay.sceneKey, activeFilter)} · {formatOverlaySceneDate(overlay.sceneKey) ?? 'Data N/D'}
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold"
+            style={{
+              background: 'rgba(8,8,9,0.82)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(74,222,128,0.25)',
+              color: '#4ade80',
+            }}
+          >
+             {getOverlaySourceLabel(overlay.sceneKey, activeFilter)}  {formatOverlaySceneDate(overlay.sceneKey) ?? 'Data N/D'}
           </div>
           {!overlay.sceneKey.includes('|s1|') && (
             <div
               className="flex gap-1 p-1 rounded-xl"
-              style={{ background: 'rgba(8,8,9,0.9)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}
+              style={{
+                background: 'rgba(8,8,9,0.9)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
             >
               {SENTINEL_FILTERS.map(({ key, label }) => (
                 <button
@@ -703,7 +968,10 @@ export default function FieldMap() {
                   style={{
                     background: activeFilter === key ? 'rgba(236,91,19,0.25)' : 'transparent',
                     color: activeFilter === key ? '#ec5b13' : '#64748b',
-                    border: activeFilter === key ? '1px solid rgba(236,91,19,0.5)' : '1px solid transparent',
+                    border:
+                      activeFilter === key
+                        ? '1px solid rgba(236,91,19,0.5)'
+                        : '1px solid transparent',
                   }}
                 >
                   {label}
@@ -711,7 +979,14 @@ export default function FieldMap() {
               ))}
             </div>
           )}
-          <div className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div
+            className="flex items-center gap-3 px-3 py-2 rounded-xl"
+            style={{
+              background: 'rgba(8,8,9,0.82)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
             <input
               type="range"
               min={10}
@@ -721,25 +996,67 @@ export default function FieldMap() {
               onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
               style={{ accentColor: '#ec5b13', width: 120 }}
             />
-            <span className="text-[10px] font-bold" style={{ color: '#fff' }}>{Math.round(overlayOpacity * 100)}%</span>
+            <span className="text-[10px] font-bold" style={{ color: '#fff' }}>
+              {Math.round(overlayOpacity * 100)}%
+            </span>
           </div>
         </div>
       )}
 
       {/* Barra de busca */}
       {drawMode === 'none' && (
-        <form onSubmit={handleSearch} className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto" style={{ minWidth: 300 }}>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(16px)', border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
-            <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
-            <input className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none" placeholder="Buscar cidade ou coordenadas..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
-            {searchLoading && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />}
+        <form
+          onSubmit={handleSearch}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto"
+          style={{ minWidth: 300 }}
+        >
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
+            style={{
+              background: 'rgba(8,8,9,0.88)',
+              backdropFilter: 'blur(16px)',
+              border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`,
+            }}
+          >
+            <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>
+              search
+            </span>
+            <input
+              className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none"
+              placeholder="Buscar cidade ou coordenadas..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchError(null);
+              }}
+            />
+            {searchLoading && (
+              <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />
+            )}
           </div>
-          <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13', flexShrink: 0 }}>Ir</button>
+          <button
+            type="submit"
+            disabled={searchLoading || !searchQuery.trim()}
+            className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+            style={{ background: '#ec5b13', flexShrink: 0 }}
+          >
+            Ir
+          </button>
         </form>
       )}
 
       {searchError && drawMode === 'none' && (
-        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none" style={{ top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+        <div
+          className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none"
+          style={{
+            top: 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(239,68,68,0.15)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            color: '#f87171',
+          }}
+        >
           {searchError}
         </div>
       )}
@@ -747,9 +1064,21 @@ export default function FieldMap() {
       {/* Seletor de camadas */}
       {drawMode === 'none' && (
         <div className="absolute top-4 left-4 z-[500] flex gap-1.5 pointer-events-auto">
-          {([{ key: 'osm', label: 'OpenStreetMap' }, { key: 'esri', label: 'Satélite HD' }] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
-            <button key={key} onClick={() => setMapLayer(key)} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-              style={{ background: mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: mapLayer === key ? '#fff' : '#94a3b8' }}>
+          {([
+            { key: 'osm', label: 'OpenStreetMap' },
+            { key: 'esri', label: 'Satélite HD' },
+          ] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setMapLayer(key)}
+              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+              style={{
+                background: mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: mapLayer === key ? '#fff' : '#94a3b8',
+              }}
+            >
               {label}
             </button>
           ))}
@@ -758,7 +1087,11 @@ export default function FieldMap() {
 
       {/* Botão Desenhar */}
       {drawMode === 'none' && (
-        <button onClick={() => setDrawMode('drawing')} className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto" style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
+        <button
+          onClick={() => setDrawMode('drawing')}
+          className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto"
+          style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}
+        >
           <span className="material-symbols-outlined text-base">add_location_alt</span>
           Desenhar Talhão
         </button>
@@ -767,22 +1100,82 @@ export default function FieldMap() {
       {/* Controles de desenho */}
       {drawMode === 'drawing' && (
         <>
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(236,91,19,0.3)' }}>
-            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>draw</span>
-            Clique para marcar vértices · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+          <div
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none"
+            style={{
+              background: 'rgba(8,8,9,0.92)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(236,91,19,0.3)',
+            }}
+          >
+            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>
+              draw
+            </span>
+            Clique para marcar vértices  {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
           </div>
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto" style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 420 }}>
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>{drawPoints.length} pontos · Novo Talhão</p>
-            <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Nome do talhão" value={fieldName} onChange={(e) => setFieldName(e.target.value)} />
+          <div
+            className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto"
+            style={{
+              background: 'rgba(8,8,9,0.95)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              minWidth: 420,
+            }}
+          >
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
+              {drawPoints.length} pontos  Novo Talhão
+            </p>
+            <input
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
+              placeholder="Nome do talhão"
+              value={fieldName}
+              onChange={(e) => setFieldName(e.target.value)}
+            />
             <div className="grid grid-cols-2 gap-2">
-              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Cultura (ex: Soja)" value={fieldCultura} onChange={(e) => setFieldCultura(e.target.value)} />
-              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Variedade" value={fieldVariedade} onChange={(e) => setFieldVariedade(e.target.value)} />
+              <input
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
+                placeholder="Cultura (ex: Soja)"
+                value={fieldCultura}
+                onChange={(e) => setFieldCultura(e.target.value)}
+              />
+              <input
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
+                placeholder="Variedade"
+                value={fieldVariedade}
+                onChange={(e) => setFieldVariedade(e.target.value)}
+              />
             </div>
-            <input type="date" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 focus:outline-none focus:border-orange-500/40" value={fieldDataPlantio} onChange={(e) => setFieldDataPlantio(e.target.value)} />
-            {drawPoints.length >= 3 && <p className="text-[10px] text-slate-400 text-center">Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span></p>}
+            <input
+              type="date"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 focus:outline-none focus:border-orange-500/40"
+              value={fieldDataPlantio}
+              onChange={(e) => setFieldDataPlantio(e.target.value)}
+            />
+            {drawPoints.length >= 3 && (
+              <p className="text-[10px] text-slate-400 text-center">
+                Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span>
+              </p>
+            )}
             <div className="flex gap-2">
-              <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>{isSaving ? 'Salvando...' : 'Salvar Talhão'}</button>
-              <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>Cancelar</button>
+              <button
+                onClick={finishDrawing}
+                disabled={isSaving || drawPoints.length < 3}
+                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+                style={{ background: '#ec5b13' }}
+              >
+                {isSaving ? 'Salvando...' : 'Salvar Talhão'}
+              </button>
+              <button
+                onClick={resetForm}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: '#94a3b8',
+                }}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </>
