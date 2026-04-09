@@ -362,7 +362,6 @@ function ScenesPanel({
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico  RGB' },
-          { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar  SAR' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button
             key={key}
@@ -404,10 +403,10 @@ function ScenesPanel({
         ) : currentScenes.length === 0 ? (
           <div className="py-6 text-center">
             <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#334155' }}>
-              {tab === 's2' ? 'cloud_off' : 'signal_disconnected'}
+              {'cloud_off'}
             </span>
             <p className="text-[10px]" style={{ color: '#64748b' }}>
-              Nenhuma imagem {tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.
+              Nenhuma imagem Sentinel-2 nos últimos 90 dias.
             </p>
           </div>
         ) : (
