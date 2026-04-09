@@ -551,11 +551,28 @@ export default function FieldMap() {
       const headers = await buildAuthHeaders();
       const modeQuery = querySource === 's2' ? `&mode=${filter}` : '';
       const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${querySource}&scene_date=${date}${modeQuery}`;
-      const resp = await fetch(url, { headers });
+      console.log('[Sentinel overlay] URL:', url);
 
-      if (!resp.ok) {
-        const detail = await resp.text().catch(() => resp.statusText);
-        throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 150)}`);
+      let resp: Response | null = null;
+      let errorDetail = '';
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const attemptResp = await fetch(url, { headers, cache: 'no-store' });
+        resp = attemptResp;
+        if (attemptResp.ok) break;
+
+        errorDetail = await attemptResp.text().catch(() => attemptResp.statusText);
+        console.warn(
+          `[Sentinel overlay] tentativa ${attempt}/3 falhou: HTTP ${attemptResp.status} - ${errorDetail.slice(0, 120)}`,
+        );
+
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
+      }
+
+      if (!resp || !resp.ok) {
+        throw new Error(`HTTP ${resp?.status ?? 0}: ${errorDetail.slice(0, 150)}`);
       }
 
       const blob = await resp.blob();

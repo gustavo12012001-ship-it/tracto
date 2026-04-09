@@ -4,6 +4,7 @@ sentinel_service.py — Versão 4.3
 
 import base64
 import logging
+import math
 import os
 import threading
 import time
@@ -90,6 +91,28 @@ def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | No
     if valid[0] != valid[-1]:
         valid.append(valid[0])
     return {"type": "Polygon", "coordinates": [valid]}
+
+
+def _estimate_output_size_from_bbox(bbox: list[float], source: str) -> int:
+    """
+    Estima resolução de saída a partir do tamanho do talhão para reduzir blur/pixelização.
+    Sentinel-2 usa alvo ~10m/px; Sentinel-1 usa alvo ~20m/px.
+    """
+    lon_min, lat_min, lon_max, lat_max = bbox
+    lon_span = abs(lon_max - lon_min)
+    lat_span = abs(lat_max - lat_min)
+    center_lat = (lat_min + lat_max) / 2.0
+
+    meters_per_deg_lat = 111_320.0
+    meters_per_deg_lng = 111_320.0 * max(math.cos(math.radians(center_lat)), 0.2)
+    max_span_m = max(lat_span * meters_per_deg_lat, lon_span * meters_per_deg_lng)
+
+    target_m_per_px = 20.0 if source == "s1" else 10.0
+    px = int(max_span_m / target_m_per_px)
+
+    # Mantem faixa segura da Process API e arredonda para blocos previsiveis.
+    px = max(512, min(1536, px))
+    return int((px + 63) // 64 * 64)
 
 
 STAC_URL = "https://earth-search.aws.element84.com/v1/search"
@@ -305,7 +328,7 @@ function evaluatePixel(s) {
         data_filter_base["maxCloudCoverage"] = 100
         data_filter_base["mosaickingOrder"] = "mostRecent"
 
-    output_size = 512 if source == "s1" else 1024
+    output_size = _estimate_output_size_from_bbox(bbox, source)
 
     payload: dict = {
         "input": {"bounds": bounds_input, "data": [{"type": data_type, "dataFilter": dict(data_filter_base)}]},
@@ -316,30 +339,43 @@ function evaluatePixel(s) {
     for from_dt, to_dt in windows:
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["from"] = from_dt
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["to"] = to_dt
-        try:
-            logging.info("[Sentinel] overlay POST source=%s mode=%s field_id=%s from=%s", source, mode, field_id, from_dt)
-            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-            with httpx.Client(timeout=60.0) as http_client:
-                resp = http_client.post(PROCESS_API_URL, headers=headers, json=payload)
-            if resp.status_code == 200:
-                ct = resp.headers.get("content-type", "")
-                if "image" in ct:
-                    _set_cached_overlay(cache_key, resp.content)
-                    return resp.content
-                logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
-            elif resp.status_code == 401:
-                logging.warning("[Sentinel] 401 — renovando token")
-                with _token_lock:
-                    _token_cache["access_token"] = None
-                    _token_cache["expires_at"] = 0.0
-                token = get_oauth_token() or token
-                continue
-            else:
-                logging.warning("[Sentinel] HTTP %d body=%s", resp.status_code, resp.text[:300])
-        except httpx.TimeoutException:
-            logging.warning("[Sentinel] Timeout source=%s from=%s", source, from_dt)
-        except Exception as exc:
-            logging.error("[Sentinel] Erro source=%s: %s", source, exc)
+        for attempt in range(1, 4):
+            try:
+                logging.info(
+                    "[Sentinel] overlay POST source=%s mode=%s field_id=%s from=%s size=%sx%s attempt=%d",
+                    source,
+                    mode,
+                    field_id,
+                    from_dt,
+                    output_size,
+                    output_size,
+                    attempt,
+                )
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                with httpx.Client(timeout=60.0) as http_client:
+                    resp = http_client.post(PROCESS_API_URL, headers=headers, json=payload)
+
+                if resp.status_code == 200:
+                    ct = resp.headers.get("content-type", "")
+                    if "image" in ct:
+                        _set_cached_overlay(cache_key, resp.content)
+                        return resp.content
+                    logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
+                elif resp.status_code == 401:
+                    logging.warning("[Sentinel] 401 — renovando token")
+                    with _token_lock:
+                        _token_cache["access_token"] = None
+                        _token_cache["expires_at"] = 0.0
+                    token = get_oauth_token() or token
+                else:
+                    logging.warning("[Sentinel] HTTP %d body=%s", resp.status_code, resp.text[:300])
+            except httpx.TimeoutException:
+                logging.warning("[Sentinel] Timeout source=%s from=%s attempt=%d", source, from_dt, attempt)
+            except Exception as exc:
+                logging.error("[Sentinel] Erro source=%s attempt=%d: %s", source, attempt, exc)
+
+            if attempt < 3:
+                time.sleep(0.5 * attempt)
 
     logging.error("[Sentinel] Todas as janelas falharam field_id=%s source=%s mode=%s", field_id, source, mode)
     return None
