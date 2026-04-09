@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
 const maskPhone = (v: string) => {
@@ -35,6 +35,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const [success, setSuccess] = useState(false);
 
@@ -58,6 +59,10 @@ export default function Register() {
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.length < 10) {
       setError('Telefone inválido.');
+      return;
+    }
+    if (!acceptedTerms) {
+      setError('Você precisa aceitar os Termos de Uso e a Política de Privacidade para continuar.');
       return;
     }
 
@@ -268,6 +273,42 @@ export default function Register() {
                     required
                   />
                 </div>
+
+                {/* Aceite de termos */}
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <div className="relative flex-shrink-0 mt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div
+                      className="w-5 h-5 rounded-md border flex items-center justify-center transition-all"
+                      style={{
+                        background: acceptedTerms ? '#f97316' : 'rgba(255,255,255,0.05)',
+                        borderColor: acceptedTerms ? '#f97316' : 'rgba(255,255,255,0.15)',
+                      }}
+                    >
+                      {acceptedTerms && (
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                          <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-slate-400 leading-relaxed">
+                    Li e aceito os{' '}
+                    <Link to="/terms" target="_blank" className="text-orange-400 hover:text-orange-300 underline">
+                      Termos de Uso
+                    </Link>{' '}
+                    e a{' '}
+                    <Link to="/privacy" target="_blank" className="text-orange-400 hover:text-orange-300 underline">
+                      Política de Privacidade
+                    </Link>{' '}
+                    da Tracto, incluindo o tratamento dos meus dados pessoais conforme a LGPD.
+                  </span>
+                </label>
 
                 {/* Error banner */}
                 {error && (

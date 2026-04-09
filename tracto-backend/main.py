@@ -413,6 +413,19 @@ async def sentinel_overlay_endpoint(
         lng = float(field_data.get("longitude", 0))
         boundaries = field_data.get("boundaries")
 
+        # Verifica credenciais antes de chamar a API paga
+        sentinel_id = os.getenv("SENTINEL_CLIENT_ID")
+        sentinel_secret = os.getenv("SENTINEL_CLIENT_SECRET")
+        if not sentinel_id or not sentinel_secret:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Credenciais Sentinel Hub não configuradas. "
+                    "Adicione SENTINEL_CLIENT_ID e SENTINEL_CLIENT_SECRET nas variáveis de ambiente do servidor. "
+                    "Obtenha suas credenciais em: https://shapps.dataspace.copernicus.eu/"
+                ),
+            )
+
         image_bytes = get_true_color_overlay(
             field_id=field_id,
             lat=lat,
@@ -427,7 +440,11 @@ async def sentinel_overlay_endpoint(
         if not image_bytes:
             raise HTTPException(
                 status_code=503,
-                detail=f"Imagem Sentinel-{'2' if source == 's2' else '1'} não disponível para este talhão no momento.",
+                detail=(
+                    f"Imagem Sentinel-{'2' if source == 's2' else '1'} não disponível para este talhão e data selecionada. "
+                    "Possíveis causas: cobertura de nuvens alta, janela de tempo sem imagem, ou limite de processamento atingido. "
+                    "Tente outra data ou aguarde alguns minutos."
+                ),
             )
 
         return Response(

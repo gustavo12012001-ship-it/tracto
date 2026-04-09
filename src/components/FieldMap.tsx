@@ -320,8 +320,10 @@ function ScenesPanel({
             <p className="text-[10px]" style={{ color: '#64748b' }}>Buscando imagens disponíveis...</p>
           </div>
         ) : scenes.error ? (
-          <div className="py-6 text-center">
-            <p className="text-[10px]" style={{ color: '#f87171' }}>{scenes.error}</p>
+          <div className="py-6 text-center px-4">
+            <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#f87171' }}>cloud_off</span>
+            <p className="text-[10px] font-semibold mb-1" style={{ color: '#f87171' }}>Falha ao buscar cenas</p>
+            <p className="text-[10px]" style={{ color: '#64748b' }}>{scenes.error}</p>
           </div>
         ) : currentScenes.length === 0 ? (
           <div className="py-6 text-center">
@@ -349,9 +351,12 @@ function ScenesPanel({
       </div>
 
       {/* Footer info */}
-      <div className="px-4 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="px-4 py-2.5 flex flex-col gap-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          Fonte: Copernicus · Earth Search STAC · Grátis
+          Catálogo: Copernicus · Earth Search STAC (gratuito)
+        </p>
+        <p className="text-[9px] text-center" style={{ color: '#1e3a5f' }}>
+          Renderização: Sentinel Hub Processing API (requer credenciais)
         </p>
       </div>
     </div>
@@ -432,8 +437,24 @@ export default function FieldMap() {
       const resp = await fetch(url, { headers });
 
       if (!resp.ok) {
-        const detail = await resp.text().catch(() => resp.statusText);
-        throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 150)}`);
+        let errorMsg = `Erro ${resp.status}`;
+        try {
+          const ct = resp.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const json = await resp.json() as { detail?: string };
+            errorMsg = json.detail || errorMsg;
+          } else {
+            const text = await resp.text();
+            // tenta parsear JSON mesmo sem content-type correto
+            try {
+              const json = JSON.parse(text) as { detail?: string };
+              errorMsg = json.detail || text.slice(0, 200) || errorMsg;
+            } catch {
+              errorMsg = text.slice(0, 200) || errorMsg;
+            }
+          }
+        } catch { /* mantém errorMsg padrão */ }
+        throw new Error(errorMsg);
       }
 
       const blob = await resp.blob();
@@ -627,8 +648,12 @@ export default function FieldMap() {
             </div>
           )}
           {!overlay.loading && overlay.error && (
-            <div className="px-3 py-2 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 300 }}>
-              ⚠ {overlay.error}
+            <div className="px-3 py-2.5 rounded-xl text-[10px] font-medium flex flex-col gap-1" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 320 }}>
+              <span className="font-bold flex items-center gap-1.5">
+                <span>⚠</span>
+                <span>Imagem satelital indisponível</span>
+              </span>
+              <span style={{ color: '#94a3b8' }}>{overlay.error}</span>
             </div>
           )}
         </div>

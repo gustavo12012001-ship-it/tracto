@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
 export default function LandingPage() {
     const navigate = useNavigate();
     const [checking, setChecking] = useState(true);
     const [hasSession, setHasSession] = useState(false);
+    const [lgpdDismissed, setLgpdDismissed] = useState(() => {
+        return localStorage.getItem('tracto_lgpd_dismissed') === '1';
+    });
 
     useEffect(() => {
         let mounted = true;
@@ -317,7 +320,8 @@ export default function LandingPage() {
 <li><a className="hover:text-primary transition-colors cursor-pointer" onClick={() => document.getElementById('servicos')?.scrollIntoView({behavior: 'smooth'})}>Serviços</a></li>
 <li><a className="hover:text-primary transition-colors cursor-pointer" onClick={() => document.getElementById('proposito')?.scrollIntoView({behavior: 'smooth'})}>Propósito</a></li>
 <li><a className="hover:text-primary transition-colors cursor-pointer" onClick={() => document.getElementById('precos')?.scrollIntoView({behavior: 'smooth'})}>Planos</a></li>
-<li><a className="hover:text-primary transition-colors cursor-pointer">Segurança IP</a></li>
+<li><Link to="/privacy" className="hover:text-primary transition-colors">Privacidade (LGPD)</Link></li>
+<li><Link to="/terms" className="hover:text-primary transition-colors">Termos de Uso</Link></li>
 </ul>
 </div>
 <div>
@@ -335,9 +339,16 @@ export default function LandingPage() {
 </div>
 </div>
 <div className="pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8 fade-in-section visible">
+<div className="flex flex-col gap-2">
 <div className="text-slate-600 text-[10px] uppercase tracking-[0.2em]">
-                    © 2024 Tracto Agricultural Technologies.
+                    © 2026 Tracto Agricultural Technologies. Todos os direitos reservados.
                 </div>
+<div className="flex items-center gap-4">
+<Link to="/privacy" className="text-slate-600 hover:text-slate-400 text-[10px] transition-colors">Política de Privacidade</Link>
+<span className="text-slate-700 text-[10px]">·</span>
+<Link to="/terms" className="text-slate-600 hover:text-slate-400 text-[10px] transition-colors">Termos de Uso</Link>
+</div>
+</div>
 <div>
 <button onClick={() => navigate('/login')} className="bg-primary/10 border border-primary/20 text-primary px-10 py-4 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
                         Começar Agora
@@ -348,6 +359,48 @@ export default function LandingPage() {
 </footer>
 
 </div>
+
+        {/* Banner LGPD / Cookie Consent */}
+        {!lgpdDismissed && (
+            <div className="fixed bottom-0 left-0 right-0 z-[999] px-4 pb-4 pt-0">
+                <div
+                    style={{
+                        background: 'rgba(12,12,14,0.97)',
+                        border: '1px solid rgba(255,255,255,0.09)',
+                        backdropFilter: 'blur(20px)',
+                        WebkitBackdropFilter: 'blur(20px)',
+                    }}
+                    className="max-w-5xl mx-auto rounded-2xl px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center gap-4 shadow-2xl"
+                >
+                    <div className="flex items-start gap-3 flex-1">
+                        <span className="material-symbols-outlined text-xl flex-shrink-0 mt-0.5" style={{ color: '#f97316' }}>shield</span>
+                        <p className="text-slate-400 text-xs leading-relaxed">
+                            Utilizamos cookies e dados de localização para fornecer análises agronômicas precisas. Ao continuar, você concorda com nosso uso de cookies conforme nossa{' '}
+                            <Link to="/privacy" className="text-orange-400 underline hover:text-orange-300">Política de Privacidade</Link>
+                            {' '}e{' '}
+                            <Link to="/terms" className="text-orange-400 underline hover:text-orange-300">Termos de Uso</Link>.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                        <Link
+                            to="/privacy"
+                            className="text-slate-500 hover:text-slate-300 text-[10px] uppercase tracking-widest transition-colors"
+                        >
+                            Saiba mais
+                        </Link>
+                        <button
+                            onClick={() => {
+                                localStorage.setItem('tracto_lgpd_dismissed', '1');
+                                setLgpdDismissed(true);
+                            }}
+                            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap"
+                        >
+                            Aceitar e fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
         </>
     );
 }
