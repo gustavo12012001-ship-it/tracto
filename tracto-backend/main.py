@@ -128,6 +128,38 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
     }
 
+
+@app.get("/api/sentinel/test-auth")
+async def sentinel_test_auth():
+    """Endpoint temporário para testar autenticação Sentinel. Remover após debug."""
+    import os
+
+    client_id = os.getenv("SENTINEL_CLIENT_ID", "NAO_CONFIGURADO")
+    client_secret = os.getenv("SENTINEL_CLIENT_SECRET", "NAO_CONFIGURADO")
+
+    # Força renovação do token ignorando cache
+    try:
+        import httpx
+
+        response = httpx.post(
+            "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=15.0,
+        )
+        return {
+            "client_id": client_id,
+            "secret_length": len(client_secret),
+            "secret_preview": client_secret[:4] + "..." + client_secret[-4:],
+            "http_status": response.status_code,
+            "response": response.json(),
+        }
+    except Exception as e:
+        return {"error": str(e), "client_id": client_id}
+
 # --- Stage 3: Commercial, Push & WhatsApp ---
 
 @app.get("/api/billing/entitlements")
