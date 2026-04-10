@@ -149,3 +149,71 @@ def get_planet_thumbnail(scene_id: str) -> bytes | None:
     except Exception as exc:
         logging.warning("[Planet] Erro ao buscar thumbnail scene_id=%s: %s", scene_id, exc)
         return None
+
+
+def get_bbox_from_boundaries(boundaries, lat, lng):
+    if not boundaries or len(boundaries) < 3:
+        return [lng - 0.01, lat - 0.01, lng + 0.01, lat + 0.01]
+
+    lats = [float(p[0]) for p in boundaries if p and len(p) >= 2]
+    lngs = [float(p[1]) for p in boundaries if p and len(p) >= 2]
+    margin = 0.001
+    return [min(lngs) - margin, min(lats) - margin, max(lngs) + margin, max(lats) + margin]
+
+
+def get_planet_overlay(
+    field_id: str,
+    scene_id: str,
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+) -> bytes | None:
+    api_key = _get_api_key()
+    if not api_key:
+        return None
+
+    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+
+    import math
+
+    def lat_lng_to_tile(tile_lat, tile_lng, zoom):
+        n = 2 ** zoom
+        x = int((tile_lng + 180) / 360 * n)
+        y = int((1 - math.log(math.tan(math.radians(tile_lat)) + 1 / math.cos(math.radians(tile_lat))) / math.pi) / 2 * n)
+        return x, y
+
+    zoom = 15
+    min_lng, min_lat, max_lng, max_lat = bbox
+    center_lat = (min_lat + max_lat) / 2
+    center_lng = (min_lng + max_lng) / 2
+    tile_x, tile_y = lat_lng_to_tile(center_lat, center_lng, zoom)
+
+    try:
+        import io
+        from PIL import Image
+
+        tiles: list[tuple[int, int, bytes]] = []
+        with httpx.Client(timeout=30.0) as client:
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    url = f"https://tiles.planet.com/data/v1/PSScene/{scene_id}/{zoom}/{tile_x + dx}/{tile_y + dy}.png?api_key={api_key}"
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        tiles.append((dx, dy, resp.content))
+
+        if not tiles:
+            return None
+
+        size = 256
+        composite = Image.new("RGBA", (size * 3, size * 3))
+        for dx, dy, content in tiles:
+            tile_img = Image.open(io.BytesIO(content))
+            composite.paste(tile_img, ((dx + 1) * size, (dy + 1) * size))
+
+        output = io.BytesIO()
+        composite.save(output, format="PNG")
+        return output.getvalue()
+
+    except Exception as exc:
+        logging.warning("[Planet] Erro overlay field_id=%s scene_id=%s: %s", field_id, scene_id, exc)
+        return None

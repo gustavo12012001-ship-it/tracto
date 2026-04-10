@@ -508,6 +508,35 @@ async def planet_thumbnail_endpoint(
     )
 
 
+@app.get("/api/planet/overlay")
+@limiter.limit("10/minute")
+async def planet_overlay_endpoint(
+    request: Request,
+    field_id: str,
+    scene_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    from services.planet_service import get_planet_overlay, get_bbox_from_boundaries
+
+    field_data = farm_service.get_field_by_id(user.id, field_id)
+    if not field_data:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+
+    lat = float(field_data.get("latitude", 0))
+    lng = float(field_data.get("longitude", 0))
+    boundaries = field_data.get("boundaries")
+    image_bytes = get_planet_overlay(field_id=field_id, scene_id=scene_id, lat=lat, lng=lng, boundaries=boundaries)
+
+    if not image_bytes:
+        raise HTTPException(status_code=503, detail="Imagem Planet não disponível.")
+
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=1800"},
+    )
+
+
 @app.post("/api/geo/search")
 @limiter.limit("10/minute")
 async def geo_search_endpoint(

@@ -10,3 +10,4 @@ slowapi
 limits
 requests
 anthropic
+Pillow
