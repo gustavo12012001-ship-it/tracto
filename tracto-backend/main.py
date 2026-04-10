@@ -41,6 +41,7 @@ from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
 from services.sentinel_service import get_ndvi_image, get_true_color_overlay, get_available_scenes
+from services.planet_service import get_planet_scenes, get_planet_thumbnail
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -463,6 +464,48 @@ async def sentinel_overlay_endpoint(
     except Exception as exc:
         logging.error("[/api/sentinel/overlay] Erro field_id=%s source=%s: %s", field_id, source, exc)
         raise HTTPException(status_code=500, detail="Erro interno ao gerar overlay Sentinel.") from exc
+
+
+@app.get("/api/planet/scenes")
+@limiter.limit("20/minute")
+async def planet_scenes_endpoint(
+    request: Request,
+    field_id: str,
+    lookback_days: int = 30,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        lookback_days = min(max(lookback_days, 7), 90)
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+        scenes = get_planet_scenes(lat=lat, lng=lng, boundaries=boundaries, lookback_days=lookback_days)
+        return {"field_id": field_id, "scenes": scenes, "total": len(scenes)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/planet/scenes] Erro field_id=%s: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar cenas Planet.") from exc
+
+
+@app.get("/api/planet/thumbnail/{scene_id}")
+@limiter.limit("30/minute")
+async def planet_thumbnail_endpoint(
+    request: Request,
+    scene_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    image_bytes = get_planet_thumbnail(scene_id)
+    if not image_bytes:
+        raise HTTPException(status_code=503, detail="Thumbnail Planet não disponível.")
+    return Response(
+        content=image_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.post("/api/geo/search")
