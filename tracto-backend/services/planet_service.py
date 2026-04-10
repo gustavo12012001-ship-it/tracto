@@ -117,12 +117,35 @@ def get_planet_thumbnail(scene_id: str) -> bytes | None:
         return None
     try:
         with httpx.Client(timeout=30.0) as client:
-            resp = client.get(
-                f"{PLANET_BASE_URL}/item-types/PSScene/items/{scene_id}/thumb",
+            assets_resp = client.get(
+                f"{PLANET_BASE_URL}/item-types/PSScene/items/{scene_id}/assets",
                 auth=(api_key, ""),
             )
-            resp.raise_for_status()
-            return resp.content
+            assets_resp.raise_for_status()
+            assets = assets_resp.json()
+
+            for asset_type in ["ortho_visual", "visual", "ortho_analytic_4b"]:
+                asset = assets.get(asset_type)
+                if asset and asset.get("status") == "active":
+                    location = asset.get("location")
+                    if location:
+                        img_resp = client.get(location, auth=(api_key, ""))
+                        img_resp.raise_for_status()
+                        return img_resp.content
+
+            thumb_resp = client.get(
+                f"{PLANET_BASE_URL}/item-types/PSScene/items/{scene_id}",
+                auth=(api_key, ""),
+            )
+            thumb_resp.raise_for_status()
+            item = thumb_resp.json()
+            thumb_url = item.get("_links", {}).get("thumbnail")
+            if thumb_url:
+                tr = client.get(thumb_url, auth=(api_key, ""))
+                tr.raise_for_status()
+                return tr.content
+
+        return None
     except Exception as exc:
         logging.warning("[Planet] Erro ao buscar thumbnail scene_id=%s: %s", scene_id, exc)
         return None
