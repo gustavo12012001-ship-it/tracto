@@ -471,7 +471,7 @@ async def sentinel_overlay_endpoint(
 async def planet_scenes_endpoint(
     request: Request,
     field_id: str,
-    lookback_days: int = 30,
+    lookback_days: int = 90,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:

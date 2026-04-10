@@ -424,7 +424,7 @@ export default function FieldMap() {
         const headers = await buildAuthHeaders();
         const [sentinelResp, planetResp] = await Promise.allSettled([
           fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
-          fetch(`${API_URL}/api/planet/scenes?field_id=${activeFieldId}&lookback_days=30`, { headers }),
+          fetch(`${API_URL}/api/planet/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
         ]);
 
         const sentinelData = sentinelResp.status === 'fulfilled' && sentinelResp.value.ok
