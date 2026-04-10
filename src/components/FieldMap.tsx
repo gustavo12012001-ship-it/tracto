@@ -408,6 +408,7 @@ export default function FieldMap() {
 
   // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+  const [planetTileSceneId, setPlanetTileSceneId] = useState<string | null>(null);
   const prevUrlRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
@@ -468,19 +469,16 @@ export default function FieldMap() {
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
 
     try {
-      const headers = await buildAuthHeaders();
-
       if (source === 'planet') {
         const scene = scenes.planet.find(s => s.date === date);
         if (!scene?.scene_id) return;
-        const resp = await fetch(`${API_URL}/api/planet/thumbnail/${scene.scene_id}`, { headers });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        prevUrlRef.current = objectUrl;
-        setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+        setPlanetTileSceneId(scene.scene_id);
+        setOverlay({ url: 'planet-tile', bounds, loading: false, error: null, sceneKey });
         return;
       }
+
+      setPlanetTileSceneId(null);
+      const headers = await buildAuthHeaders();
 
       const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${source}&scene_date=${date}`;
       const resp = await fetch(url, { headers });
@@ -520,9 +518,15 @@ export default function FieldMap() {
   // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    setPlanetTileSceneId(null);
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);
+
+  const handleCloseScenesPanel = () => {
+    setPlanetTileSceneId(null);
+    setShowScenesPanel(false);
+  };
 
   useEffect(() => () => { if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current); }, []);
 
@@ -608,8 +612,17 @@ export default function FieldMap() {
           </>
         )}
 
+        {planetTileSceneId && (
+          <TileLayer
+            url={`https://tiles.planet.com/data/v1/PSScene/${planetTileSceneId}/{z}/{x}/{y}.png?api_key=${import.meta.env.VITE_PLANET_API_KEY}`}
+            opacity={0.9}
+            maxZoom={18}
+            zIndex={400}
+          />
+        )}
+
         {/* Overlay da cena selecionada */}
-        {overlay.url && overlay.bounds && (
+        {overlay.url && overlay.url !== 'planet-tile' && overlay.bounds && (
           <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />
         )}
 
@@ -682,7 +695,7 @@ export default function FieldMap() {
           scenes={scenes}
           activeSceneKey={overlay.sceneKey}
           overlayLoading={overlay.loading}
-          onClose={() => setShowScenesPanel(false)}
+          onClose={handleCloseScenesPanel}
           onSelectScene={handleSelectScene}
         />
       )}
