@@ -101,17 +101,17 @@ export default function LandingPage() {
 </div>
 <div className="relative z-10 max-w-5xl mx-auto px-6 text-center text-white mt-10 fade-in-section visible">
 <h1 className="text-4xl md:text-5xl font-light tracking-tight mb-8 leading-snug">
-                O campo em sincronia,<br/><span className="text-primary font-medium">na palma da sua mão.</span>
+                Sincronize o campo<br/><span className="text-primary font-medium">na palma da sua mão.</span>
 </h1>
 <p className="text-base md:text-lg text-slate-100 max-w-2xl mx-auto mb-12 font-light leading-loose drop-shadow-md">
-                A Tracto une Tecnologia Orbital Proprietária e Nossa Inteligência Agronômica Dedicada diretamente à sua interface mobile para decisões de alta precisão.
+                A Tracto combina tecnologia orbital proprietária e inteligência agronômica exclusiva, entregues diretamente na sua interface mobile para decisões precisas e ágeis.
             </p>
 <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
 <button onClick={() => navigate('/login')} className="bg-primary hover:bg-orange-600 text-white px-12 py-5 rounded-full text-xs font-bold uppercase tracking-widest transition-all hover:shadow-[0_0_40px_rgba(249,115,22,0.4)] active:scale-95">
-                    Começar Agora
+                    Começar agora
                 </button>
 <a className="text-white hover:text-white/80 text-[10px] uppercase tracking-[0.3em] transition-all drop-shadow-md cursor-pointer" onClick={() => document.getElementById('proposito')?.scrollIntoView({behavior: 'smooth'})}>
-                    Descobrir o Ecossistema
+                    Descobrir o ecossistema
                 </a>
 </div>
 </div>
@@ -121,7 +121,7 @@ export default function LandingPage() {
 <h2 className="text-[10px] font-bold text-primary tracking-[0.5em] uppercase mb-8">Nosso Propósito</h2>
 <div className="space-y-8">
 <p className="text-2xl md:text-4xl font-light text-slate-900 dark:text-white leading-relaxed tracking-tight">
-                    Conectar a inteligência orbital e climática proprietária à simplicidade de um chat intuitivo, transformando dados complexos em decisões diárias e precisas.
+                    Conectar inteligência orbital e climática proprietária à simplicidade de uma interface intuitiva.
                 </p>
 <p className="text-base md:text-lg text-slate-500 dark:text-slate-400 font-light leading-loose max-w-2xl mx-auto pt-4">
                     Nossa missão é otimizar o manejo, promovendo produtividade e sustentabilidade para a sua lavoura.
@@ -142,7 +142,7 @@ export default function LandingPage() {
 </div>
 <h4 className="text-lg font-semibold mb-4 dark:text-white tracking-tight">Tecnologia Orbital Proprietária</h4>
 <p className="text-slate-500 dark:text-slate-400 text-sm leading-loose font-light">
-                        Análise de Imagens de Frequência Contínua para monitoramento de índices de vegetação e saúde da plantação com precisão científica.
+                        Análise de imagens de frequência contínua para monitoramento de índices de vegetação e saúde da plantação com precisão agronômica.
                     </p>
 </div>
 <div className="group fade-in-section visible">
@@ -191,7 +191,7 @@ export default function LandingPage() {
 <span className="text-[9px] text-emerald-600/60 dark:text-emerald-400 mt-2 block text-right">08:32</span>
 </div>
 <div className="bg-white dark:bg-slate-700 p-4 rounded-xl rounded-tl-none shadow-sm max-w-[85%] text-[13px]">
-<p className="dark:text-white leading-relaxed">Previsão de precipitação de 5mm para amanhã. A Inteligência Agronômica Dedicada sugere otimizar a nutrição foliar.</p>
+<p className="dark:text-white leading-relaxed">Chuva prevista de 5mm amanhã.</p>
 <span className="text-[9px] text-slate-400 mt-2 block text-right">08:32</span>
 </div>
 </div>
@@ -250,7 +250,7 @@ export default function LandingPage() {
 <ul className="space-y-6 mb-10 flex-1">
 <li className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-light">
 <span className="material-symbols-outlined text-accent-green text-sm">check</span>
-                            Relatório diário mobile
+                            Relatório diário com alertas automáticos.
                         </li>
 <li className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-light">
 <span className="material-symbols-outlined text-accent-green text-sm">check</span>
@@ -270,7 +270,7 @@ export default function LandingPage() {
 <ul className="space-y-6 mb-10 flex-1">
 <li className="flex items-center gap-4 text-xs text-slate-300 font-light">
 <span className="material-symbols-outlined text-primary text-sm">check</span>
-                            Monitoramento Ilimitado
+                            Monitoramento orbital ilimitado.
                         </li>
 <li className="flex items-center gap-4 text-xs text-slate-300 font-light">
 <span className="material-symbols-outlined text-primary text-sm">check</span>
@@ -292,7 +292,7 @@ export default function LandingPage() {
                         </li>
 <li className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 font-light">
 <span className="material-symbols-outlined text-accent-green text-sm">check</span>
-                            Consultoria Individual
+                            Integração via API.
                         </li>
 </ul>
 <button onClick={() => navigate('/login')} className="w-full py-4 rounded-full border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-bold uppercase tracking-widest hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">Contato</button>
@@ -306,7 +306,7 @@ export default function LandingPage() {
 <div className="col-span-1 lg:col-span-2">
 <span className="text-xl font-bold tracking-[0.3em] mb-6 block">TRACTO</span>
 <p className="text-slate-500 text-sm max-w-sm leading-loose font-light mb-8">
-                        Liderando a revolução digital no campo com Tecnologia Orbital Proprietária e inteligência de precisão.
+                        Liderando a revolução digital no campo com tecnologia orbital e inteligência agronômica de precisão.
                     </p>
 <div className="flex gap-8">
 <a className="text-slate-600 hover:text-primary transition-colors cursor-pointer">
@@ -335,13 +335,17 @@ export default function LandingPage() {
 <span className="material-symbols-outlined text-primary text-lg">call</span>
                             +55 (11) 99999-9999
                         </li>
+<li className="flex items-center gap-4">
+<span className="material-symbols-outlined text-primary text-lg">badge</span>
+                            CNPJ 00.000.000/0001-00
+                        </li>
 </ul>
 </div>
 </div>
 <div className="pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8 fade-in-section visible">
 <div className="flex flex-col gap-2">
 <div className="text-slate-600 text-[10px] uppercase tracking-[0.2em]">
-                    © 2026 Tracto Agricultural Technologies. Todos os direitos reservados.
+                    © 2026 Tracto. Todos os direitos reservados.
                 </div>
 <div className="flex items-center gap-4">
 <Link to="/privacy" className="text-slate-600 hover:text-slate-400 text-[10px] transition-colors">Política de Privacidade</Link>
