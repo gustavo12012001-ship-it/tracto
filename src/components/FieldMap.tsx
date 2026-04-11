@@ -59,6 +59,8 @@ interface OverlayState {
   loading: boolean;
   error: string | null;
   sceneKey: string | null; // "field_id|source|scene_id"
+  cacheStatus: 'HIT' | 'MISS' | null;
+  sceneDate: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -144,15 +146,20 @@ function InitialCenterController() {
   const done = useRef(false);
   useEffect(() => {
     if (done.current) return;
-    if (fields.length > 0) {
-      if (fields[0].boundaries && fields[0].boundaries.length >= 3) {
-        map.flyToBounds(computeBoundsFromBoundaries(fields[0].boundaries) as L.LatLngBoundsExpression, { padding: [80, 80], duration: 0 });
-      } else {
-        map.setView([fields[0].lat, fields[0].lng], 15);
-      }
+    // PRIORIDADE 1: Se há fields com boundaries, usar o primeiro com boundaries válidos
+    const fieldWithBoundaries = fields.find((f) => f.boundaries && f.boundaries.length >= 3);
+    if (fieldWithBoundaries && fieldWithBoundaries.boundaries) {
+      map.flyToBounds(computeBoundsFromBoundaries(fieldWithBoundaries.boundaries) as L.LatLngBoundsExpression, { padding: [80, 80], duration: 0 });
       done.current = true;
       return;
     }
+    // PRIORIDADE 2: Se há qualquer field, usar a localização do primeiro
+    if (fields.length > 0) {
+      map.setView([fields[0].lat, fields[0].lng], 15);
+      done.current = true;
+      return;
+    }
+    // PRIORIDADE 3: Se location é precise, usar
     if (locationStatus === 'precise' && currentLocation) {
       map.setView([currentLocation.lat, currentLocation.lng], 13);
       done.current = true;
@@ -407,7 +414,7 @@ export default function FieldMap() {
   const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], planet: [], loading: false, error: null, fieldId: null });
 
   // Overlay
-  const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+  const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
   const [planetActivating, setPlanetActivating] = useState(false);
   const planetRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevUrlRef = useRef<string | null>(null);
@@ -476,7 +483,7 @@ export default function FieldMap() {
 
     const bounds = computeBoundsFromBoundaries(activeField.boundaries);
 
-    setOverlay({ url: null, bounds, loading: true, error: null, sceneKey });
+    setOverlay({ url: null, bounds, loading: true, error: null, sceneKey, cacheStatus: null, sceneDate: null });
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
 
     try {
@@ -516,7 +523,7 @@ export default function FieldMap() {
         const blob = await resp.blob();
         const objectUrl = URL.createObjectURL(blob);
         prevUrlRef.current = objectUrl;
-        setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey });
+        setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey, cacheStatus: null, sceneDate: null });
 
         // Se asset ainda está sendo ativado, agenda retry em 30s para buscar alta resolução
         const assetStatus = resp.headers.get('X-Asset-Status');
@@ -531,7 +538,17 @@ export default function FieldMap() {
         return;
       }
 
-      const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${source}&scene_date=${date}`;
+      const cloud = typeof scene.cloud_coverage === 'number' ? scene.cloud_coverage : null;
+      const params = new URLSearchParams({
+        field_id: activeFieldId,
+        source,
+        scene_date: date,
+        scene_id: sceneId,
+      });
+      if (cloud !== null) {
+        params.set('cloud_coverage', String(cloud));
+      }
+      const url = `${API_URL}/api/sentinel/overlay?${params.toString()}`;
       const resp = await fetch(url, { headers });
 
       if (!resp.ok) {
@@ -558,11 +575,22 @@ export default function FieldMap() {
       const blob = await resp.blob();
       const objectUrl = URL.createObjectURL(blob);
       prevUrlRef.current = objectUrl;
-      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+      const cacheHeader = resp.headers.get('X-Cache');
+      const sceneDateHeader = resp.headers.get('X-Scene-Date');
+      const cacheStatus = cacheHeader === 'HIT' || cacheHeader === 'MISS' ? cacheHeader : null;
+      setOverlay({
+        url: objectUrl,
+        bounds,
+        loading: false,
+        error: null,
+        sceneKey,
+        cacheStatus,
+        sceneDate: sceneDateHeader,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar imagem.';
       console.error('[overlay]', msg);
-      setOverlay({ url: null, bounds, loading: false, error: msg, sceneKey });
+      setOverlay({ url: null, bounds, loading: false, error: msg, sceneKey, cacheStatus: null, sceneDate: null });
     }
   };
 
@@ -571,7 +599,7 @@ export default function FieldMap() {
     if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
     setPlanetActivating(false);
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
-    setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+    setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);
 
@@ -772,7 +800,10 @@ export default function FieldMap() {
       {overlay.url && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · True Color'} · Cache 30min
+            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · True Color'}
+            {overlay.cacheStatus === 'HIT' && ' · Cache HIT'}
+            {overlay.cacheStatus === 'MISS' && ' · Gerado agora'}
+            {!overlay.cacheStatus && ' · Cache local'}
           </div>
         </div>
       )}

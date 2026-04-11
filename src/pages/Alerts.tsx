@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import useAppStore from '../store/useAppStore';
 import type { Alert } from '../store/useAppStore';
-import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -63,7 +62,6 @@ function mapSnapshotAlerts(rawAlerts: Array<Record<string, unknown>>): Alert[] {
 export default function Alerts() {
   const navigate = useNavigate();
   const {
-    currentLocation,
     fields,
     weatherCache,
     alerts,
@@ -76,16 +74,8 @@ export default function Alerts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const didAutoLoad = useRef(false);
-  
 
-  const activeField = activeFieldId
-    ? fields.find((field) => field.id === activeFieldId) ?? null
-    : null;
-
-  const loc = activeField
-    || fields[fields.length - 1]
-    || currentLocation
-    || FALLBACK_LOCATION;
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : null;
   const snapshot = activeFieldId ? fieldIntelligenceById[activeFieldId] : null;
 
   const visibleAlerts = (alerts as AlertExtra[]).filter((a) => !a.dismissed);
@@ -113,7 +103,7 @@ export default function Alerts() {
   };
   const localAlerts = getLocalAlerts();
 
-  const loadAlerts = useCallback(async () => {
+  const loadAlerts = useCallback(async (forceRefresh = false) => {
     if (!activeFieldId) {
       setError('Selecione um talhão ativo para carregar os alertas consolidados.');
       return;
@@ -121,7 +111,7 @@ export default function Alerts() {
     setLoading(true);
     setError(null);
     try {
-      const intelligence = await fetchFieldIntelligence(activeFieldId, true);
+      const intelligence = await fetchFieldIntelligence(activeFieldId, forceRefresh);
       const generated = intelligence?.alerts ? mapSnapshotAlerts(intelligence.alerts) : [];
       setAlerts(generated);
     } catch (e) {
@@ -135,7 +125,7 @@ export default function Alerts() {
   useEffect(() => {
     didAutoLoad.current = false;
     if (!activeFieldId) return;
-    void loadAlerts();
+    void loadAlerts(false);
   }, [activeFieldId, loadAlerts]);
 
   useEffect(() => {
@@ -143,7 +133,7 @@ export default function Alerts() {
 
     if (alerts.length === 0 && activeFieldId) {
       didAutoLoad.current = true;
-      void loadAlerts();
+      void loadAlerts(false);
     }
   }, [alerts.length, activeFieldId, loadAlerts]);
 
@@ -161,6 +151,15 @@ export default function Alerts() {
       `}</style>
 
       <main className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#0a0a0a' }}>
+        {/* VALIDAÇÃO: Nenhum talhão selecionado */}
+        {!activeFieldId || !activeField ? (
+          <div className="flex items-center justify-center h-screen bg-gradient-to-br from-amber-50 to-orange-100">
+            <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Nenhum talhão selecionado</h2>
+              <p className="text-gray-600 mb-6">Selecione um talhão ativo no mapa para visualizar alertas agronômicos.</p>
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 overflow-y-auto alert-scrollbar p-10">
 
           {/* ── Header + Reload ── */}
@@ -168,7 +167,7 @@ export default function Alerts() {
             <div>
               <h1 className="text-white font-bold text-xl">Alertas Inteligentes</h1>
               <p className="text-slate-400 text-xs mt-1">
-                Snapshot do talhão ativo · {loc?.name ?? 'Localização atual'}
+                Snapshot do talhão ativo · {activeField?.name ?? 'Talhão sem nome'}
               </p>
               {snapshot && (
                 <p className="text-slate-500 text-[11px] mt-1">
@@ -177,7 +176,7 @@ export default function Alerts() {
               )}
             </div>
             <button
-              onClick={loadAlerts}
+              onClick={() => void loadAlerts(true)}
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
               style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.3)' }}
@@ -238,7 +237,7 @@ export default function Alerts() {
                 Nenhuma anomalia crítica foi detectada pela nossa IA nos seus talhões monitorados no momento.
               </p>
               <button 
-                onClick={loadAlerts}
+                onClick={() => void loadAlerts(true)}
                 className="mt-6 text-green-400 text-xs font-bold uppercase tracking-widest hover:text-green-300 transition-colors"
               >
                 Refazer análise agora
@@ -385,6 +384,7 @@ export default function Alerts() {
           )}
 
         </div>
+        )}
       </main>
     </>
   );

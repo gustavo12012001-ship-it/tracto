@@ -9,6 +9,9 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    field_id: str = Field(validation_alias=AliasChoices("field_id", "activeFieldId"))
     messages: list[ChatMessage]
     field_id: str | None = None
     force_refresh: bool = False
@@ -16,6 +19,16 @@ class ChatRequest(BaseModel):
     image_base64: str | None = None
     image_mime_type: str | None = "image/jpeg"
     hourly_weather: dict | None = None
+    satellite_context: dict[str, Any] | None = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    used_field_id: str
+    used_field_name: str
+    snapshot_updated_at: str | None = None
+    s1_scene_date: str | None = None
+    s2_scene_date: str | None = None
 
 
 class AlertRequest(BaseModel):
@@ -52,6 +65,16 @@ class LatestSceneRequest(BaseModel):
     max_cloud_coverage: int = 40
 
 
+class SentinelPreloadRequest(BaseModel):
+    field_id: str
+    source: Literal["s1", "s2"] = "s2"
+    mode: str = "truecolor"
+    scene_id: str | None = None
+    scene_date: str | None = None
+    cloud_coverage: float | None = None
+    force_refresh: bool = False
+
+
 class GeoSearchRequest(BaseModel):
     query: str = Field(validation_alias=AliasChoices("query", "q"))
 
@@ -77,6 +100,7 @@ class SaveConversationRequest(BaseModel):
     conversation_id: str
     title: str
     messages: list[ChatMessage]
+    field_id: str | None = None
     farm_context: str | None = None
     created_at: str
     updated_at: str

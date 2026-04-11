@@ -4,14 +4,24 @@ Correção: indentação do bloco S1, evalscript S1 com 4 bandas RGBA, sem maxCl
 """
 
 import base64
+import hashlib
+import io
+import json
 import logging
 import os
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
+from PIL import Image
+
+from services import supabase_service
+
+# ── Configurações ───────────────────────────────────────────────────────────
+SENTINEL_CACHE_TTL_HOURS = float(os.getenv("SENTINEL_CACHE_TTL_HOURS", "24"))  # Default 24 horas
 
 # ── Cache de token OAuth ──────────────────────────────────────────────────────
 
@@ -64,6 +74,24 @@ def get_oauth_token() -> str | None:
 _overlay_lock = threading.Lock()
 _overlay_cache: dict[str, dict[str, Any]] = {}
 OVERLAY_TTL_SECONDS = 30 * 60
+SATELLITE_CACHE_BUCKET = os.getenv("SATELLITE_CACHE_BUCKET", "satellite-cache")
+SATELLITE_CACHE_VERSION = os.getenv("SATELLITE_CACHE_VERSION", "v1")
+
+
+@dataclass
+class SentinelOverlayResult:
+    image_bytes: bytes
+    cache_hit: bool
+    image_cached: bool
+    cache_path: str | None
+    generated_at: str
+    scene_date: str | None
+    scene_id: str | None
+    cloud_coverage: float | None
+    source: str
+    mode: str
+    width: int | None = None
+    height: int | None = None
 
 
 def _get_cached_overlay(cache_key: str) -> bytes | None:
@@ -84,6 +112,16 @@ def _set_cached_overlay(cache_key: str, image_bytes: bytes) -> None:
             "expires_at": time.time() + OVERLAY_TTL_SECONDS,
         }
     logging.info("[Sentinel] Overlay cacheado key=%s size=%d bytes", cache_key, len(image_bytes))
+
+
+def clear_cached_overlays_for_field(field_id: str) -> None:
+    prefix = f"{field_id}_"
+    with _overlay_lock:
+        keys_to_delete = [cache_key for cache_key in _overlay_cache if cache_key.startswith(prefix)]
+        for cache_key in keys_to_delete:
+            del _overlay_cache[cache_key]
+    if keys_to_delete:
+        logging.info("[Sentinel] %d overlays removidos da memória para field_id=%s", len(keys_to_delete), field_id)
 
 
 # ── Utilitários de geometria ──────────────────────────────────────────────────
@@ -121,6 +159,141 @@ def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | No
     if valid[0] != valid[-1]:
         valid.append(valid[0])
     return {"type": "Polygon", "coordinates": [valid]}
+
+
+def _iso_now() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _boundaries_hash(boundaries: list[list[float]] | None, bbox: list[float]) -> str:
+    if boundaries and len(boundaries) >= 3:
+        norm = [[round(float(p[0]), 6), round(float(p[1]), 6)] for p in boundaries if p and len(p) >= 2]
+        payload = json.dumps(norm, sort_keys=True, separators=(",", ":"))
+    else:
+        payload = json.dumps([round(float(x), 6) for x in bbox], separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
+def _artifact_dimensions(image_bytes: bytes) -> tuple[int | None, int | None]:
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            return int(img.width), int(img.height)
+    except Exception:
+        return None, None
+
+
+def _artifact_path(user_id: str | None, field_id: str, source: str, mode: str, scene_id: str | None, bbox_hash: str) -> str:
+    uid = user_id or "anonymous"
+    sid = scene_id or f"scene-{_iso_now().replace(':', '').replace('-', '')}"
+    return f"{SATELLITE_CACHE_VERSION}/{uid}/{field_id}/{source}/{mode}/{sid}_{bbox_hash}.png"
+
+
+def _get_persistent_artifact(
+    user_id: str | None,
+    field_id: str,
+    source: str,
+    mode: str,
+    bbox_hash: str,
+    scene_id: str | None,
+    scene_date: str | None,
+) -> SentinelOverlayResult | None:
+    if not user_id:
+        return None
+
+    artifact = supabase_service.get_satellite_artifact_by_key(
+        user_id=user_id,
+        field_id=field_id,
+        source=source,
+        mode=mode,
+        bbox_hash=bbox_hash,
+        scene_id=scene_id,
+        scene_date=scene_date,
+    )
+    if not artifact:
+        return None
+
+    image_path = artifact.get("image_path")
+    if not image_path:
+        return None
+
+    image_bytes = supabase_service.download_storage_object(SATELLITE_CACHE_BUCKET, image_path)
+    if not image_bytes:
+        return None
+
+    artifact_id = artifact.get("id")
+    if artifact_id:
+        supabase_service.touch_satellite_artifact(str(artifact_id))
+
+    return SentinelOverlayResult(
+        image_bytes=image_bytes,
+        cache_hit=True,
+        image_cached=True,
+        cache_path=str(image_path),
+        generated_at=str(artifact.get("generated_at") or _iso_now()),
+        scene_date=(artifact.get("scene_date") or scene_date),
+        scene_id=(artifact.get("scene_id") or scene_id),
+        cloud_coverage=artifact.get("cloud_coverage"),
+        source=source,
+        mode=mode,
+        width=artifact.get("width"),
+        height=artifact.get("height"),
+    )
+
+
+def _save_persistent_artifact(
+    user_id: str | None,
+    farm_id: str | None,
+    field_id: str,
+    source: str,
+    mode: str,
+    scene_id: str | None,
+    scene_date: str | None,
+    cloud_coverage: float | None,
+    bbox_hash: str,
+    image_bytes: bytes,
+) -> tuple[bool, str | None, str]:
+    if not user_id:
+        return False, None, _iso_now()
+
+    generated_at = _iso_now()
+    width, height = _artifact_dimensions(image_bytes)
+    object_path = _artifact_path(user_id, field_id, source, mode, scene_id, bbox_hash)
+
+    uploaded = supabase_service.upload_storage_object(
+        SATELLITE_CACHE_BUCKET,
+        object_path,
+        image_bytes,
+        "image/png",
+    )
+    if not uploaded:
+        return False, None, generated_at
+
+    metadata = {
+        "user_id": user_id,
+        "farm_id": farm_id,
+        "field_id": field_id,
+        "source": source,
+        "mode": mode,
+        "scene_id": scene_id or scene_date,
+        "scene_date": scene_date,
+        "cloud_coverage": cloud_coverage,
+        "bbox_hash": bbox_hash,
+        "image_path": object_path,
+        "mime_type": "image/png",
+        "width": width,
+        "height": height,
+        "bytes_size": len(image_bytes),
+        "generated_at": generated_at,
+        "updated_at": generated_at,
+        "last_accessed_at": generated_at,
+        "expires_at": (datetime.fromisoformat(generated_at.replace('Z', '+00:00')) + timedelta(hours=SENTINEL_CACHE_TTL_HOURS)).isoformat(),
+        "cache_version": SATELLITE_CACHE_VERSION,
+    }
+    upserted = supabase_service.upsert_satellite_artifact(metadata)
+    if upserted:
+        object_path = str(upserted.get("image_path") or object_path)
+
+    return True, object_path, generated_at
 
 
 # ── Busca de cenas via STAC ───────────────────────────────────────────────────
@@ -271,19 +444,56 @@ def get_true_color_overlay(
     boundaries: list[list[float]] | None = None,
     date_range_days: int = 30,
     scene_date: str | None = None,
+    scene_id: str | None = None,
+    cloud_coverage: float | None = None,
+    user_id: str | None = None,
+    farm_id: str | None = None,
+    force_refresh: bool = False,
     source: str = "s2",
     mode: str = "truecolor",
-) -> bytes | None:
-    cache_key = f"{field_id}_{source}_{scene_date or 'latest'}_{mode}"
+) -> bytes | SentinelOverlayResult | None:
+    # Cache key determinístico: (field_id, source, scene_id, mode)
+    scene_identifier = scene_id or scene_date or ""
+    cache_key = f"{field_id}_{source}_{scene_identifier}_{mode}".rstrip('_')
     cached = _get_cached_overlay(cache_key)
     if cached:
-        return cached
+        if force_refresh:
+            cached = None
+        else:
+            return SentinelOverlayResult(
+                image_bytes=cached,
+                cache_hit=True,
+                image_cached=True,
+                cache_path=None,
+                generated_at=_iso_now(),
+                scene_date=scene_date,
+                scene_id=scene_id,
+                cloud_coverage=cloud_coverage,
+                source=source,
+                mode=mode,
+            )
 
     token = get_oauth_token()
     if not token:
         return None
 
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+    bbox_hash = _boundaries_hash(boundaries, bbox)
+
+    if not force_refresh:
+        persistent = _get_persistent_artifact(
+            user_id=user_id,
+            field_id=field_id,
+            source=source,
+            mode=mode,
+            bbox_hash=bbox_hash,
+            scene_id=scene_id,
+            scene_date=scene_date,
+        )
+        if persistent:
+            _set_cached_overlay(cache_key, persistent.image_bytes)
+            return persistent
+
     geojson_polygon = _build_geojson_polygon(boundaries) if boundaries else None
 
     # ── Evalscripts ───────────────────────────────────────────────────────────
@@ -418,7 +628,34 @@ function evaluatePixel(s) {
                 if "image" in ct:
                     image_bytes = resp.content
                     _set_cached_overlay(cache_key, image_bytes)
-                    return image_bytes
+
+                    persisted, cache_path, generated_at = _save_persistent_artifact(
+                        user_id=user_id,
+                        farm_id=farm_id,
+                        field_id=field_id,
+                        source=source,
+                        mode=mode,
+                        scene_id=scene_id,
+                        scene_date=scene_date,
+                        cloud_coverage=cloud_coverage,
+                        bbox_hash=bbox_hash,
+                        image_bytes=image_bytes,
+                    )
+                    width, height = _artifact_dimensions(image_bytes)
+                    return SentinelOverlayResult(
+                        image_bytes=image_bytes,
+                        cache_hit=False,
+                        image_cached=bool(persisted),
+                        cache_path=cache_path,
+                        generated_at=generated_at,
+                        scene_date=scene_date,
+                        scene_id=scene_id,
+                        cloud_coverage=cloud_coverage,
+                        source=source,
+                        mode=mode,
+                        width=width,
+                        height=height,
+                    )
                 logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
 
             elif resp.status_code == 401:
@@ -597,3 +834,186 @@ function evaluatePixel(s) {
             logging.error("[Sentinel] NDVI image error window=%sd: %s", days, exc)
 
     return None
+
+
+# ── Cache persistente de artefatos satelitais ─────────────────────────────────
+
+import hashlib  # noqa: E402  (import local para não mover bloco; hashlib é stdlib)
+
+SENTINEL_CACHE_BUCKET = "satellite-cache"
+
+
+def _compute_bbox_hash(bbox: list[float]) -> str:
+    """Hash MD5 estável (16 chars) do BBox arredondado a 4 casas decimais."""
+    rounded = [round(v, 4) for v in bbox]
+    return hashlib.md5(str(rounded).encode()).hexdigest()[:16]
+
+
+def get_sentinel_overlay_with_cache(
+    user_id: str,
+    field_id: str,
+    farm_id: str | None,
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None,
+    scene_date: str | None,
+    source: str,
+    mode: str,
+    scene_id: str | None = None,
+    force_refresh: bool = False,
+) -> tuple[bytes | None, dict[str, Any]]:
+    """
+    Retorna (image_bytes, cache_info) com cache em 2 camadas:
+      1ª camada: memória in-process (OVERLAY_TTL_SECONDS)
+      2ª camada: Supabase Storage + metadados em satellite_artifacts
+
+    cache_info keys:
+      cache_hit: bool
+      artifact_id: str | None
+      cache_path: str | None
+      cache_source: "memory" | "db" | "generated" | None
+      generated_at: str | None
+      scene_date: str | None
+    """
+    # Garante scene_id nunca NULL para a chave de unicidade no banco
+    # Cache key DETERMINÍSTICO: (field_id, source, scene_id, mode)
+    # Se scene_id absent, usa scene_date. Se ambos absent, key usa campo vazio
+    effective_scene_id = scene_id or scene_date or ""
+
+    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+    bbox_hash = _compute_bbox_hash(bbox)
+    mem_key = f"{field_id}_{source}_{effective_scene_id}_{mode}".rstrip('_')
+
+    # ── 1ª Camada: memória ────────────────────────────────────────────────────
+    if not force_refresh:
+        cached_bytes = _get_cached_overlay(mem_key)
+        if cached_bytes is not None:
+            logging.info(
+                "[SentinelCache] MEMORY HIT field_id=%s source=%s scene=%s",
+                field_id, source, effective_scene_id,
+            )
+            return cached_bytes, {
+                "cache_hit": True,
+                "artifact_id": None,
+                "cache_path": None,
+                "cache_source": "memory",
+                "generated_at": None,
+                "scene_date": scene_date,
+            }
+
+    # ── 2ª Camada: banco + storage ────────────────────────────────────────────
+    if not force_refresh:
+        try:
+            from services import supabase_service  # importação local evita ciclo no import de módulo
+            artifact = supabase_service.get_satellite_artifact_by_key(
+                user_id=user_id,
+                field_id=field_id,
+                source=source,
+                mode=mode,
+                bbox_hash=bbox_hash,
+                scene_id=effective_scene_id,
+                scene_date=scene_date,
+            )
+            if artifact and artifact.get("image_path"):
+                image_bytes = supabase_service.download_storage_object(
+                    SENTINEL_CACHE_BUCKET, artifact["image_path"]
+                )
+                if image_bytes:
+                    _set_cached_overlay(mem_key, image_bytes)
+                    # Atualiza last_accessed_at em best-effort (não bloqueia resposta)
+                    try:
+                        supabase_service.touch_satellite_artifact(artifact["id"])
+                    except Exception:
+                        pass
+                    logging.info(
+                        "[SentinelCache] DB HIT field_id=%s source=%s scene=%s path=%s",
+                        field_id, source, effective_scene_id, artifact["image_path"],
+                    )
+                    return image_bytes, {
+                        "cache_hit": True,
+                        "artifact_id": artifact["id"],
+                        "cache_path": artifact["image_path"],
+                        "cache_source": "db",
+                        "generated_at": artifact.get("generated_at"),
+                        "scene_date": artifact.get("scene_date") or scene_date,
+                    }
+        except Exception as exc:
+            logging.warning("[SentinelCache] Falha ao checar cache persistente: %s", exc)
+
+    # ── Geração via Sentinel Hub ──────────────────────────────────────────────
+    logging.info(
+        "[SentinelCache] MISS — gerando via Sentinel Hub field_id=%s source=%s scene=%s",
+        field_id, source, effective_scene_id,
+    )
+    image_bytes = get_true_color_overlay(
+        field_id=field_id,
+        lat=lat,
+        lng=lng,
+        boundaries=boundaries,
+        date_range_days=30,
+        scene_date=scene_date,
+        source=source,
+        mode=mode,
+    )
+
+    if image_bytes is None:
+        return None, {
+            "cache_hit": False,
+            "artifact_id": None,
+            "cache_path": None,
+            "cache_source": None,
+            "generated_at": None,
+            "scene_date": scene_date,
+        }
+
+    # ── Persistência: storage + banco ─────────────────────────────────────────
+    from datetime import datetime as _dt
+    generated_at = _dt.utcnow().isoformat() + "Z"
+    safe_key = effective_scene_id.replace(":", "-").replace("/", "-")
+    image_path = f"{user_id}/{field_id}/{source}/{mode}/{safe_key}/{bbox_hash}.png"
+    artifact_id: str | None = None
+
+    try:
+        from services import supabase_service  # noqa: F811
+        uploaded = supabase_service.upload_storage_object(
+            SENTINEL_CACHE_BUCKET, image_path, image_bytes, "image/png"
+        )
+        if uploaded:
+            output_size = 512 if source == "s1" else 1024
+            metadata: dict[str, Any] = {
+                "user_id": user_id,
+                "field_id": field_id,
+                "farm_id": farm_id,
+                "source": source,
+                "mode": mode,
+                "scene_id": effective_scene_id,
+                "scene_date": scene_date,
+                "bbox_hash": bbox_hash,
+                "image_path": image_path,
+                "mime_type": "image/png",
+                "width": output_size,
+                "height": output_size,
+                "bytes_size": len(image_bytes),
+                "generated_at": generated_at,
+                "updated_at": generated_at,
+                "last_accessed_at": generated_at,
+                "expires_at": (_dt.fromisoformat(generated_at.replace("Z", "+00:00")) + timedelta(hours=SENTINEL_CACHE_TTL_HOURS)).isoformat(),
+                "cache_version": 1,
+            }
+            artifact = supabase_service.upsert_satellite_artifact(metadata)
+            artifact_id = artifact.get("id") if artifact else None
+            logging.info(
+                "[SentinelCache] Artifact salvo field_id=%s source=%s path=%s bytes=%d",
+                field_id, source, image_path, len(image_bytes),
+            )
+    except Exception as exc:
+        logging.warning("[SentinelCache] Falha ao persistir artifact: %s", exc)
+
+    return image_bytes, {
+        "cache_hit": False,
+        "artifact_id": artifact_id,
+        "cache_path": image_path,
+        "cache_source": "generated",
+        "generated_at": generated_at,
+        "scene_date": scene_date,
+    }

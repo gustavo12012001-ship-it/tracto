@@ -213,13 +213,14 @@ export const useAppStore = create<AppState>()(
       setActiveField: (id) =>
         set((state) => {
           if (!id) {
-            return { activeFieldId: null };
+            return { activeFieldId: null, chatHistory: [] };
           }
 
           const selectedField = state.fields.find((field) => field.id === id);
           return {
             activeFieldId: id,
             activeFarmId: selectedField?.farm_id ?? state.activeFarmId,
+            chatHistory: state.activeFieldId !== id ? [] : state.chatHistory,
           };
         }),
       focusActiveField: () =>

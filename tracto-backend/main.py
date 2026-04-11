@@ -19,6 +19,7 @@ import uuid
 
 from models import (
     AlertRequest,
+    ChatResponse,
     ChatRequest,
     FieldAnalysisRequest,
     FieldAnalysisResponse,
@@ -35,6 +36,7 @@ from models import (
     WhatsAppWebhookPayload,
     GeoSearchRequest,
     FieldIntelligenceSnapshot,
+    SentinelPreloadRequest,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -45,7 +47,9 @@ from services.sentinel_service import (
     get_ndvi_image,
     get_true_color_overlay,
     get_available_scenes,
-    invalidate_field_cache,
+    get_sentinel_overlay_with_cache,
+    clear_cached_overlays_for_field,
+    SATELLITE_CACHE_BUCKET,
 )
 from services.planet_service import (
     create_planet_tile_session,
@@ -131,7 +135,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Scene-Bounds", "X-Scene-Id"],
+    expose_headers=["X-Scene-Bounds", "X-Scene-Id", "X-Cache", "X-Cache-Source", "X-Source", "X-Scene-Date", "X-Mode"],
 )
 
 
@@ -326,10 +330,51 @@ def _planet_cookie_options(request: Request) -> dict:
     return {"secure": False, "samesite": "lax"}
 
 
+def _build_farm_context_from_snapshot(snapshot: FieldIntelligenceSnapshot) -> str:
+    weather = snapshot.weather or {}
+    satellite = snapshot.satellite or {}
+    analysis = snapshot.analysis or {}
+
+    def _safe(value, fallback: str = "N/D") -> str:
+        if value is None:
+            return fallback
+        text = str(value).strip()
+        return text if text else fallback
+
+    spray = (analysis.get("spray_window") or {}).get("label") if isinstance(analysis, dict) else "N/D"
+    frost = (analysis.get("frost_risk") or {}).get("label") if isinstance(analysis, dict) else "N/D"
+    water = (analysis.get("water_stress") or {}).get("label") if isinstance(analysis, dict) else "N/D"
+
+    return "\n".join([
+        f"TALHÃO ATIVO: {snapshot.field_name} | {_safe(snapshot.crop_type)} | {_safe(snapshot.area_ha, 'Área N/D')} | {_safe(snapshot.planting_date)}",
+        f"Variedade: {_safe(snapshot.variety)}",
+        f"Clima atual: Temp {_safe(weather.get('temperature'))}C, Umidade {_safe(weather.get('humidity'))}%, Vento {_safe(weather.get('wind_speed'))} km/h",
+        f"Última cena Sentinel-2: {_safe(satellite.get('s2_scene_date') or satellite.get('scene_date'))}",
+        f"Última cena Sentinel-1: {_safe(satellite.get('s1_scene_date'))}",
+        f"Cache da imagem: hit={_safe(satellite.get('cache_hit'))} | path={_safe(satellite.get('cache_path'))} | gerado={_safe(satellite.get('generated_at'))}",
+        f"Análise consolidada: Pulverização {_safe(spray)}, Geada {_safe(frost)}, Estresse hídrico {_safe(water)}",
+        f"Atualizado em: {_safe(snapshot.updated_at)}",
+    ])
+
+
 @app.post("/api/chat")
 @limiter.limit("5/minute")
-async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: AuthenticatedUser = Depends(get_current_user)):
+async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: AuthenticatedUser = Depends(get_current_user)) -> ChatResponse:
     try:
+        # field_id canônico e obrigatório
+        if not chat_req.field_id or not chat_req.field_id.strip():
+            raise HTTPException(status_code=400, detail="field_id inválido ou ausente. Selecione um talhão ativo antes de enviar a pergunta.")
+
+        canonical_field_id = chat_req.field_id.strip()
+
+        # ownership validado no backend (nunca confiar no cliente)
+        field_data = farm_service.get_field_by_id(_user.id, canonical_field_id)
+        if not field_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Talhão não encontrado, removido ou sem permissão de acesso. Selecione um talhão válido.",
+            )
+
         if not chat_req.messages:
             raise HTTPException(status_code=400, detail="O historico de mensagens esta vazio.")
         if not chat_req.field_id:
@@ -339,14 +384,43 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
         if not field:
             raise HTTPException(status_code=404, detail="Talhao ativo nao encontrado ou sem permissao de acesso.")
 
+        # contexto SEMPRE canônico do snapshot backend para o field_id validado
+        try:
+            snapshot = await build_field_intelligence_snapshot(user_id=_user.id, field_id=canonical_field_id, force_refresh=False)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            logging.error("Falha ao montar snapshot canônico no chat field_id=%s: %s", canonical_field_id, exc)
+            raise HTTPException(
+                status_code=503,
+                detail="Snapshot do talhão indisponível no momento. Tente novamente em alguns segundos.",
+            ) from exc
+
+        if not snapshot:
+            raise HTTPException(
+                status_code=409,
+                detail="Snapshot do talhão indisponível. Não é possível responder com segurança sem contexto canônico.",
+            )
+
+        farm_context = _build_farm_context_from_snapshot(snapshot)
+
         reply = generate_chat_response(
             messages=[message.model_dump() for message in chat_req.messages],
-            farm_context=chat_req.farm_context,
+            farm_context=farm_context,
             image_base64=chat_req.image_base64,
             image_mime_type=chat_req.image_mime_type or "image/jpeg",
             hourly_weather=chat_req.hourly_weather,
         )
-        return {"reply": reply}
+
+        satellite = snapshot.satellite or {}
+        return ChatResponse(
+            reply=reply,
+            used_field_id=snapshot.field_id,
+            used_field_name=snapshot.field_name,
+            snapshot_updated_at=snapshot.updated_at,
+            s1_scene_date=satellite.get("s1_scene_date"),
+            s2_scene_date=satellite.get("s2_scene_date") or satellite.get("scene_date"),
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -428,12 +502,17 @@ async def sentinel_overlay_endpoint(
     field_id: str,
     source: str = "s2",
     scene_date: str | None = None,
+    scene_id: str | None = None,
+    cloud_coverage: float | None = None,
+    force_refresh: bool = False,
     mode: str = "truecolor",
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
     Gera e retorna PNG recortado no polígono do talhão via Sentinel Hub Process API.
     source: 's2' (True Color) ou 's1' (Radar SAR). scene_date: ISO date opcional.
+    Cache em 2 camadas: memória in-process + Supabase Storage persistente.
+    X-Cache: HIT = imagem reutilizada, MISS = gerada agora e salva.
     """
     if source not in ("s1", "s2"):
         raise HTTPException(status_code=400, detail="source deve ser 's1' ou 's2'.")
@@ -451,6 +530,7 @@ async def sentinel_overlay_endpoint(
         lat = float(field_data.get("latitude", 0))
         lng = float(field_data.get("longitude", 0))
         boundaries = field_data.get("boundaries")
+        farm_id = field_data.get("farm_id")
 
         # Verifica credenciais antes de chamar a API paga
         sentinel_id = os.getenv("SENTINEL_CLIENT_ID")
@@ -465,15 +545,19 @@ async def sentinel_overlay_endpoint(
                 ),
             )
 
-        image_bytes = get_true_color_overlay(
-            field_id=field_id,
-            lat=lat,
-            lng=lng,
-            boundaries=boundaries,
-            date_range_days=30,
-            scene_date=scene_date,
-            source=source,
-            mode=mode,
+        image_bytes, cache_info = await asyncio.to_thread(
+            get_sentinel_overlay_with_cache,
+            user.id,
+            field_id,
+            farm_id,
+            lat,
+            lng,
+            boundaries,
+            scene_date,
+            source,
+            mode,
+            scene_id,
+            force_refresh,
         )
 
         if not image_bytes:
@@ -492,9 +576,11 @@ async def sentinel_overlay_endpoint(
             headers={
                 "Cache-Control": "public, max-age=1800",
                 "X-Field-ID": field_id,
-                "X-Source": source,
-                "X-Scene-Date": scene_date or "latest",
+                "X-Source": source.upper(),
+                "X-Cache": "HIT" if cache_info.get("cache_hit") else "MISS",
+                "X-Scene-Date": cache_info.get("scene_date") or scene_date or "latest",
                 "X-Mode": mode,
+                "X-Cache-Source": cache_info.get("cache_source") or "unknown",
             },
         )
     except HTTPException:
@@ -502,6 +588,67 @@ async def sentinel_overlay_endpoint(
     except Exception as exc:
         logging.error("[/api/sentinel/overlay] Erro field_id=%s source=%s: %s", field_id, source, exc)
         raise HTTPException(status_code=500, detail="Erro interno ao gerar overlay Sentinel.") from exc
+
+
+@app.post("/api/sentinel/preload")
+@limiter.limit("20/minute")
+async def sentinel_preload_endpoint(
+    request: Request,
+    body: SentinelPreloadRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Pré-aquece o cache de uma cena Sentinel antes de o usuário abrir Chat/Relatórios.
+    Gera a imagem e salva no Supabase Storage + satellite_artifacts se ainda não existir.
+    """
+    try:
+        field_data = farm_service.get_field_by_id(user.id, body.field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
+
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+        farm_id = field_data.get("farm_id")
+
+        sentinel_id = os.getenv("SENTINEL_CLIENT_ID")
+        sentinel_secret = os.getenv("SENTINEL_CLIENT_SECRET")
+        if not sentinel_id or not sentinel_secret:
+            raise HTTPException(status_code=503, detail="Credenciais Sentinel Hub não configuradas.")
+
+        _bytes, cache_info = await asyncio.to_thread(
+            get_sentinel_overlay_with_cache,
+            user.id,
+            body.field_id,
+            farm_id,
+            lat,
+            lng,
+            boundaries,
+            body.scene_date,
+            body.source,
+            body.mode,
+            body.scene_id,
+            body.force_refresh,
+        )
+
+        return {
+            "ok": _bytes is not None,
+            "field_id": body.field_id,
+            "source": body.source,
+            "mode": body.mode,
+            "scene_id": body.scene_id,
+            "scene_date": cache_info.get("scene_date"),
+            "cache_hit": cache_info.get("cache_hit", False),
+            "image_cached": cache_info.get("cache_hit", False),
+            "cache_path": cache_info.get("cache_path"),
+            "cache_source": cache_info.get("cache_source"),
+            "generated_at": cache_info.get("generated_at"),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/sentinel/preload] Erro field_id=%s source=%s: %s", body.field_id, body.source, exc)
+        raise HTTPException(status_code=500, detail="Erro ao pré-carregar imagem Sentinel.") from exc
 
 
 @app.get("/api/planet/scenes")
@@ -921,15 +1068,23 @@ async def save_conversation_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
+        if request.field_id:
+            field = farm_service.get_field_by_id(user.id, request.field_id)
+            if not field:
+                raise HTTPException(status_code=404, detail="Talhão da conversa não encontrado ou sem permissão.")
+
         return supabase_service.save_conversation(
             user_id=user.id,
             conversation_id=request.conversation_id,
             title=request.title,
             messages=[message.model_dump() for message in request.messages],
+            field_id=request.field_id,
             farm_context=request.farm_context,
             created_at=request.created_at,
             updated_at=request.updated_at,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logging.error("Erro ao salvar conversa: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao salvar conversa.") from exc
@@ -1080,16 +1235,17 @@ async def update_field_endpoint(field_id: str, request: FieldBase, user: Authent
 @app.delete("/api/fields/{field_id}")
 async def delete_field_endpoint(field_id: str, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        success = farm_service.delete_field(field_id, user.id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Talhao nao encontrado ou acesso negado.")
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
-        analysis_cache.delete(f"field_intelligence:weather:{field_id}")
-        analysis_cache.delete(f"field_intelligence:satellite:{field_id}")
+        supabase_service.delete_satellite_artifacts_for_field(user.id, field_id, SATELLITE_CACHE_BUCKET)
+        clear_cached_overlays_for_field(field_id)
         analysis_cache.delete(f"field_intelligence:snapshot:{field_id}")
-        invalidate_field_cache(field_id)
-
-        return {"success": True}
+        analysis_cache.delete(f"field_intelligence:satellite:{field_id}")
+        analysis_cache.delete(f"field_intelligence:weather:{field_id}")
+        supabase_service.delete_conversations_by_field(user.id, field_id)
+        return {"success": farm_service.delete_field(field_id, user.id)}
     except HTTPException:
         raise
     except Exception as exc:

@@ -17,9 +17,19 @@ interface SavedConversation {
   conversation_id: string;
   title: string;
   messages: { role: string; text: string }[];
+  field_id?: string | null;
   farm_context?: string;
   created_at: string;
   updated_at: string;
+}
+
+interface ChatApiResponse {
+  reply: string;
+  used_field_id: string;
+  used_field_name: string;
+  snapshot_updated_at?: string | null;
+  s1_scene_date?: string | null;
+  s2_scene_date?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -44,55 +54,6 @@ const INITIAL_MSG = (time: string): Message => ({
   text: 'Olá! Sou a **Tracto IA**, sua analista agronômica. Posso ajudar com análise de solo, NDVI, irrigação, pragas, colheita e clima.\n\n📸 **Dica:** Envie uma foto da lavoura para análise visual de pragas e doenças.\n\nComo posso ajudar?',
   time,
 });
-
-function buildFarmContext(
-  fields: ReturnType<typeof useAppStore.getState>['fields'],
-  activeFieldId: string | null,
-  hasImageInPayload: boolean
-): string {
-  if (fields.length === 0) {
-    return [
-      'Nenhum talhão selecionado no momento.',
-      'Demais talhões cadastrados: Nenhum talhão cadastrado.',
-    ].join('\n');
-  }
-
-  const formatDate = (date?: string) => {
-    if (!date) return 'N/D';
-    const parsed = new Date(date);
-    if (Number.isNaN(parsed.getTime())) return date;
-    return parsed.toLocaleDateString('pt-BR');
-  };
-
-  const buildFieldLine = (field: (typeof fields)[number], index: number) => {
-    const name = field.name ?? `Talhão ${index + 1}`;
-    const area = field.areaHa != null ? `${field.areaHa.toFixed(1)} ha` : 'Área N/D';
-    const cultura = field.cultura || 'N/D';
-    return `${name} (${area}, ${cultura})`;
-  };
-
-  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : null;
-  const otherFields = activeField
-    ? fields.filter((field) => field.id !== activeField.id)
-    : fields;
-
-  const activeSection = activeField
-    ? [
-        `TALHÃO ATIVO: ${activeField.name ?? 'Talhão sem nome'} | ${activeField.cultura || 'N/D'} | ${activeField.areaHa != null ? `${activeField.areaHa.toFixed(1)} ha` : 'Área N/D'} | ${formatDate(activeField.dataPlantio)}`,
-        `Variedade: ${activeField.variedade || 'N/D'}`,
-      ].join('\n')
-    : 'Nenhum talhão selecionado no momento.';
-
-  const othersSection = otherFields.length
-    ? `Demais talhões cadastrados:\n${otherFields.map((field, index) => `- ${buildFieldLine(field, index)}`).join('\n')}`
-    : 'Demais talhões cadastrados: Nenhum.';
-
-  const imageSection = hasImageInPayload
-    ? 'Imagem: anexada nesta mensagem (disponivel para analise agora).'
-    : 'Imagem: nenhuma imagem anexada nesta mensagem. Se quiser analise visual, reenvie a foto.';
-
-  return `${activeSection}\n${othersSection}\n${imageSection}`;
-}
 
 function buildFarmContextFromSnapshot(snapshot: FieldIntelligenceSnapshot): string {
   const weather = snapshot.weather || {};
@@ -124,6 +85,7 @@ function buildFarmContextFromSnapshot(snapshot: FieldIntelligenceSnapshot): stri
     `Clima atual: Temp ${safe((weather as Record<string, unknown>).temperature)}C, Umidade ${safe((weather as Record<string, unknown>).humidity)}%, Vento ${safe((weather as Record<string, unknown>).wind_speed)} km/h`,
     `Previsão resumida: ${safe((weather as Record<string, unknown>).forecast_7d, 'Previsão indisponível')}`,
     `Última cena Sentinel: ${safe((satellite as Record<string, unknown>).scene_date_br)} | Nuvens: ${safe((satellite as Record<string, unknown>).cloud_coverage)}`,
+    `Cache da imagem: hit=${safe((satellite as Record<string, unknown>).cache_hit)} | salvo=${safe((satellite as Record<string, unknown>).image_cached)} | path=${safe((satellite as Record<string, unknown>).cache_path)} | gerado=${safe((satellite as Record<string, unknown>).generated_at)}`,
     `Análise consolidada: Pulverização ${safe(sprayWindow)}, Geada ${safe(frostRisk)}, Estresse hídrico ${safe(waterStress)}`,
     `Alertas relevantes: ${alertTitles.length ? alertTitles.join(' | ') : 'Nenhum alerta relevante no momento.'}`,
     `Atualizado em: ${safe(snapshot.updated_at)}`,
@@ -157,6 +119,7 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [contextUsedLabel, setContextUsedLabel] = useState<string | null>(null);
   const [showHint, setShowHint] = useState<boolean>(() => !sessionStorage.getItem('chat-hint-dismissed'));
 
   // Sidebar: saved conversations
@@ -192,7 +155,6 @@ export default function Chat() {
   useEffect(() => {
     loadConversations();
   }, []);
-
   const loadConversations = async () => {
     try {
       setLoadingConversations(true);
@@ -209,7 +171,7 @@ export default function Chat() {
 
   // ── Auto-save with 3s debounce ──────────────────────────────────────────────
   const scheduleSave = useCallback(
-    (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string) => {
+    (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string, fieldIdForSave: string | null) => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = setTimeout(async () => {
         const userMessages = msgs.filter((m) => m.role !== 'assistant' || msgs.indexOf(m) > 0);
@@ -234,6 +196,7 @@ export default function Chat() {
                 role: m.role === 'assistant' ? 'model' : 'user',
                 text: m.text,
               })),
+              field_id: fieldIdForSave,
               farm_context: farmContextForSave,
               created_at: createdAt,
               updated_at: nowISO(),
@@ -264,6 +227,7 @@ export default function Chat() {
       if (current) URL.revokeObjectURL(current.preview);
       return null;
     });
+    setContextUsedLabel(null);
   }, [clearChat]);
 
   useEffect(() => {
@@ -282,6 +246,25 @@ export default function Chat() {
 
   // ── Load a saved conversation ──────────────────────────────────────────────
   const loadConversation = (conv: SavedConversation) => {
+    if (!conv.field_id) {
+      setApiError('Conversa antiga sem talhão vinculado. Inicie uma nova conversa no talhão ativo.');
+      startNewConversation();
+      return;
+    }
+
+    const conversationFieldStillExists = fields.some((field) => field.id === conv.field_id);
+    if (!conversationFieldStillExists) {
+      setApiError('Esta conversa pertence a um talhão removido e não pode ser reutilizada.');
+      startNewConversation();
+      return;
+    }
+
+    if (!activeFieldId || conv.field_id !== activeFieldId) {
+      setApiError('Esta conversa pertence a outro talhão. O chat foi reiniciado para o talhão ativo atual.');
+      startNewConversation();
+      return;
+    }
+
     setActiveConversationId(conv.conversation_id);
     setConversationId(conv.conversation_id);
     setConversationCreatedAt(conv.created_at);
@@ -294,6 +277,7 @@ export default function Chat() {
     setInput('');
     setPendingImage(null);
     setApiError(null);
+    setContextUsedLabel(null);
   };
 
   // ── Delete conversation ────────────────────────────────────────────────────
@@ -385,11 +369,10 @@ export default function Chat() {
         throw new Error('Não foi possível carregar o snapshot do talhão ativo. Selecione o talhão novamente.');
       }
 
-      const farm_context = snapshot
-        ? buildFarmContextFromSnapshot(snapshot)
-        : buildFarmContext(fields, activeFieldId, Boolean(imageBase64));
+      const farm_context = buildFarmContextFromSnapshot(snapshot);
 
       const weatherFromSnapshot = snapshot?.weather as Record<string, unknown> | undefined;
+      const satelliteFromSnapshot = snapshot?.satellite as Record<string, unknown> | undefined;
       const hourly_weather = weatherFromSnapshot
         ? {
             temperature: Number(weatherFromSnapshot.temperature ?? 0),
@@ -400,26 +383,49 @@ export default function Chat() {
           ? { temperature: weatherCache.temperature, humidity: weatherCache.humidity, wind_speed: weatherCache.windSpeed }
           : null;
 
-      const data = await apiFetch<{ reply: string }>('/api/chat', {
+      const satellite_context = satelliteFromSnapshot
+        ? {
+            source: satelliteFromSnapshot.source,
+            scene_date: satelliteFromSnapshot.scene_date,
+            cloud_coverage: satelliteFromSnapshot.cloud_coverage,
+            cache_hit: satelliteFromSnapshot.cache_hit,
+            generated_at: satelliteFromSnapshot.generated_at,
+            cache_path: satelliteFromSnapshot.cache_path,
+          }
+        : null;
+
+      const data = await apiFetch<ChatApiResponse>('/api/chat', {
         method: 'POST',
         body: JSON.stringify({
-          messages: payloadMessages,
           field_id: activeFieldId,
+          messages: payloadMessages,
           farm_context,
           image_base64: imageBase64,
           image_mime_type: imageMime,
           hourly_weather,
+          satellite_context,
         }),
       });
+
+      if (data.used_field_id !== activeFieldId) {
+        setApiError('Inconsistência de contexto detectada: o backend respondeu com outro talhão. Resposta bloqueada por segurança.');
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', text: '⚠️ Segurança de contexto: resposta descartada por divergência de talhão ativo.', time: nowTime() },
+        ]);
+        return;
+      }
 
       if (capturedImage) URL.revokeObjectURL(capturedImage.preview);
 
       const aiText = data.reply ?? '';
-      const aiMsg: Message = { role: 'assistant', text: aiText, time: nowTime() };
+      const contextLine = `Contexto usado na resposta: ${data.used_field_name}`;
+      const aiMsg: Message = { role: 'assistant', text: `${contextLine}\n\n${aiText}`, time: nowTime() };
+      setContextUsedLabel(contextLine);
 
       setMessages((prev) => {
         const updated = [...prev, aiMsg];
-        scheduleSave(updated, conversationId, conversationCreatedAt, farm_context);
+        scheduleSave(updated, conversationId, conversationCreatedAt, farm_context, activeFieldId);
         return updated;
       });
       addMessage('model', aiText);
@@ -593,6 +599,11 @@ export default function Chat() {
                   ? 'Analista Agronômica · Claude Sonnet · Visão ativa nesta mensagem'
                   : 'Analista Agronômica · Claude Sonnet · Sem imagem anexada'}
               </p>
+              {contextUsedLabel && (
+                <p className="text-[10px] mt-1" style={{ color: '#4ade80' }}>
+                  {contextUsedLabel}
+                </p>
+              )}
             </div>
           </div>
           <button

@@ -1,4 +1,4 @@
-# Código Completo do Projeto Tracto
+﻿# Código Completo do Projeto Tracto
 
  Aqui estão todos os arquivos de configuração e código fonte do projeto.
 
@@ -34,7 +34,6 @@ export default defineConfig([
     },
   },
 ])
-
 ```
 
 
@@ -58,7 +57,6 @@ export default defineConfig([
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
 ```
 
 
@@ -112,13 +110,12 @@ export default defineConfig([
     "vite": "^8.0.0"
   }
 }
-
 ```
 
 
 ### `vite.config.ts`
 ```ts
-﻿import { defineConfig } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -143,8 +140,6 @@ export default defineConfig({
     port: 5173,
   }
 })
-
-
 ```
 
 
@@ -157,7 +152,6 @@ export default defineConfig({
     { "path": "./tsconfig.node.json" }
   ]
 }
-
 ```
 
 
@@ -451,7 +445,6 @@ DROP TRIGGER IF EXISTS enforce_field_entitlement ON public.fields;
 -- BEFORE INSERT ON fields 
 -- FOR EACH ROW 
 -- EXECUTE FUNCTION check_field_limit_trigger();
-
 ```
 
 
@@ -510,7 +503,6 @@ self.addEventListener('notificationclick', function(event) {
     })
   );
 });
-
 ```
 
 
@@ -700,7 +692,6 @@ self.addEventListener('notificationclick', function(event) {
     border-right-color: var(--border);
   }
 }
-
 ```
 
 
@@ -753,38 +744,16 @@ function App() {
 }
 
 export default App;
-
-```
-
-
-### `src/assets/hero-farm.jpg`
-```jpg
-[Arquivo binário: src/assets/hero-farm.jpg]
-```
-
-
-### `src/assets/hero.png`
-```png
-[Arquivo binário: src/assets/hero.png]
-```
-
-
-### `src/assets/react.svg`
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
-```
-
-
-### `src/assets/vite.svg`
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
-
 ```
 
 
 ### `src/components/FieldMap.tsx`
 ```tsx
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
+// src/components/FieldMap.tsx — Versão 4.0
+// Painel de cenas Sentinel-1 e Sentinel-2 disponíveis por talhão
+// O usuário vê as datas disponíveis e escolhe qual carregar
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ImageOverlay,
   MapContainer,
@@ -810,19 +779,17 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-//  Tipos 
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 
 type DrawMode = 'none' | 'drawing';
 type MapLayer = 'osm' | 'esri';
-type SceneTab = 's2' | 's1';
-type OverlaySource = 's1' | 's2' | 'ndvi';
 
 interface SentinelScene {
   scene_id: string;
   date: string;
   date_br: string;
   cloud_coverage: number | null;
-  source: 's1' | 's2' | 'ndvi';
+  source: 's1' | 's2';
   collection: string;
   thumbnail_url: string | null;
   orbit?: string;
@@ -841,10 +808,10 @@ interface OverlayState {
   bounds: L.LatLngBoundsExpression | null;
   loading: boolean;
   error: string | null;
-  sceneKey: string | null;
+  sceneKey: string | null; // "field_id|source|date"
 }
 
-//  Helpers 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function computeBoundsFromBoundaries(b: [number, number][]): L.LatLngBoundsExpression {
   const lats = b.map((p) => p[0]);
@@ -855,8 +822,7 @@ function computeBoundsFromBoundaries(b: [number, number][]): L.LatLngBoundsExpre
 function parseDecimalCoords(text: string): { lat: number; lng: number } | null {
   const m = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
   if (!m) return null;
-  const lat = parseFloat(m[1]);
-  const lng = parseFloat(m[2]);
+  const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
   if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
   return { lat, lng };
 }
@@ -875,9 +841,7 @@ function parseDMSCoords(text: string): { lat: number; lng: number } | null {
 async function buildAuthHeaders(): Promise<HeadersInit> {
   try {
     const { supabase } = await import('../services/supabase');
-    let {
-      data: { session },
-    } = await supabase.auth.getSession();
+    let { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       const r = await supabase.auth.refreshSession();
       session = r.data.session;
@@ -888,29 +852,7 @@ async function buildAuthHeaders(): Promise<HeadersInit> {
   }
 }
 
-function getOverlaySourceLabel(
-  sceneKey: string | null,
-  filter?: 'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture',
-): string {
-  if (!sceneKey) return '';
-  const source = sceneKey.split('|')[1];
-  if (source === 's1') return 'Sentinel-1  Radar SAR';
-  if (filter === 'ndvi') return 'Sentinel-2  NDVI';
-  if (filter === 'falsecolor') return 'Sentinel-2  Inf. Vermelho';
-  if (filter === 'agriculture') return 'Sentinel-2  Agricultura';
-  return 'Sentinel-2  True Color';
-}
-
-function formatOverlaySceneDate(sceneKey: string | null): string {
-  if (!sceneKey) return '';
-  const dateStr = sceneKey.split('|')[2];
-  if (!dateStr || dateStr === 'latest') return 'Última cena';
-  const [year, month, day] = dateStr.split('-');
-  if (!year || !month || !day) return dateStr;
-  return `${day}/${month}/${year}`;
-}
-
-//  Sub-componentes 
+// ── Sub-componentes ───────────────────────────────────────────────────────────
 
 function MapClickHandler({ onMapClick }: { onMapClick: (ll: { lat: number; lng: number }) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng) });
@@ -939,10 +881,7 @@ function ActiveFieldFlyController() {
     const field = fields.find((f) => f.id === activeFieldId);
     if (!field) return;
     if (field.boundaries && field.boundaries.length >= 3) {
-      map.flyToBounds(computeBoundsFromBoundaries(field.boundaries) as L.LatLngBoundsExpression, {
-        padding: [60, 60],
-        duration: 1.2,
-      });
+      map.flyToBounds(computeBoundsFromBoundaries(field.boundaries) as L.LatLngBoundsExpression, { padding: [60, 60], duration: 1.2 });
     } else {
       map.flyTo([field.lat, field.lng], 15, { duration: 1.2 });
     }
@@ -958,10 +897,7 @@ function InitialCenterController() {
     if (done.current) return;
     if (fields.length > 0) {
       if (fields[0].boundaries && fields[0].boundaries.length >= 3) {
-        map.flyToBounds(computeBoundsFromBoundaries(fields[0].boundaries) as L.LatLngBoundsExpression, {
-          padding: [80, 80],
-          duration: 0,
-        });
+        map.flyToBounds(computeBoundsFromBoundaries(fields[0].boundaries) as L.LatLngBoundsExpression, { padding: [80, 80], duration: 0 });
       } else {
         map.setView([fields[0].lat, fields[0].lng], 15);
       }
@@ -971,10 +907,7 @@ function InitialCenterController() {
     if (locationStatus === 'precise' && currentLocation) {
       map.setView([currentLocation.lat, currentLocation.lng], 13);
       done.current = true;
-    } else if (
-      (locationStatus === 'fallback' || locationStatus === 'denied' || locationStatus === 'unavailable') &&
-      currentLocation
-    ) {
+    } else if ((locationStatus === 'fallback' || locationStatus === 'denied' || locationStatus === 'unavailable') && currentLocation) {
       map.setView([currentLocation.lat, currentLocation.lng], 11);
       done.current = true;
     }
@@ -986,24 +919,17 @@ function ZoomControls() {
   const map = useMap();
   return (
     <div className="absolute bottom-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
-      {[{ s: '+', a: () => map.zoomIn() }, { s: '', a: () => map.zoomOut() }].map(({ s, a }) => (
-        <button
-          key={s}
-          onClick={a}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
-          style={{
-            background: 'rgba(8,8,9,0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: '#94a3b8',
-          }}
-        >
+      {[{ s: '+', a: () => map.zoomIn() }, { s: '−', a: () => map.zoomOut() }].map(({ s, a }) => (
+        <button key={s} onClick={a} className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
+          style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
           {s}
         </button>
       ))}
     </div>
   );
 }
+
+// ── Card de cena ──────────────────────────────────────────────────────────────
 
 function SceneCard({
   scene,
@@ -1017,7 +943,6 @@ function SceneCard({
   onClick: () => void;
 }) {
   const isS2 = scene.source === 's2';
-  const isNdvi = scene.source === 'ndvi';
   const cloudOk = scene.cloud_coverage !== null && scene.cloud_coverage <= 30;
   const cloudMid = scene.cloud_coverage !== null && scene.cloud_coverage > 30 && scene.cloud_coverage <= 60;
 
@@ -1031,21 +956,10 @@ function SceneCard({
       }}
     >
       {/* Ícone */}
-      <div
-        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{
-          background: isS2
-            ? 'rgba(96,165,250,0.15)'
-            : isNdvi
-              ? 'rgba(74,222,128,0.15)'
-              : 'rgba(167,139,250,0.15)',
-        }}
-      >
-        <span
-          className="material-symbols-outlined text-sm"
-          style={{ color: isS2 ? '#60a5fa' : isNdvi ? '#4ade80' : '#a78bfa' }}
-        >
-          {isS2 ? 'satellite_alt' : isNdvi ? 'grass' : 'radar'}
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{ background: isS2 ? 'rgba(96,165,250,0.15)' : 'rgba(167,139,250,0.15)' }}>
+        <span className="material-symbols-outlined text-sm" style={{ color: isS2 ? '#60a5fa' : '#a78bfa' }}>
+          {isS2 ? 'satellite_alt' : 'radar'}
         </span>
       </div>
 
@@ -1055,29 +969,22 @@ function SceneCard({
         <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>
           {isS2
             ? scene.cloud_coverage !== null
-              ? ` ${scene.cloud_coverage.toFixed(0)}% nuvens`
+              ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
               : 'Cobertura N/D'
-            : isNdvi
-              ? 'Vegetação  NDVI'
-              : scene.orbit
-                ? `Órbita ${scene.orbit}`
-                : 'SAR  Radar'}
+            : scene.orbit
+              ? `Órbita ${scene.orbit}`
+              : 'SAR · Radar'
+          }
         </p>
       </div>
 
-      {/* Badge qualidade (S2 e NDVI) */}
-      {(isS2 || isNdvi) && scene.cloud_coverage !== null && (
-        <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+      {/* Badge qualidade (só S2) */}
+      {isS2 && scene.cloud_coverage !== null && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
           style={{
-            background: cloudOk
-              ? 'rgba(74,222,128,0.15)'
-              : cloudMid
-                ? 'rgba(251,191,36,0.15)'
-                : 'rgba(239,68,68,0.15)',
+            background: cloudOk ? 'rgba(74,222,128,0.15)' : cloudMid ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
             color: cloudOk ? '#4ade80' : cloudMid ? '#fbbf24' : '#f87171',
-          }}
-        >
+          }}>
           {cloudOk ? 'LIMPO' : cloudMid ? 'PARCIAL' : 'NUBLADO'}
         </span>
       )}
@@ -1090,7 +997,7 @@ function SceneCard({
   );
 }
 
-//  Painel de cenas 
+// ── Painel de cenas ───────────────────────────────────────────────────────────
 
 function ScenesPanel({
   fieldId,
@@ -1107,11 +1014,11 @@ function ScenesPanel({
   activeSceneKey: string | null;
   overlayLoading: boolean;
   onClose: () => void;
-  onSelectScene: (source: OverlaySource, date: string) => void;
+  onSelectScene: (source: 's1' | 's2', date: string) => void;
 }) {
-  const [tab, setTab] = useState<SceneTab>('s2');
+  const [tab, setTab] = useState<'s2' | 's1'>('s2');
 
-  const currentScenes = tab === 's1' ? scenes.s1 : scenes.s2;
+  const currentScenes = tab === 's2' ? scenes.s2 : scenes.s1;
 
   return (
     <div
@@ -1125,21 +1032,12 @@ function ScenesPanel({
       }}
     >
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-3"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
-      >
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         <div>
           <p className="text-xs font-bold text-white">Imagens Satelitais</p>
-          <p className="text-[10px] mt-0.5 truncate max-w-[180px]" style={{ color: '#64748b' }}>
-            {fieldName}
-          </p>
+          <p className="text-[10px] mt-0.5 truncate max-w-[180px]" style={{ color: '#64748b' }}>{fieldName}</p>
         </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all"
-          style={{ color: '#64748b' }}
-        >
+        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" style={{ color: '#64748b' }}>
           <span className="material-symbols-outlined text-sm">close</span>
         </button>
       </div>
@@ -1147,8 +1045,8 @@ function ScenesPanel({
       {/* Tabs */}
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
-          { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico  RGB' },
-          { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar  SAR' },
+          { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
+          { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button
             key={key}
@@ -1159,15 +1057,9 @@ function ScenesPanel({
               border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}`,
             }}
           >
-            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>
-              {icon}
-            </span>
-            <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>
-              {label}
-            </span>
-            <span className="text-[9px]" style={{ color: '#475569' }}>
-              {desc}
-            </span>
+            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>{icon}</span>
+            <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>{label}</span>
+            <span className="text-[9px]" style={{ color: '#475569' }}>{desc}</span>
           </button>
         ))}
       </div>
@@ -1177,15 +1069,11 @@ function ScenesPanel({
         {scenes.loading ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-            <p className="text-[10px]" style={{ color: '#64748b' }}>
-              Buscando imagens disponíveis...
-            </p>
+            <p className="text-[10px]" style={{ color: '#64748b' }}>Buscando imagens disponíveis...</p>
           </div>
         ) : scenes.error ? (
           <div className="py-6 text-center">
-            <p className="text-[10px]" style={{ color: '#f87171' }}>
-              {scenes.error}
-            </p>
+            <p className="text-[10px]" style={{ color: '#f87171' }}>{scenes.error}</p>
           </div>
         ) : currentScenes.length === 0 ? (
           <div className="py-6 text-center">
@@ -1198,15 +1086,14 @@ function ScenesPanel({
           </div>
         ) : (
           currentScenes.map((scene) => {
-            const selectedSource: OverlaySource = scene.source;
-            const key = `${fieldId}|${selectedSource}|${scene.date}`;
+            const key = `${fieldId}|${scene.source}|${scene.date}`;
             return (
               <SceneCard
                 key={scene.scene_id}
                 scene={scene}
                 isActive={activeSceneKey === key}
                 isLoading={overlayLoading && activeSceneKey === key}
-                onClick={() => onSelectScene(selectedSource, scene.date || '')}
+                onClick={() => onSelectScene(scene.source, scene.date || '')}
               />
             );
           })
@@ -1216,26 +1103,17 @@ function ScenesPanel({
       {/* Footer info */}
       <div className="px-4 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          Fonte: Copernicus  Earth Search STAC  Grátis
+          Fonte: Copernicus · Earth Search STAC · Grátis
         </p>
       </div>
     </div>
   );
 }
 
-//  Componente principal 
+// ── Componente principal ──────────────────────────────────────────────────────
 
 export default function FieldMap() {
-  const {
-    currentLocation,
-    locationStatus,
-    fields,
-    createField,
-    removeField,
-    activeFarmId,
-    activeFieldId,
-    setActiveField,
-  } = useAppStore();
+  const { currentLocation, locationStatus, fields, createField, removeField, activeFarmId, activeFieldId, setActiveField } = useAppStore();
 
   const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1254,31 +1132,15 @@ export default function FieldMap() {
 
   // Painel de cenas
   const [showScenesPanel, setShowScenesPanel] = useState(false);
-  const [scenes, setScenes] = useState<ScenesState>({
-    s2: [],
-    s1: [],
-    loading: false,
-    error: null,
-    fieldId: null,
-  });
+  const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], loading: false, error: null, fieldId: null });
 
   // Overlay
-  const [overlay, setOverlay] = useState<OverlayState>({
-    url: null,
-    bounds: null,
-    loading: false,
-    error: null,
-    sceneKey: null,
-  });
-  const [overlayOpacity, setOverlayOpacity] = useState(0.9);
-  const [activeFilter, setActiveFilter] = useState<'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'>(
-    'truecolor',
-  );
+  const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
   const prevUrlRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
 
-  //  Buscar cenas quando painel abre 
+  // ── Buscar cenas quando painel abre ──────────────────────────────────────
   useEffect(() => {
     if (!showScenesPanel || !activeFieldId) return;
     if (scenes.fieldId === activeFieldId && !scenes.loading) return;
@@ -1288,18 +1150,10 @@ export default function FieldMap() {
     const fetchScenes = async () => {
       try {
         const headers = await buildAuthHeaders();
-        const resp = await fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, {
-          headers,
-        });
+        const resp = await fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        setScenes({
-          s2: data.s2 || [],
-          s1: data.s1 || [],
-          loading: false,
-          error: null,
-          fieldId: activeFieldId,
-        });
+        setScenes({ s2: data.s2 || [], s1: data.s1 || [], loading: false, error: null, fieldId: activeFieldId });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
         setScenes({ s2: [], s1: [], loading: false, error: msg, fieldId: activeFieldId });
@@ -1307,20 +1161,14 @@ export default function FieldMap() {
     };
 
     void fetchScenes();
-  }, [showScenesPanel, activeFieldId, scenes.fieldId, scenes.loading]);
+  }, [showScenesPanel, activeFieldId]);
 
-  //  Carregar overlay de cena selecionada 
-  const handleSelectScene = async (
-    source: 's1' | 's2' | 'ndvi',
-    date: string,
-    filterOverride?: typeof activeFilter,
-  ) => {
-    const filter = filterOverride ?? activeFilter;
+  // ── Carregar overlay de cena selecionada ──────────────────────────────────
+  const handleSelectScene = async (source: 's1' | 's2', date: string) => {
     if (!activeFieldId) return;
 
-    const querySource = source === 'ndvi' ? 's2' : source;
-    const sceneKey = `${activeFieldId}|${querySource}|${date}`;
-    if (!filterOverride && overlay.sceneKey === sceneKey && overlay.url) return; // já carregado com o mesmo filtro
+    const sceneKey = `${activeFieldId}|${source}|${date}`;
+    if (overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
 
     const activeField = fields.find((f) => f.id === activeFieldId);
     if (!activeField?.boundaries || activeField.boundaries.length < 3) return;
@@ -1328,37 +1176,16 @@ export default function FieldMap() {
     const bounds = computeBoundsFromBoundaries(activeField.boundaries);
 
     setOverlay({ url: null, bounds, loading: true, error: null, sceneKey });
-    if (prevUrlRef.current) {
-      URL.revokeObjectURL(prevUrlRef.current);
-      prevUrlRef.current = null;
-    }
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
 
     try {
       const headers = await buildAuthHeaders();
-      const modeQuery = querySource === 's2' ? `&mode=${filter}` : '';
-      const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${querySource}&scene_date=${date}${modeQuery}`;
-      console.log('[Sentinel overlay] URL:', url);
+      const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${source}&scene_date=${date}`;
+      const resp = await fetch(url, { headers });
 
-      let resp: Response | null = null;
-      let errorDetail = '';
-
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const attemptResp = await fetch(url, { headers, cache: 'no-store' });
-        resp = attemptResp;
-        if (attemptResp.ok) break;
-
-        errorDetail = await attemptResp.text().catch(() => attemptResp.statusText);
-        console.warn(
-          `[Sentinel overlay] tentativa ${attempt}/3 falhou: HTTP ${attemptResp.status} - ${errorDetail.slice(0, 120)}`,
-        );
-
-        if (attempt < 3) {
-          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
-        }
-      }
-
-      if (!resp || !resp.ok) {
-        throw new Error(`HTTP ${resp?.status ?? 0}: ${errorDetail.slice(0, 150)}`);
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => resp.statusText);
+        throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 150)}`);
       }
 
       const blob = await resp.blob();
@@ -1374,23 +1201,14 @@ export default function FieldMap() {
 
   // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
-    if (prevUrlRef.current) {
-      URL.revokeObjectURL(prevUrlRef.current);
-      prevUrlRef.current = null;
-    }
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
-    setActiveFilter('truecolor');
   }, [activeFieldId]);
 
-  useEffect(
-    () => () => {
-      if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
-    },
-    [],
-  );
+  useEffect(() => () => { if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current); }, []);
 
-  //  Busca geográfica 
+  // ── Busca geográfica ──────────────────────────────────────────────────────
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const q = searchQuery.trim();
@@ -1399,29 +1217,17 @@ export default function FieldMap() {
     setTempMarker(null);
 
     const decimal = parseDecimalCoords(q);
-    if (decimal) {
-      setFlyTarget({ ...decimal, zoom: 15 });
-      setTempMarker(decimal);
-      return;
-    }
+    if (decimal) { setFlyTarget({ ...decimal, zoom: 15 }); setTempMarker(decimal); return; }
 
     const dms = parseDMSCoords(q);
-    if (dms) {
-      setFlyTarget({ ...dms, zoom: 15 });
-      setTempMarker(dms);
-      return;
-    }
+    if (dms) { setFlyTarget({ ...dms, zoom: 15 }); setTempMarker(dms); return; }
 
     setSearchLoading(true);
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`,
-        { headers: { 'Accept-Language': 'pt-BR' } },
-      );
-      const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`, { headers: { 'Accept-Language': 'pt-BR' } });
+      const data = await res.json() as Array<{ lat: string; lon: string }>;
       if (!data?.length) throw new Error('não encontrado');
-      const lat = parseFloat(data[0].lat);
-      const lng = parseFloat(data[0].lon);
+      const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
       setFlyTarget({ lat, lng, zoom: 13 });
       setTempMarker({ lat, lng });
     } catch {
@@ -1431,38 +1237,22 @@ export default function FieldMap() {
     }
   };
 
-  //  Desenho 
-  const handleMapClick = useCallback(
-    (ll: { lat: number; lng: number }) => {
-      if (drawMode !== 'drawing') return;
-      setDrawPoints((p) => [...p, [ll.lat, ll.lng]]);
-    },
-    [drawMode],
-  );
+  // ── Desenho ───────────────────────────────────────────────────────────────
+  const handleMapClick = useCallback((ll: { lat: number; lng: number }) => {
+    if (drawMode !== 'drawing') return;
+    setDrawPoints((p) => [...p, [ll.lat, ll.lng]]);
+  }, [drawMode]);
 
   const resetForm = () => {
-    setDrawPoints([]);
-    setFieldName('');
-    setFieldCultura('');
-    setFieldDataPlantio('');
-    setFieldVariedade('');
-    setDrawMode('none');
+    setDrawPoints([]); setFieldName(''); setFieldCultura('');
+    setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none');
   };
 
   const finishDrawing = async () => {
-    if (!activeFarmId) {
-      alert('Selecione uma fazenda antes de desenhar.');
-      return;
-    }
-    if (drawPoints.length < 3) {
-      alert('Marque pelo menos 3 pontos.');
-      return;
-    }
+    if (!activeFarmId) { alert('Selecione uma fazenda antes de desenhar.'); return; }
+    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
     const areaHa = polygonAreaHa(drawPoints);
-    if (areaHa < 0.05) {
-      alert('Área muito pequena. Mínimo 0.05 ha.');
-      return;
-    }
+    if (areaHa < 0.05) { alert('Área muito pequena. Mínimo 0.05 ha.'); return; }
 
     const name = fieldName.trim() || `Talhão ${fields.length + 1}`;
     const centroid: [number, number] = [
@@ -1471,16 +1261,7 @@ export default function FieldMap() {
     ];
     try {
       setIsSaving(true);
-      await createField(activeFarmId, {
-        lat: centroid[0],
-        lng: centroid[1],
-        name,
-        boundaries: drawPoints,
-        cultura: fieldCultura || undefined,
-        dataPlantio: fieldDataPlantio || undefined,
-        variedade: fieldVariedade || undefined,
-        areaHa,
-      });
+      await createField(activeFarmId, { lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, cultura: fieldCultura || undefined, dataPlantio: fieldDataPlantio || undefined, variedade: fieldVariedade || undefined, areaHa });
       resetForm();
     } catch (err: unknown) {
       alert(`Erro ao salvar: ${err instanceof Error ? err.message : 'desconhecido'}`);
@@ -1491,65 +1272,34 @@ export default function FieldMap() {
 
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
 
-  const SENTINEL_FILTERS: { key: 'truecolor' | 'ndvi' | 'falsecolor' | 'agriculture'; label: string }[] = [
-    { key: 'truecolor', label: ' True Color' },
-    { key: 'ndvi', label: ' NDVI' },
-    { key: 'falsecolor', label: ' Inf. Vermelho' },
-    { key: 'agriculture', label: ' Agricultura' },
-  ];
-
   const activeField = fields.find((f) => f.id === activeFieldId);
 
-  //  Render 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="relative w-full h-full overflow-hidden"
-      style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}
-    >
-      <MapContainer
-        center={center}
-        zoom={13}
-        style={{ height: '100%', width: '100%', background: '#080809' }}
-        zoomControl={false}
-      >
+    <div className="relative w-full h-full overflow-hidden" style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}>
+      <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', background: '#080809' }} zoomControl={false}>
         <InitialCenterController />
         <ActiveFieldFlyController />
         <FlyController target={flyTarget} />
 
-        {mapLayer === 'osm' && (
-          <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />
-        )}
+        {mapLayer === 'osm' && <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />}
         {mapLayer === 'esri' && (
           <>
-            <TileLayer
-              attribution="&copy; Esri"
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={20}
-            />
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={20}
-              opacity={0.6}
-            />
+            <TileLayer attribution="&copy; Esri" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={20} />
+            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxZoom={20} opacity={0.6} />
           </>
         )}
 
         {/* Overlay da cena selecionada */}
         {overlay.url && overlay.bounds && (
-          <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={overlayOpacity} zIndex={400} />
+          <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />
         )}
 
         <MapClickHandler onMapClick={handleMapClick} />
 
-        {tempMarker && (
-          <Marker position={[tempMarker.lat, tempMarker.lng]}>
-            <Popup> {searchQuery}</Popup>
-          </Marker>
-        )}
+        {tempMarker && <Marker position={[tempMarker.lat, tempMarker.lng]}><Popup>📍 {searchQuery}</Popup></Marker>}
         {currentLocation && locationStatus === 'precise' && !fields.some((s) => s.lat === currentLocation.lat) && (
-          <Marker position={[currentLocation.lat, currentLocation.lng]}>
-            <Popup> Sua localização</Popup>
-          </Marker>
+          <Marker position={[currentLocation.lat, currentLocation.lng]}><Popup>📍 Sua localização</Popup></Marker>
         )}
 
         {fields.map((loc, idx) => {
@@ -1558,99 +1308,29 @@ export default function FieldMap() {
           return (
             <Polygon
               key={loc.id}
-              positions={
-                loc.boundaries ?? [
-                  [loc.lat - 0.001, loc.lng - 0.001],
-                  [loc.lat - 0.001, loc.lng + 0.001],
-                  [loc.lat + 0.001, loc.lng + 0.001],
-                  [loc.lat + 0.001, loc.lng - 0.001],
-                ]
-              }
-              pathOptions={{
-                color,
-                fillColor: color,
-                fillOpacity: isActive ? 0.08 : 0.2,
-                weight: isActive ? 3 : 2,
-                dashArray: isActive ? undefined : '4 2',
-              }}
-              eventHandlers={{
-                click: () => {
-                  if (loc.id) setActiveField(loc.id);
-                },
-              }}
+              positions={loc.boundaries ?? [[loc.lat - 0.001, loc.lng - 0.001], [loc.lat - 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng - 0.001]]}
+              pathOptions={{ color, fillColor: color, fillOpacity: isActive ? 0.08 : 0.2, weight: isActive ? 3 : 2, dashArray: isActive ? undefined : '4 2' }}
+              eventHandlers={{ click: () => { if (loc.id) setActiveField(loc.id); } }}
             >
               <Tooltip permanent direction="center" className="leaflet-field-label" offset={[0, 0]}>
-                <span
-                  style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: '#fff',
-                    textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-                    whiteSpace: 'nowrap',
-                    pointerEvents: 'none',
-                  }}
-                >
+                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
                   {loc.name}
                 </span>
               </Tooltip>
               <Popup>
                 <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 190 }}>
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
-                  {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}> {loc.cultura}</p>}
-                  {loc.variedade && (
-                    <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}> {loc.variedade}</p>
-                  )}
-                  {loc.dataPlantio && (
-                    <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>
-                       {new Date(loc.dataPlantio).toLocaleDateString('pt-BR')}
-                    </p>
-                  )}
-                  {loc.boundaries && (
-                    <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-                       {polygonAreaHa(loc.boundaries).toFixed(2)} ha
-                    </p>
-                  )}
+                  {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}</p>}
+                  {loc.boundaries && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>📐 {polygonAreaHa(loc.boundaries).toFixed(2)} ha</p>}
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
-                      onClick={() => {
-                        if (loc.id) {
-                          setActiveField(loc.id);
-                          setShowScenesPanel(true);
-                        }
-                      }}
-                      style={{
-                        fontSize: 11,
-                        color: '#ec5b13',
-                        background: 'rgba(236,91,19,0.1)',
-                        border: '1px solid rgba(236,91,19,0.3)',
-                        borderRadius: 6,
-                        padding: '3px 8px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                       Ver Imagens
-                    </button>
+                      onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
+                      style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                    >🛰 Ver Imagens</button>
                     <button
-                      onClick={() => {
-                        if (
-                          loc.id &&
-                          activeFarmId &&
-                          window.confirm(`Remover "${loc.name}"? Esta ação não pode ser desfeita.`)
-                        )
-                          removeField(activeFarmId, loc.id);
-                      }}
-                      style={{
-                        fontSize: 11,
-                        color: '#ef4444',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                    >
-                       Remover
-                    </button>
+                      onClick={() => { if (loc.id && activeFarmId && window.confirm(`Remover "${loc.name}"?`)) removeField(activeFarmId, loc.id); }}
+                      style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    >🗑 Remover</button>
                   </div>
                 </div>
               </Popup>
@@ -1660,22 +1340,9 @@ export default function FieldMap() {
 
         {drawMode === 'drawing' && drawPoints.length > 0 && (
           <>
-            {drawPoints.length > 1 && (
-              <Polyline
-                positions={[...drawPoints, drawPoints[0]]}
-                pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }}
-              />
-            )}
+            {drawPoints.length > 1 && <Polyline positions={[...drawPoints, drawPoints[0]]} pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }} />}
             {drawPoints.map((pt, i) => (
-              <Marker
-                key={i}
-                position={pt}
-                icon={L.divIcon({
-                  className: '',
-                  html: '<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>',
-                  iconAnchor: [5, 5],
-                })}
-              />
+              <Marker key={i} position={pt} icon={L.divIcon({ className: '', html: '<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>', iconAnchor: [5, 5] })} />
             ))}
           </>
         )}
@@ -1706,30 +1373,14 @@ export default function FieldMap() {
       {(overlay.loading || overlay.error) && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           {overlay.loading && (
-            <div
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white"
-              style={{
-                background: 'rgba(8,8,9,0.88)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(236,91,19,0.3)',
-              }}
-            >
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
               <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin" />
               Carregando imagem...
             </div>
           )}
           {!overlay.loading && overlay.error && (
-            <div
-              className="px-3 py-2 rounded-xl text-[10px] font-semibold"
-              style={{
-                background: 'rgba(8,8,9,0.88)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                color: '#f87171',
-                maxWidth: 300,
-              }}
-            >
-               {overlay.error}
+            <div className="px-3 py-2 rounded-xl text-[10px] font-semibold" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 300 }}>
+              ⚠ {overlay.error}
             </div>
           )}
         </div>
@@ -1737,129 +1388,27 @@ export default function FieldMap() {
 
       {/* Badge de overlay ativo */}
       {overlay.url && !overlay.loading && overlay.sceneKey && (
-        <div className="absolute z-[500] pointer-events-auto flex flex-col gap-2" style={{ top: 52, left: 4 }}>
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold"
-            style={{
-              background: 'rgba(8,8,9,0.82)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(74,222,128,0.25)',
-              color: '#4ade80',
-            }}
-          >
-             {getOverlaySourceLabel(overlay.sceneKey, activeFilter)}  {formatOverlaySceneDate(overlay.sceneKey) ?? 'Data N/D'}
-          </div>
-          {!overlay.sceneKey.includes('|s1|') && (
-            <div
-              className="flex gap-1 p-1 rounded-xl"
-              style={{
-                background: 'rgba(8,8,9,0.9)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              {SENTINEL_FILTERS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setActiveFilter(key);
-                    const parts = overlay.sceneKey?.split('|') ?? [];
-                    const date = parts[2];
-                    if (date) void handleSelectScene('s2', date, key);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all whitespace-nowrap"
-                  style={{
-                    background: activeFilter === key ? 'rgba(236,91,19,0.25)' : 'transparent',
-                    color: activeFilter === key ? '#ec5b13' : '#64748b',
-                    border:
-                      activeFilter === key
-                        ? '1px solid rgba(236,91,19,0.5)'
-                        : '1px solid transparent',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div
-            className="flex items-center gap-3 px-3 py-2 rounded-xl"
-            style={{
-              background: 'rgba(8,8,9,0.82)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
-          >
-            <input
-              type="range"
-              min={10}
-              max={100}
-              step={5}
-              value={overlayOpacity * 100}
-              onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
-              style={{ accentColor: '#ec5b13', width: 120 }}
-            />
-            <span className="text-[10px] font-bold" style={{ color: '#fff' }}>
-              {Math.round(overlayOpacity * 100)}%
-            </span>
+        <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
+            🛰 {overlay.sceneKey.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : 'Sentinel-2 · True Color'} · Cache 30min
           </div>
         </div>
       )}
 
       {/* Barra de busca */}
       {drawMode === 'none' && (
-        <form
-          onSubmit={handleSearch}
-          className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto"
-          style={{ minWidth: 300 }}
-        >
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
-            style={{
-              background: 'rgba(8,8,9,0.88)',
-              backdropFilter: 'blur(16px)',
-              border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}`,
-            }}
-          >
-            <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>
-              search
-            </span>
-            <input
-              className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none"
-              placeholder="Buscar cidade ou coordenadas..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setSearchError(null);
-              }}
-            />
-            {searchLoading && (
-              <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />
-            )}
+        <form onSubmit={handleSearch} className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto" style={{ minWidth: 300 }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(16px)', border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+            <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
+            <input className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none" placeholder="Buscar cidade ou coordenadas..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
+            {searchLoading && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />}
           </div>
-          <button
-            type="submit"
-            disabled={searchLoading || !searchQuery.trim()}
-            className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40"
-            style={{ background: '#ec5b13', flexShrink: 0 }}
-          >
-            Ir
-          </button>
+          <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13', flexShrink: 0 }}>Ir</button>
         </form>
       )}
 
       {searchError && drawMode === 'none' && (
-        <div
-          className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none"
-          style={{
-            top: 60,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(239,68,68,0.15)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            color: '#f87171',
-          }}
-        >
+        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none" style={{ top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
           {searchError}
         </div>
       )}
@@ -1867,21 +1416,9 @@ export default function FieldMap() {
       {/* Seletor de camadas */}
       {drawMode === 'none' && (
         <div className="absolute top-4 left-4 z-[500] flex gap-1.5 pointer-events-auto">
-          {([
-            { key: 'osm', label: 'OpenStreetMap' },
-            { key: 'esri', label: 'Satélite HD' },
-          ] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setMapLayer(key)}
-              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-              style={{
-                background: mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: mapLayer === key ? '#fff' : '#94a3b8',
-              }}
-            >
+          {([{ key: 'osm', label: 'OpenStreetMap' }, { key: 'esri', label: 'Satélite HD' }] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
+            <button key={key} onClick={() => setMapLayer(key)} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+              style={{ background: mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: mapLayer === key ? '#fff' : '#94a3b8' }}>
               {label}
             </button>
           ))}
@@ -1890,11 +1427,7 @@ export default function FieldMap() {
 
       {/* Botão Desenhar */}
       {drawMode === 'none' && (
-        <button
-          onClick={() => setDrawMode('drawing')}
-          className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto"
-          style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}
-        >
+        <button onClick={() => setDrawMode('drawing')} className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto" style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
           <span className="material-symbols-outlined text-base">add_location_alt</span>
           Desenhar Talhão
         </button>
@@ -1903,82 +1436,22 @@ export default function FieldMap() {
       {/* Controles de desenho */}
       {drawMode === 'drawing' && (
         <>
-          <div
-            className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none"
-            style={{
-              background: 'rgba(8,8,9,0.92)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(236,91,19,0.3)',
-            }}
-          >
-            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>
-              draw
-            </span>
-            Clique para marcar vértices  {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(236,91,19,0.3)' }}>
+            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>draw</span>
+            Clique para marcar vértices · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
           </div>
-          <div
-            className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto"
-            style={{
-              background: 'rgba(8,8,9,0.95)',
-              backdropFilter: 'blur(20px)',
-              border: '1px solid rgba(255,255,255,0.09)',
-              minWidth: 420,
-            }}
-          >
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
-              {drawPoints.length} pontos  Novo Talhão
-            </p>
-            <input
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
-              placeholder="Nome do talhão"
-              value={fieldName}
-              onChange={(e) => setFieldName(e.target.value)}
-            />
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto" style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 420 }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>{drawPoints.length} pontos · Novo Talhão</p>
+            <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Nome do talhão" value={fieldName} onChange={(e) => setFieldName(e.target.value)} />
             <div className="grid grid-cols-2 gap-2">
-              <input
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
-                placeholder="Cultura (ex: Soja)"
-                value={fieldCultura}
-                onChange={(e) => setFieldCultura(e.target.value)}
-              />
-              <input
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40"
-                placeholder="Variedade"
-                value={fieldVariedade}
-                onChange={(e) => setFieldVariedade(e.target.value)}
-              />
+              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Cultura (ex: Soja)" value={fieldCultura} onChange={(e) => setFieldCultura(e.target.value)} />
+              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Variedade" value={fieldVariedade} onChange={(e) => setFieldVariedade(e.target.value)} />
             </div>
-            <input
-              type="date"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 focus:outline-none focus:border-orange-500/40"
-              value={fieldDataPlantio}
-              onChange={(e) => setFieldDataPlantio(e.target.value)}
-            />
-            {drawPoints.length >= 3 && (
-              <p className="text-[10px] text-slate-400 text-center">
-                Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span>
-              </p>
-            )}
+            <input type="date" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 focus:outline-none focus:border-orange-500/40" value={fieldDataPlantio} onChange={(e) => setFieldDataPlantio(e.target.value)} />
+            {drawPoints.length >= 3 && <p className="text-[10px] text-slate-400 text-center">Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span></p>}
             <div className="flex gap-2">
-              <button
-                onClick={finishDrawing}
-                disabled={isSaving || drawPoints.length < 3}
-                className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40"
-                style={{ background: '#ec5b13' }}
-              >
-                {isSaving ? 'Salvando...' : 'Salvar Talhão'}
-              </button>
-              <button
-                onClick={resetForm}
-                className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
-                style={{
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  color: '#94a3b8',
-                }}
-              >
-                Cancelar
-              </button>
+              <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>{isSaving ? 'Salvando...' : 'Salvar Talhão'}</button>
+              <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>Cancelar</button>
             </div>
           </div>
         </>
@@ -1986,7 +1459,6 @@ export default function FieldMap() {
     </div>
   );
 }
-
 ```
 
 
@@ -2435,10 +1907,6 @@ export default function Layout() {
     </>
   );
 }
-
-
-
-
 ```
 
 
@@ -2575,7 +2043,6 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   return <>{children}</>;
 }
-
 ```
 
 
@@ -2674,7 +2141,6 @@ if (typeof document !== 'undefined' && !document.getElementById('skeleton-kf')) 
 }
 
 export default { SkeletonLine, SkeletonCard, SkeletonChart, SkeletonMap };
-
 ```
 
 
@@ -2744,7 +2210,6 @@ window::-webkit-scrollbar,
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
-
 ```
 
 
@@ -2766,7 +2231,6 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
-
 ```
 
 
@@ -3163,7 +2627,6 @@ export default function Alerts() {
     </>
   );
 }
-
 ```
 
 
@@ -3974,7 +3437,6 @@ export default function Chat() {
     </>
   );
 }
-
 ```
 
 
@@ -4443,7 +3905,6 @@ export default function Dashboard() {
     </>
   );
 }
-
 ```
 
 
@@ -4802,7 +4263,6 @@ export default function LandingPage() {
         </>
     );
 }
-
 ```
 
 
@@ -5055,7 +4515,6 @@ export default function Login() {
     </>
   );
 }
-
 ```
 
 
@@ -5415,7 +4874,6 @@ export default function Market() {
     </div>
   );
 }
-
 ```
 
 
@@ -5601,7 +5059,6 @@ export default function Pricing() {
     </div>
   );
 }
-
 ```
 
 
@@ -5927,7 +5384,6 @@ export default function Register() {
     </>
   );
 }
-
 ```
 
 
@@ -6403,7 +5859,6 @@ export default function Reports() {
     </div>
   );
 }
-
 ```
 
 
@@ -6651,7 +6106,6 @@ export default function ResetPassword() {
     </>
   );
 }
-
 ```
 
 
@@ -7197,7 +6651,6 @@ export default function Weather() {
     </div>
   );
 }
-
 ```
 
 
@@ -7294,7 +6747,6 @@ export async function generateAlerts(
     valueLabel: alert.valueLabel,
   }));
 }
-
 ```
 
 
@@ -7526,7 +6978,6 @@ export async function fetchFieldIntelligenceSnapshot(fieldId: string) {
     method: 'GET',
   });
 }
-
 ```
 
 
@@ -7663,7 +7114,6 @@ export const farmService = {
     return response.success;
   },
 };
-
 ```
 
 
@@ -7691,7 +7141,6 @@ export const supabase = createClient(
     },
   }
 );
-
 ```
 
 
@@ -8176,7 +7625,6 @@ export const useAppStore = create<AppState>()(
 );
 
 export default useAppStore;
-
 ```
 
 
@@ -8217,7 +7665,6 @@ export function polygonAreaHa(boundaries: [number, number][]): number {
   }
   return Math.abs(area / 2) / 10_000; // m² → ha
 }
-
 ```
 
 
@@ -8290,12 +7737,11 @@ export async function fetchCurrentLocation(): Promise<GeolocationResult> {
 export function isFallbackLocation(lat: number, lng: number): boolean {
   return Math.abs(lat - FALLBACK_LOCATION.lat) < 0.0001 && Math.abs(lng - FALLBACK_LOCATION.lng) < 0.0001;
 }
-
 ```
 
 
 ### `tracto-backend/check_supabase.py`
-```py
+```python
 import os
 import requests
 from dotenv import load_dotenv
@@ -8342,12 +7788,11 @@ for table in tables:
             print(f"  Detail: {r.text}")
     except Exception as e:
         print(f"  Exception checking '{table}': {e}")
-
 ```
 
 
 ### `tracto-backend/drop_limit_trigger.py`
-```py
+```python
 import os
 from supabase import create_client
 from dotenv import load_dotenv
@@ -8380,13 +7825,12 @@ try:
     print("Sucesso ao executar via RPC!")
 except Exception as e:
     print(f"Nota: RPC 'exec_sql' não disponível ou falhou ({e}). O trigger deve ser removido manualmente no console do Supabase ou via migração.")
-
 ```
 
 
 ### `tracto-backend/main.py`
-```py
-﻿import json
+```python
+import json
 import logging
 import os
 from datetime import datetime
@@ -8515,6 +7959,38 @@ def health_check():
         "service": "tracto-backend",
         "timestamp": datetime.now().isoformat(),
     }
+
+
+@app.get("/api/sentinel/test-auth")
+async def sentinel_test_auth():
+    """Endpoint temporário para testar autenticação Sentinel. Remover após debug."""
+    import os
+
+    client_id = os.getenv("SENTINEL_CLIENT_ID", "NAO_CONFIGURADO")
+    client_secret = os.getenv("SENTINEL_CLIENT_SECRET", "NAO_CONFIGURADO")
+
+    # Força renovação do token ignorando cache
+    try:
+        import httpx
+
+        response = httpx.post(
+            "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=15.0,
+        )
+        return {
+            "client_id": client_id,
+            "secret_length": len(client_secret),
+            "secret_preview": client_secret[:4] + "..." + client_secret[-4:],
+            "http_status": response.status_code,
+            "response": response.json(),
+        }
+    except Exception as e:
+        return {"error": str(e), "client_id": client_id}
 
 # --- Stage 3: Commercial, Push & WhatsApp ---
 
@@ -8727,6 +8203,7 @@ async def sentinel_scenes_endpoint(
             "lookback_days": lookback_days,
             "s2": scenes.get("s2", []),
             "s1": scenes.get("s1", []),
+            "s1_available": False,
             "total": len(scenes.get("s2", [])) + len(scenes.get("s1", [])),
         }
 
@@ -9219,13 +8696,11 @@ async def verify_recaptcha(request: RecaptchaRequest):
     except Exception as exc:
         logging.error("Erro na verificacao do reCAPTCHA: %s", exc)
         raise HTTPException(status_code=500, detail="Erro interno na verificacao de seguranca.") from exc
-
-
 ```
 
 
 ### `tracto-backend/models.py`
-```py
+```python
 from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -9393,7 +8868,6 @@ class FieldIntelligenceSnapshot(BaseModel):
     analysis_status: SnapshotSourceStatus
     ai_summary_status: SnapshotSourceStatus
     updated_at: str
-
 ```
 
 
@@ -9410,12 +8884,11 @@ class FieldIntelligenceSnapshot(BaseModel):
     "restartPolicyMaxRetries": 10
   }
 }
-
 ```
 
 
 ### `tracto-backend/scripts/deduplicate_fields.py`
-```py
+```python
 import os
 import requests
 from dotenv import load_dotenv
@@ -9481,12 +8954,11 @@ def deduplicate():
 
 if __name__ == "__main__":
     deduplicate()
-
 ```
 
 
 ### `tracto-backend/services/agronomic_engine.py`
-```py
+```python
 import logging
 from typing import Any, Dict, List
 from datetime import datetime
@@ -9632,12 +9104,11 @@ class AgronomicEngine:
         if boundaries_data: score += 0.3
         
         return round(float(score), 2)
-
 ```
 
 
 ### `tracto-backend/services/ai_service.py`
-```py
+```python
 import json
 import logging
 import os
@@ -10035,12 +9506,11 @@ Responda em portugues, em 3-4 paragrafos, e finalize com a acao recomendada ao p
     except Exception as exc:
         logging.error("Erro na analise do mapa climatico Claude: %s", exc)
         return "Nao foi possivel analisar o mapa climatico no momento."
-
 ```
 
 
 ### `tracto-backend/services/auth_service.py`
-```py
+```python
 import logging
 import os
 import json
@@ -10165,12 +9635,11 @@ def verify_access_token(access_token: str) -> AuthenticatedUser:
 def get_current_user(authorization: str | None = Header(default=None)) -> AuthenticatedUser:
     token = _extract_bearer_token(authorization)
     return verify_access_token(token)
-
 ```
 
 
 ### `tracto-backend/services/billing_service.py`
-```py
+```python
 import os
 from datetime import datetime
 from supabase import create_client, Client
@@ -10227,12 +9696,11 @@ class BillingService:
         return True
 
 billing_service = BillingService()
-
 ```
 
 
 ### `tracto-backend/services/cache_service.py`
-```py
+```python
 import json
 import os
 import time
@@ -10305,13 +9773,11 @@ class AnalysisCache:
 
 # Global instance
 analysis_cache = AnalysisCache()
-
-
 ```
 
 
 ### `tracto-backend/services/farm_service.py`
-```py
+```python
 import logging
 import os
 from typing import Any, Dict, List
@@ -10534,12 +10000,11 @@ def ensure_default_farm(user_id: str) -> Dict[str, Any]:
     except Exception as exc:
         logging.error("Erro no bootstrap de fazenda: %s", exc)
         raise
-
 ```
 
 
 ### `tracto-backend/services/field_intelligence_service.py`
-```py
+```python
 import asyncio
 import logging
 from datetime import datetime
@@ -10962,12 +10427,11 @@ async def build_field_intelligence_snapshot(user_id: str, field_id: str) -> Fiel
 
 	analysis_cache.set(snapshot_cache_key, snapshot.model_dump(), ttl_hours=0.5)
 	return snapshot
-
 ```
 
 
 ### `tracto-backend/services/geo_service.py`
-```py
+```python
 import asyncio
 import time
 from typing import Any
@@ -11059,19 +10523,18 @@ async def search_location(query: str) -> dict[str, Any] | None:
 
     _geo_cache[cache_key] = (time.time(), payload)
     return payload
-
 ```
 
 
 ### `tracto-backend/services/sentinel_service.py`
-```py
+```python
 """
-sentinel_service.py — Versão 4.3
+tracto-backend/services/sentinel_service.py — Versão 4.1
+Correção: indentação do bloco S1, evalscript S1 com 4 bandas RGBA, sem maxCloudCoverage no S1
 """
 
 import base64
 import logging
-import math
 import os
 import threading
 import time
@@ -11080,12 +10543,14 @@ from typing import Any
 
 import httpx
 
+# ── Cache de token OAuth ──────────────────────────────────────────────────────
+
 _token_lock = threading.Lock()
 _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
 
+OAUTH_URL = "https://services.sentinel-hub.com/oauth/token"
 PROCESS_API_URL = "https://services.sentinel-hub.com/api/v1/process"
 STATISTICS_API_URL = "https://services.sentinel-hub.com/api/v1/statistics"
-OAUTH_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 
 
 def get_oauth_token() -> str | None:
@@ -11093,29 +10558,38 @@ def get_oauth_token() -> str | None:
         now = time.time()
         if _token_cache["access_token"] and now < _token_cache["expires_at"]:
             return _token_cache["access_token"]
+
         client_id = os.getenv("SENTINEL_CLIENT_ID")
         client_secret = os.getenv("SENTINEL_CLIENT_SECRET")
         if not client_id or not client_secret:
-            logging.error("[Sentinel] Credenciais não configuradas.")
+            logging.error("[Sentinel] SENTINEL_CLIENT_ID or SENTINEL_CLIENT_SECRET not configured.")
             return None
+
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.post(
                     OAUTH_URL,
-                    data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret},
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                    },
                 )
                 response.raise_for_status()
                 data = response.json()
+
             token = data.get("access_token")
             expires_in = int(data.get("expires_in", 3600))
             _token_cache["access_token"] = token
             _token_cache["expires_at"] = now + max(expires_in - 300, 60)
-            logging.info("[Sentinel] Token renovado. TTL=%ss", max(expires_in - 300, 60))
+            logging.info("[Sentinel] OAuth token refreshed. TTL=%ss", max(expires_in - 300, 60))
             return token
         except Exception as exc:
-            logging.error("[Sentinel] OAuth error: %s", exc)
+            logging.error("[Sentinel] OAuth token error: %s", exc)
             return None
 
+
+# ── Cache de overlay ──────────────────────────────────────────────────────────
 
 _overlay_lock = threading.Lock()
 _overlay_cache: dict[str, dict[str, Any]] = {}
@@ -11126,6 +10600,7 @@ def _get_cached_overlay(cache_key: str) -> bytes | None:
     with _overlay_lock:
         entry = _overlay_cache.get(cache_key)
         if entry and time.time() < entry["expires_at"]:
+            logging.info("[Sentinel] Cache HIT overlay key=%s", cache_key)
             return entry["image_bytes"]
         if entry:
             del _overlay_cache[cache_key]
@@ -11134,16 +10609,28 @@ def _get_cached_overlay(cache_key: str) -> bytes | None:
 
 def _set_cached_overlay(cache_key: str, image_bytes: bytes) -> None:
     with _overlay_lock:
-        _overlay_cache[cache_key] = {"image_bytes": image_bytes, "expires_at": time.time() + OVERLAY_TTL_SECONDS}
+        _overlay_cache[cache_key] = {
+            "image_bytes": image_bytes,
+            "expires_at": time.time() + OVERLAY_TTL_SECONDS,
+        }
+    logging.info("[Sentinel] Overlay cacheado key=%s size=%d bytes", cache_key, len(image_bytes))
 
 
-def get_bbox_from_boundaries(boundaries: list[list[float]] | None, lat: float, lng: float) -> list[float]:
+# ── Utilitários de geometria ──────────────────────────────────────────────────
+
+def get_bbox_from_boundaries(
+    boundaries: list[list[float]] | None,
+    lat: float,
+    lng: float,
+) -> list[float]:
     if not boundaries or len(boundaries) < 3:
         return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
+
     lats = [float(p[0]) for p in boundaries if p and len(p) >= 2]
     lngs = [float(p[1]) for p in boundaries if p and len(p) >= 2]
     if not lats or not lngs:
         return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
+
     margin = 0.0005
     return [min(lngs) - margin, min(lats) - margin, max(lngs) + margin, max(lats) + margin]
 
@@ -11160,27 +10647,7 @@ def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | No
     return {"type": "Polygon", "coordinates": [valid]}
 
 
-def _estimate_output_size_from_bbox(bbox: list[float], source: str) -> int:
-    """
-    Estima resolução de saída a partir do tamanho do talhão para reduzir blur/pixelização.
-    Sentinel-2 usa alvo ~10m/px; Sentinel-1 usa alvo ~20m/px.
-    """
-    lon_min, lat_min, lon_max, lat_max = bbox
-    lon_span = abs(lon_max - lon_min)
-    lat_span = abs(lat_max - lat_min)
-    center_lat = (lat_min + lat_max) / 2.0
-
-    meters_per_deg_lat = 111_320.0
-    meters_per_deg_lng = 111_320.0 * max(math.cos(math.radians(center_lat)), 0.2)
-    max_span_m = max(lat_span * meters_per_deg_lat, lon_span * meters_per_deg_lng)
-
-    target_m_per_px = 20.0 if source == "s1" else 10.0
-    px = int(max_span_m / target_m_per_px)
-
-    # Mantem faixa segura da Process API e arredonda para blocos previsiveis.
-    px = max(512, min(1536, px))
-    return int((px + 63) // 64 * 64)
-
+# ── Busca de cenas via STAC ───────────────────────────────────────────────────
 
 STAC_URL = "https://earth-search.aws.element84.com/v1/search"
 
@@ -11211,68 +10678,89 @@ def get_available_scenes(
     intersects = build_intersects()
     results: dict[str, list[dict]] = {"s2": [], "s1": []}
 
+    # Sentinel-2
     try:
         with httpx.Client(timeout=20.0) as client:
             res = client.post(STAC_URL, json={
-                "collections": ["sentinel-2-l2a"], "limit": max_results_per_source,
+                "collections": ["sentinel-2-l2a"],
+                "limit": max_results_per_source,
                 "sortby": [{"field": "properties.datetime", "direction": "desc"}],
-                "datetime": f"{from_dt}/{to_dt}", "intersects": intersects,
+                "datetime": f"{from_dt}/{to_dt}",
+                "intersects": intersects,
             })
             res.raise_for_status()
-            for feat in res.json().get("features", []):
-                props = feat.get("properties", {})
-                dt_str = props.get("datetime") or props.get("created")
-                date_iso, date_br = None, None
-                if dt_str:
-                    try:
-                        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                        date_iso = dt.date().isoformat()
-                        date_br = dt.strftime("%d/%m/%Y")
-                    except Exception:
-                        pass
-                cloud = props.get("eo:cloud_cover")
-                assets = feat.get("assets", {})
-                thumbnail = assets.get("thumbnail", {}).get("href") or assets.get("overview", {}).get("href")
-                results["s2"].append({
-                    "scene_id": feat.get("id"), "date": date_iso, "date_br": date_br,
-                    "cloud_coverage": round(float(cloud), 1) if cloud is not None else None,
-                    "source": "s2", "collection": "sentinel-2-l2a", "thumbnail_url": thumbnail,
-                })
+            features = res.json().get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            dt_str = props.get("datetime") or props.get("created")
+            date_iso, date_br = None, None
+            if dt_str:
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    date_iso = dt.date().isoformat()
+                    date_br = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            cloud = props.get("eo:cloud_cover")
+            assets = feat.get("assets", {})
+            thumbnail = assets.get("thumbnail", {}).get("href") or assets.get("overview", {}).get("href")
+            results["s2"].append({
+                "scene_id": feat.get("id"),
+                "date": date_iso,
+                "date_br": date_br,
+                "cloud_coverage": round(float(cloud), 1) if cloud is not None else None,
+                "source": "s2",
+                "collection": "sentinel-2-l2a",
+                "thumbnail_url": thumbnail,
+            })
     except Exception as exc:
         logging.warning("[Sentinel] Erro S2 STAC: %s", exc)
 
+    # Sentinel-1
     try:
         with httpx.Client(timeout=20.0) as client:
             res = client.post(STAC_URL, json={
-                "collections": ["sentinel-1-grd"], "limit": max_results_per_source,
+                "collections": ["sentinel-1-grd"],
+                "limit": max_results_per_source,
                 "sortby": [{"field": "properties.datetime", "direction": "desc"}],
-                "datetime": f"{from_dt}/{to_dt}", "intersects": intersects,
+                "datetime": f"{from_dt}/{to_dt}",
+                "intersects": intersects,
             })
             res.raise_for_status()
-            for feat in res.json().get("features", []):
-                props = feat.get("properties", {})
-                dt_str = props.get("datetime") or props.get("created")
-                date_iso, date_br = None, None
-                if dt_str:
-                    try:
-                        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                        date_iso = dt.date().isoformat()
-                        date_br = dt.strftime("%d/%m/%Y")
-                    except Exception:
-                        pass
-                orbit = props.get("sat:orbit_state", "")
-                thumbnail = feat.get("assets", {}).get("thumbnail", {}).get("href")
-                results["s1"].append({
-                    "scene_id": feat.get("id"), "date": date_iso, "date_br": date_br,
-                    "cloud_coverage": None, "orbit": orbit,
-                    "source": "s1", "collection": "sentinel-1-grd", "thumbnail_url": thumbnail,
-                })
+            features = res.json().get("features", [])
+        for feat in features:
+            props = feat.get("properties", {})
+            dt_str = props.get("datetime") or props.get("created")
+            date_iso, date_br = None, None
+            if dt_str:
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    date_iso = dt.date().isoformat()
+                    date_br = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            orbit = props.get("sat:orbit_state", "")
+            assets = feat.get("assets", {})
+            thumbnail = assets.get("thumbnail", {}).get("href")
+            results["s1"].append({
+                "scene_id": feat.get("id"),
+                "date": date_iso,
+                "date_br": date_br,
+                "cloud_coverage": None,
+                "orbit": orbit,
+                "source": "s1",
+                "collection": "sentinel-1-grd",
+                "thumbnail_url": thumbnail,
+            })
     except Exception as exc:
         logging.warning("[Sentinel] Erro S1 STAC: %s", exc)
 
-    logging.info("[Sentinel] Cenas: S2=%d S1=%d lat=%.4f lng=%.4f", len(results["s2"]), len(results["s1"]), lat, lng)
+    logging.info("[Sentinel] Cenas: S2=%d S1=%d lat=%.4f lng=%.4f",
+                 len(results["s2"]), len(results["s1"]), lat, lng)
     return results
 
+
+# ── Overlay por cena específica ───────────────────────────────────────────────
 
 def get_true_color_overlay(
     field_id: str,
@@ -11296,83 +10784,65 @@ def get_true_color_overlay(
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
     geojson_polygon = _build_geojson_polygon(boundaries) if boundaries else None
 
+    # ── Evalscripts ───────────────────────────────────────────────────────────
     if source == "s1":
+        # Sentinel-1 SAR — VV em escala de cinza, 4 bandas RGBA
         evalscript = """
 //VERSION=3
 function setup() {
   return {
-    input: [{ bands: ["VV", "dataMask"] }],
-    output: { bands: 4, sampleType: "UINT8" },
-    mosaicking: "ORBIT"
+    input: [{ bands: ["VV", "VH", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
   };
 }
-function evaluatePixel(samples) {
-  let vvSum = 0, count = 0;
-  for (let s of samples) {
-    if (s.dataMask > 0) { vvSum += Math.sqrt(Math.max(s.VV, 0)); count++; }
-  }
-  if (count === 0) return [0, 0, 0, 0];
-  let norm = Math.round(Math.min(Math.max((vvSum / count) * 2.8, 0), 1) * 255);
-  return [norm, norm, norm, 255];
+function evaluatePixel(s) {
+  let vv = Math.log(s.VV * s.VV + 0.000001) / Math.log(10) * 10;
+  let norm = Math.round(Math.min(Math.max((vv + 25) / 25, 0), 1) * 255);
+    return [norm, norm, norm, s.dataMask * 255];
 }
 """
         data_type = "sentinel-1-grd"
-    else:
-        if mode == "ndvi":
-            evalscript = """
+
+        elif mode == "ndvi":
+                evalscript = """
 //VERSION=3
 function setup() {
-  return { input: [{ bands: ["B04", "B08", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+    return {
+        input: [{ bands: ["B04", "B08", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
 }
 function evaluatePixel(s) {
-  if (s.dataMask === 0) return [0,0,0,0];
-  let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001);
-  if (ndvi < 0)   return [120,120,120,255];
-  if (ndvi < 0.2) return [200,50,25,255];
-  if (ndvi < 0.4) return [230,180,50,255];
-  if (ndvi < 0.6) return [100,190,50,255];
-  return [20,110,20,255];
+    if (s.dataMask === 0) return [0,0,0,0];
+    let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04 + 0.0001);
+    if (ndvi < 0)   return [120,120,120,255];
+    if (ndvi < 0.2) return [200,50,25,255];
+    if (ndvi < 0.4) return [230,180,50,255];
+    if (ndvi < 0.6) return [100,190,50,255];
+    return [20,110,20,255];
 }
 """
-        elif mode == "falsecolor":
-            # Infravermelho Colorido — vegetação aparece em vermelho vibrante
-            evalscript = """
-//VERSION=3
-function setup() {
-  return { input: [{ bands: ["B08", "B04", "B03", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
-}
-function evaluatePixel(s) {
-  if (s.dataMask === 0) return [0,0,0,0];
-  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
-  return [adj(s.B08), adj(s.B04), adj(s.B03), 255];
-}
-"""
-        elif mode == "agriculture":
-            # Bandas SWIR — diferencia solo, vegetação e áreas colhidas
-            evalscript = """
-//VERSION=3
-function setup() {
-  return { input: [{ bands: ["B11", "B08", "B02", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
-}
-function evaluatePixel(s) {
-  if (s.dataMask === 0) return [0,0,0,0];
-  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
-  return [adj(s.B11), adj(s.B08), adj(s.B02), 255];
-}
-"""
+                data_type = "sentinel-2-l2a"
+
         else:
-            evalscript = """
+        evalscript = """
 //VERSION=3
 function setup() {
-  return { input: [{ bands: ["B04", "B03", "B02", "dataMask"] }], output: { bands: 4, sampleType: "UINT8" } };
+  return {
+    input: [{ bands: ["B04", "B03", "B02", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
 }
 function evaluatePixel(s) {
-  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
+  function adj(v) {
+    return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255);
+  }
   return [adj(s.B04), adj(s.B03), adj(s.B02), s.dataMask * 255];
 }
 """
         data_type = "sentinel-2-l2a"
 
+    # ── Janela de tempo ───────────────────────────────────────────────────────
     if scene_date:
         try:
             sd = datetime.fromisoformat(scene_date)
@@ -11384,82 +10854,119 @@ function evaluatePixel(s) {
         windows = [(from_date, to_date)]
     else:
         to_date = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
-        windows = [((datetime.utcnow() - timedelta(days=d)).strftime("%Y-%m-%dT00:00:00Z"), to_date) for d in [date_range_days, 60, 90]]
+        windows = [
+            ((datetime.utcnow() - timedelta(days=d)).strftime("%Y-%m-%dT00:00:00Z"), to_date)
+            for d in [date_range_days, 60, 90]
+        ]
 
-    bounds_input: dict = {"bbox": bbox, "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}}
+    bounds_input: dict = {
+        "bbox": bbox,
+        "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+    }
     if geojson_polygon:
         bounds_input["geometry"] = geojson_polygon
 
-    data_filter_base: dict = {"timeRange": {"from": "", "to": ""}}
+    # dataFilter: S2 tem maxCloudCoverage e mosaickingOrder, S1 não suporta esses filtros
     if source == "s2":
-        data_filter_base["maxCloudCoverage"] = 100
-        data_filter_base["mosaickingOrder"] = "mostRecent"
+        data_filter_base: dict = {
+            "timeRange": {"from": "", "to": ""},
+            "maxCloudCoverage": 100,
+            "mosaickingOrder": "mostRecent",
+        }
+    else:
+        data_filter_base = {
+            "timeRange": {"from": "", "to": ""},
+        }
 
-    output_size = _estimate_output_size_from_bbox(bbox, source)
+    output_size = 512 if source == "s1" else 1024
 
     payload: dict = {
-        "input": {"bounds": bounds_input, "data": [{"type": data_type, "dataFilter": dict(data_filter_base)}]},
-        "output": {"width": output_size, "height": output_size, "responses": [{"identifier": "default", "format": {"type": "image/png"}}]},
+        "input": {
+            "bounds": bounds_input,
+            "data": [
+                {
+                    "type": data_type,
+                    "dataFilter": dict(data_filter_base),
+                }
+            ],
+        },
+        "output": {
+            "width": output_size,
+            "height": output_size,
+            "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
+        },
         "evalscript": evalscript,
     }
 
     for from_dt, to_dt in windows:
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["from"] = from_dt
         payload["input"]["data"][0]["dataFilter"]["timeRange"]["to"] = to_dt
-        for attempt in range(1, 4):
-            try:
-                logging.info(
-                    "[Sentinel] overlay POST source=%s mode=%s field_id=%s from=%s size=%sx%s attempt=%d",
-                    source,
-                    mode,
-                    field_id,
-                    from_dt,
-                    output_size,
-                    output_size,
-                    attempt,
+
+        try:
+            logging.info("[Sentinel] overlay POST source=%s field_id=%s from=%s to=%s",
+                         source, field_id, from_dt, to_dt)
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            with httpx.Client(timeout=60.0) as http_client:
+                resp = http_client.post(
+                    PROCESS_API_URL,
+                    headers=headers,
+                    json=payload,
                 )
-                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                with httpx.Client(timeout=60.0) as http_client:
-                    resp = http_client.post(PROCESS_API_URL, headers=headers, json=payload)
 
-                if resp.status_code == 200:
-                    ct = resp.headers.get("content-type", "")
-                    if "image" in ct:
-                        _set_cached_overlay(cache_key, resp.content)
-                        return resp.content
-                    logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
-                elif resp.status_code == 401:
-                    logging.warning("[Sentinel] 401 — renovando token")
-                    with _token_lock:
-                        _token_cache["access_token"] = None
-                        _token_cache["expires_at"] = 0.0
-                    token = get_oauth_token() or token
-                else:
-                    logging.warning("[Sentinel] HTTP %d body=%s", resp.status_code, resp.text[:300])
-            except httpx.TimeoutException:
-                logging.warning("[Sentinel] Timeout source=%s from=%s attempt=%d", source, from_dt, attempt)
-            except Exception as exc:
-                logging.error("[Sentinel] Erro source=%s attempt=%d: %s", source, attempt, exc)
+            if resp.status_code == 200:
+                ct = resp.headers.get("content-type", "")
+                if "image" in ct:
+                    image_bytes = resp.content
+                    _set_cached_overlay(cache_key, image_bytes)
+                    return image_bytes
+                logging.warning("[Sentinel] Resposta não-imagem ct=%s body=%s", ct, resp.text[:200])
 
-            if attempt < 3:
-                time.sleep(0.5 * attempt)
+            elif resp.status_code == 401:
+                logging.warning("[Sentinel] 401 — renovando token")
+                with _token_lock:
+                    _token_cache["access_token"] = None
+                    _token_cache["expires_at"] = 0.0
+                token = get_oauth_token() or token
+                continue
 
-    logging.error("[Sentinel] Todas as janelas falharam field_id=%s source=%s mode=%s", field_id, source, mode)
+            else:
+                logging.warning("[Sentinel] HTTP %d from=%s body=%s",
+                                resp.status_code, from_dt, resp.text[:300])
+
+        except httpx.TimeoutException:
+            logging.warning("[Sentinel] Timeout source=%s from=%s", source, from_dt)
+        except Exception as exc:
+            logging.error("[Sentinel] Erro source=%s from=%s: %s", source, from_dt, exc)
+
+    logging.error("[Sentinel] Todas as janelas falharam field_id=%s source=%s", field_id, source)
     return None
 
 
-def get_ndvi_stats(bbox: list[float], boundaries: list[list[float]] | None = None) -> dict[str, Any] | None:
+# ── NDVI (mantida para /api/analyze-field) ────────────────────────────────────
+
+def get_ndvi_stats(
+    bbox: list[float],
+    boundaries: list[list[float]] | None = None,
+) -> dict[str, Any] | None:
     token = get_oauth_token()
     if not token:
         return None
-    bounds_payload: dict[str, Any] = {"bbox": bbox, "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}}
+
+    bounds_payload: dict[str, Any] = {
+        "bbox": bbox,
+        "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+    }
     geojson = _build_geojson_polygon(boundaries) if boundaries else None
     if geojson:
         bounds_payload["geometry"] = geojson
+
     evalscript = """
 //VERSION=3
 function setup() {
-  return { input: [{ bands: ["B04", "B08", "dataMask"] }], output: [{ id: "ndvi", bands: 1 }, { id: "dataMask", bands: 1 }] };
+  return {
+    input: [{ bands: ["B04", "B08", "dataMask"] }],
+    output: [{ id: "ndvi", bands: 1 }, { id: "dataMask", bands: 1 }]
+  };
 }
 function evaluatePixel(s) {
   let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
@@ -11468,32 +10975,68 @@ function evaluatePixel(s) {
 """
     to_dt = datetime.utcnow().strftime("%Y-%m-%dT23:59:59Z")
     from_dt = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
+
     payload = {
-        "input": {"bounds": bounds_payload, "data": [{"type": "sentinel-2-l2a", "dataFilter": {"maxCloudCoverage": 30, "timeRange": {"from": from_dt, "to": to_dt}}}]},
-        "aggregation": {"timeRange": {"from": from_dt, "to": to_dt}, "aggregationInterval": {"of": "P30D"}, "evalscript": evalscript, "resx": 10, "resy": 10},
+        "input": {
+            "bounds": bounds_payload,
+            "data": [{"type": "sentinel-2-l2a", "dataFilter": {
+                "maxCloudCoverage": 30,
+                "timeRange": {"from": from_dt, "to": to_dt},
+            }}],
+        },
+        "aggregation": {
+            "timeRange": {"from": from_dt, "to": to_dt},
+            "aggregationInterval": {"of": "P30D"},
+            "evalscript": evalscript,
+            "resx": 10, "resy": 10,
+        },
     }
+
     try:
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         with httpx.Client(timeout=30.0) as client:
-            resp = client.post(STATISTICS_API_URL, headers=headers, json=payload)
+            resp = client.post(
+                STATISTICS_API_URL,
+                headers=headers, json=payload,
+            )
             resp.raise_for_status()
             data = resp.json()
-        output = data.get("data", [{}])[0].get("outputs", {}).get("ndvi", {}).get("bands", {}).get("B0", {}).get("stats", {})
+
+        output = (
+            data.get("data", [{}])[0]
+            .get("outputs", {}).get("ndvi", {})
+            .get("bands", {}).get("B0", {})
+            .get("stats", {})
+        )
         if not output or output.get("count", 0) == 0:
             return None
-        return {"ndvi_avg": output.get("mean", 0), "ndvi_max": output.get("max", 0), "ndvi_min": output.get("min", 0), "count": output.get("count", 0), "cloud_coverage": None}
+
+        return {
+            "ndvi_avg": output.get("mean", 0),
+            "ndvi_max": output.get("max", 0),
+            "ndvi_min": output.get("min", 0),
+            "count": output.get("count", 0),
+            "cloud_coverage": None,
+        }
     except Exception as exc:
         logging.warning("[Sentinel] NDVI stats error: %s", exc)
         return None
 
 
-def get_ndvi_image(lat: float, lng: float, boundaries: list[list[float]] | None = None, date_range_days: int = 15) -> dict[str, Any] | None:
+def get_ndvi_image(
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    date_range_days: int = 15,
+) -> dict[str, Any] | None:
     token = get_oauth_token()
     if not token:
         return None
+
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
     stats = get_ndvi_stats(bbox, boundaries)
     geojson = _build_geojson_polygon(boundaries) if boundaries else None
+
     evalscript = """
 //VERSION=3
 function setup() {
@@ -11502,39 +11045,63 @@ function setup() {
 function evaluatePixel(s) {
   let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
   if (s.dataMask === 0) return [0,0,0,0];
-  if (ndvi < 0)   return [0.5,0.5,0.5,1];
-  if (ndvi < 0.2) return [0.8,0.2,0.1,1];
-  if (ndvi < 0.4) return [0.9,0.7,0.1,1];
-  if (ndvi < 0.6) return [0.4,0.8,0.2,1];
-  return [0.1,0.5,0.1,1];
+  if (ndvi < 0)   return [0.5, 0.5, 0.5, 1];
+  if (ndvi < 0.2) return [0.8, 0.2, 0.1, 1];
+  if (ndvi < 0.4) return [0.9, 0.7, 0.1, 1];
+  if (ndvi < 0.6) return [0.4, 0.8, 0.2, 1];
+  return [0.1, 0.5, 0.1, 1];
 }
 """
     to_date = datetime.utcnow().strftime("%Y-%m-%d")
+
     for days in [date_range_days, 30]:
         f_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
-        bounds_input: dict[str, Any] = {"bbox": bbox, "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}}
+        bounds_input: dict[str, Any] = {
+            "bbox": bbox,
+            "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+        }
         if geojson:
             bounds_input["geometry"] = geojson
+
         payload = {
-            "input": {"bounds": bounds_input, "data": [{"type": "sentinel-2-l2a", "dataFilter": {"timeRange": {"from": f"{f_date}T00:00:00Z", "to": f"{to_date}T23:59:59Z"}, "maxCloudCoverage": 30}}]},
-            "output": {"width": 512, "height": 512, "responses": [{"identifier": "default", "format": {"type": "image/png"}}]},
+            "input": {
+                "bounds": bounds_input,
+                "data": [{"type": "sentinel-2-l2a", "dataFilter": {
+                    "timeRange": {"from": f"{f_date}T00:00:00Z", "to": f"{to_date}T23:59:59Z"},
+                    "maxCloudCoverage": 30,
+                }}],
+            },
+            "output": {
+                "width": 512, "height": 512,
+                "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
+            },
             "evalscript": evalscript,
         }
+
         try:
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
             with httpx.Client(timeout=60.0) as client:
-                resp = client.post(PROCESS_API_URL, headers=headers, json=payload)
+                resp = client.post(
+                    PROCESS_API_URL,
+                    headers=headers, json=payload,
+                )
                 resp.raise_for_status()
-            return {"image_base64": base64.b64encode(resp.content).decode("utf-8"), "date_acquired": f"{to_date} (Aproximado)", "cloud_coverage": None, "stats": stats, "is_polygonal": bool(geojson)}
+            return {
+                "image_base64": base64.b64encode(resp.content).decode("utf-8"),
+                "date_acquired": f"{to_date} (Aproximado)",
+                "cloud_coverage": None,
+                "stats": stats,
+                "is_polygonal": bool(geojson),
+            }
         except Exception as exc:
             logging.error("[Sentinel] NDVI image error window=%sd: %s", days, exc)
-    return None
 
+    return None
 ```
 
 
 ### `tracto-backend/services/supabase_service.py`
-```py
+```python
 import logging
 import os
 
@@ -11637,12 +11204,11 @@ def delete_conversation(conversation_id: str, user_id: str) -> bool:
     except Exception as exc:
         logging.error("Erro ao deletar conversa do Supabase: %s", exc)
         raise
-
 ```
 
 
 ### `tracto-backend/services/weather_service.py`
-```py
+```python
 import logging
 from typing import Any
 
@@ -11763,7 +11329,6 @@ async def fetch_weather_snapshot(lat: float, lng: float) -> dict[str, Any] | Non
         "condition": "Open-Meteo",
         "forecast_7d": build_forecast_summary(daily),
     }
-
 ```
 
 
@@ -11896,7 +11461,6 @@ CREATE TRIGGER enforce_field_entitlement
 BEFORE INSERT ON fields
 FOR EACH ROW
 EXECUTE PROCEDURE check_field_entitlement();
-
 ```
 
 
@@ -12057,76 +11621,5 @@ CREATE INDEX IF NOT EXISTS idx_fields_user_id ON public.fields(user_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_field_id ON public.analysis_runs(field_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON public.alerts(user_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON public.conversations(user_id);
-
 ```
-
-
-### `tracto-backend/validate_save.py`
-```py
-import logging
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
-logging.info(f"SUPABASE_URL: {os.getenv('SUPABASE_URL')}")
-logging.info(f"SUPABASE_SERVICE_KEY length: {len(os.getenv('SUPABASE_SERVICE_KEY') or '')}")
-
-from services.farm_service import ensure_default_farm, save_field
-
-# Create a mock authenticated user and try to hit the DB functions directly
-# to validate the pydantic mapping + dict conversion.
-
-logging.basicConfig(level=logging.INFO)
-
-# A fake UID that exists in the dev/testing auth schema or just a valid UUID
-TEST_USER_ID = "test-user-validate-123"
-
-def main():
-    try:
-        logging.info("Ensuring default farm...")
-        farm = ensure_default_farm(TEST_USER_ID)
-        farm_id = farm["id"]
-        logging.info(f"Farm ID: {farm_id}")
-
-        logging.info("Validating frontend payload mapping...")
-        
-        # This represents what the frontend JSON stringifies and sends to FastAPI
-        frontend_payload = {
-            "farm_id": farm_id,
-            "name": "TESTE SANEAMENTO",
-            "crop_type": "Milho",
-            "variety": "XPTO 123",
-            "planting_date": "2025-10-15",
-            "area_ha": 15.6,
-            "latitude": -23.123,
-            "longitude": -51.123,
-            "boundaries": [[-23.1,-51.1], [-23.2,-51.1], [-23.2,-51.2]]
-        }
-
-        # Simulating the FastAPI Pydantic parsing:
-        from models import FieldCreate
-        
-        # When FastAPI receives JSON, it instantiates the Pydantic model
-        parsed = FieldCreate(**frontend_payload)
-        
-        # When we send to DB, model_dump is called
-        db_payload = parsed.model_dump(exclude_unset=True, by_alias=True)
-        
-        logging.info(f"Pydantic parsed and dumped payload: {json.dumps(db_payload, indent=2)}")
-        
-        # Attempt to save to Supabase
-        logging.info("Saving to Supabase...")
-        result = save_field(TEST_USER_ID, db_payload)
-        logging.info(f"Saved successfully! ID: {result.get('id')}")
-        
-    except Exception as e:
-        logging.error(f"Validation failed: {e}")
-
-if __name__ == "__main__":
-    main()
-
-```
-
 

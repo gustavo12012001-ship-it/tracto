@@ -66,7 +66,6 @@ export default function Reports() {
   const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
-  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) ?? null : null;
 
   const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
     const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
@@ -130,7 +129,10 @@ export default function Reports() {
     setAnalysisResults(initial);
   }, [fields]);
 
-  const handleAnalyze = useCallback(async (loc: Location) => {
+  // VALIDAÇÃO RIGOROSA: activeFieldId DEVE estar em fields[]
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : null;
+
+  const handleAnalyze = useCallback(async (loc: Location, forceRefresh = false) => {
     const key = loc.id ?? `${loc.lat}-${loc.lng}`;
     setLoadingAnalysis(prev => ({ ...prev, [key]: true }));
     try {
@@ -138,7 +140,7 @@ export default function Reports() {
         throw new Error('Talhão sem identificador válido para snapshot.');
       }
 
-      const snapshot = await fetchFieldIntelligence(loc.id, true);
+      const snapshot = await fetchFieldIntelligence(loc.id, forceRefresh);
       if (!snapshot) {
         throw new Error('Snapshot indisponível para o talhão selecionado.');
       }
@@ -161,7 +163,7 @@ export default function Reports() {
     if (!activeFieldId) return;
     const selected = fields.find((item) => item.id === activeFieldId);
     if (selected) {
-      void handleAnalyze(selected);
+      void handleAnalyze(selected, false);
     }
   }, [activeFieldId, fields, handleAnalyze]);
 
@@ -191,6 +193,15 @@ export default function Reports() {
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: '#080809' }}>
+      {/* VALIDAÇÃO: Nenhum talhão selecionado */}
+      {!activeFieldId || !fields.some((f) => f.id === activeFieldId) ? (
+        <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+          <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Nenhum talhão selecionado</h2>
+            <p className="text-gray-600 mb-6">Selecione um talhão ativo no mapa para visualizar a análise de relatórios.</p>
+          </div>
+        </div>
+      ) : (
       <div className="p-5 flex flex-col gap-5 max-w-5xl mx-auto w-full">
 
         {/* ── Header ── */}
@@ -356,7 +367,7 @@ export default function Reports() {
                         
                         <div className="mt-6 flex justify-end">
                             <button
-                                onClick={() => handleAnalyze(loc)}
+                                onClick={() => handleAnalyze(loc, true)}
                                 className="px-4 py-2 rounded-lg text-xs font-bold transition-all border text-slate-300 hover:text-white hover:bg-white/5"
                                 style={{ borderColor: 'rgba(255,255,255,0.1)', background: 'transparent' }}
                             >
@@ -370,7 +381,7 @@ export default function Reports() {
                         <h3 className="text-white font-bold mb-1">{name}</h3>
                         <p className="text-xs text-slate-400 mb-4 max-w-sm">Gere um relatório detalhado de IA com imagens NDVI recentes de satélite e recomendações agronômicas.</p>
                         <button
-                          onClick={() => handleAnalyze(loc)}
+                          onClick={() => handleAnalyze(loc, true)}
                           className="px-6 py-2 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 shadow-lg"
                           style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.3)' }}
                         >
@@ -465,6 +476,7 @@ export default function Reports() {
         </div>
 
       </div>
+      )}
     </div>
   );
 }

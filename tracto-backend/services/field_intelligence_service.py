@@ -8,7 +8,7 @@ from services import farm_service
 from services.agronomic_engine import AgronomicEngine
 from services.ai_service import generate_alerts_claude
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
+from services.sentinel_service import get_available_scenes, get_ndvi_image, get_latest_scene_metadata, get_true_color_overlay
 from services.weather_service import fetch_weather_snapshot
 
 WEATHER_TIMEOUT_SECONDS = 5.0
@@ -114,16 +114,54 @@ async def _resolve_satellite(
 	lat: float,
 	lng: float,
 	boundaries: list[list[float]] | None,
+	user_id: str,
+	farm_id: str | None,
 	field_id: str,
+	force_refresh: bool,
 ) -> tuple[dict[str, Any], SnapshotSourceStatus]:
 	cache_key = _cache_key("satellite", field_id)
 	cached = analysis_cache.get(cache_key)
 
 	try:
+		available_scenes = await asyncio.wait_for(
+			asyncio.to_thread(get_available_scenes, lat, lng, boundaries, 21, 2),
+			timeout=SATELLITE_TIMEOUT_SECONDS,
+		)
+		s1_scene_date = None
+		s2_scene_date = None
+		if isinstance(available_scenes, dict):
+			s1_list = available_scenes.get("s1") or []
+			s2_list = available_scenes.get("s2") or []
+			if isinstance(s1_list, list) and s1_list:
+				s1_scene_date = (s1_list[0] or {}).get("scene_date")
+			if isinstance(s2_list, list) and s2_list:
+				s2_scene_date = (s2_list[0] or {}).get("scene_date")
+
 		scene_meta = await asyncio.wait_for(
 			asyncio.to_thread(get_latest_scene_metadata, lat, lng, boundaries, 21, 40),
 			timeout=SATELLITE_TIMEOUT_SECONDS,
 		)
+		overlay_result = None
+		if isinstance(scene_meta, dict):
+			overlay_result = await asyncio.wait_for(
+				asyncio.to_thread(
+					get_true_color_overlay,
+					field_id,
+					lat,
+					lng,
+					boundaries,
+					30,
+					scene_meta.get("scene_date"),
+					scene_meta.get("scene_id"),
+					scene_meta.get("cloud_coverage"),
+					user_id,
+					farm_id,
+					force_refresh,
+					"s2",
+					"truecolor",
+				),
+				timeout=SATELLITE_TIMEOUT_SECONDS,
+			)
 		ndvi_data = await asyncio.wait_for(
 			asyncio.to_thread(get_ndvi_image, lat, lng, boundaries, 15),
 			timeout=SATELLITE_TIMEOUT_SECONDS,
@@ -132,8 +170,14 @@ async def _resolve_satellite(
 		if isinstance(scene_meta, dict):
 			satellite = {
 				**scene_meta,
+				"s1_scene_date": s1_scene_date,
+				"s2_scene_date": s2_scene_date or scene_meta.get("scene_date"),
 				"ndvi_image_base64": ndvi_data.get("image_base64") if isinstance(ndvi_data, dict) else None,
 				"ndvi_stats": ndvi_data.get("stats") if isinstance(ndvi_data, dict) else None,
+				"image_cached": bool(getattr(overlay_result, "image_cached", False)),
+				"cache_path": getattr(overlay_result, "cache_path", None),
+				"cache_hit": bool(getattr(overlay_result, "cache_hit", False)),
+				"generated_at": getattr(overlay_result, "generated_at", _now_iso()),
 				"updated_at": _now_iso(),
 			}
 			analysis_cache.set(cache_key, satellite, ttl_hours=12)
@@ -335,7 +379,15 @@ async def build_field_intelligence_snapshot(
 	boundaries = _safe_boundaries(field.get("boundaries"))
 
 	weather, weather_status = await _resolve_weather(lat, lng, field_id)
-	satellite, satellite_status = await _resolve_satellite(lat, lng, boundaries, field_id)
+	satellite, satellite_status = await _resolve_satellite(
+		lat,
+		lng,
+		boundaries,
+		user_id,
+		farm_id,
+		field_id,
+		force_refresh,
+	)
 
 	try:
 		analysis = await asyncio.wait_for(
