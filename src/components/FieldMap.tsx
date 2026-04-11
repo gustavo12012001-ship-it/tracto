@@ -33,6 +33,11 @@ L.Icon.Default.mergeOptions({
 type DrawMode = 'none' | 'drawing';
 type MapLayer = 'osm' | 'esri';
 
+interface PlanetLayerState {
+  sceneId: string | null;
+  enabled: boolean;
+}
+
 interface SentinelScene {
   scene_id: string;
   date: string;
@@ -226,7 +231,7 @@ function SceneCard({
               ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
               : 'Cobertura N/D'
             : isPlanet
-              ? 'PlanetScope · 3m'
+              ? 'PlanetScope · resolução aprox. 3m'
               : scene.orbit
                 ? `Órbita ${scene.orbit}`
                 : 'SAR · Radar'
@@ -247,7 +252,7 @@ function SceneCard({
       {isPlanet && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
           style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>
-          3m
+          ≈3m
         </span>
       )}
 
@@ -346,7 +351,7 @@ function ScenesPanel({
               {tab === 's2' ? 'cloud_off' : tab === 's1' ? 'signal_disconnected' : 'public_off'}
             </span>
             <p className="text-[10px]" style={{ color: '#64748b' }}>
-              {tab === 's2' ? 'Nenhuma imagem Sentinel-2 nos últimos 90 dias.' : tab === 's1' ? 'Nenhuma imagem Sentinel-1 nos últimos 90 dias.' : 'Nenhuma imagem Planet nos últimos 30 dias.'}
+              {tab === 's2' ? 'Nenhuma imagem Sentinel-2 nos últimos 90 dias.' : tab === 's1' ? 'Nenhuma imagem Sentinel-1 nos últimos 90 dias.' : 'Nenhuma imagem Planet nos últimos 90 dias.'}
             </p>
           </div>
         ) : (
@@ -369,7 +374,7 @@ function ScenesPanel({
       <div className="px-4 py-2.5 flex flex-col gap-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
           {tab === 'planet'
-            ? 'Fonte: Planet Labs · PlanetScope PSScene'
+            ? 'Fonte: Planet Labs · Cena PlanetScope (footprint da cena)'
             : 'Catálogo: Copernicus · Earth Search STAC (gratuito)'}
         </p>
         {tab !== 'planet' && (
@@ -408,7 +413,9 @@ export default function FieldMap() {
 
   // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+  const [planetLayer, setPlanetLayer] = useState<PlanetLayerState>({ sceneId: null, enabled: false });
   const prevUrlRef = useRef<string | null>(null);
+  const loadingScenesFieldRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
 
@@ -416,7 +423,9 @@ export default function FieldMap() {
   useEffect(() => {
     if (!showScenesPanel || !activeFieldId) return;
     if (scenes.fieldId === activeFieldId && !scenes.loading) return;
+    if (loadingScenesFieldRef.current === activeFieldId) return;
 
+    loadingScenesFieldRef.current = activeFieldId;
     setScenes({ s2: [], s1: [], planet: [], loading: true, error: null, fieldId: activeFieldId });
 
     const fetchScenes = async () => {
@@ -446,18 +455,23 @@ export default function FieldMap() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
         setScenes({ s2: [], s1: [], planet: [], loading: false, error: msg, fieldId: activeFieldId });
+      } finally {
+        if (loadingScenesFieldRef.current === activeFieldId) {
+          loadingScenesFieldRef.current = null;
+        }
       }
     };
 
     void fetchScenes();
-  }, [showScenesPanel, activeFieldId]);
+  }, [showScenesPanel, activeFieldId, scenes.fieldId, scenes.loading]);
 
   // ── Carregar overlay de cena selecionada ──────────────────────────────────
   const handleSelectScene = async (source: 's1' | 's2' | 'planet', date: string) => {
     if (!activeFieldId) return;
 
     const sceneKey = `${activeFieldId}|${source}|${date}`;
-    if (overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
+    if (source === 'planet' && overlay.sceneKey === sceneKey && planetLayer.sceneId && planetLayer.enabled) return;
+    if (source !== 'planet' && overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
 
     const activeField = fields.find((f) => f.id === activeFieldId);
     if (!activeField?.boundaries || activeField.boundaries.length < 3) return;
@@ -473,33 +487,27 @@ export default function FieldMap() {
       if (source === 'planet') {
         const scene = scenes.planet.find(s => s.date === date);
         if (!scene?.scene_id) return;
-        const url = `${API_URL}/api/planet/overlay?field_id=${activeFieldId}&scene_id=${scene.scene_id}`;
-        const resp = await fetch(url, { headers });
+        const resp = await fetch(`${API_URL}/api/planet/tile-session?field_id=${activeFieldId}&scene_id=${scene.scene_id}`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+        });
         if (!resp.ok) {
           let errorMsg = `Erro ${resp.status}`;
           try {
-            const ct = resp.headers.get('content-type') || '';
-            if (ct.includes('application/json')) {
-              const json = await resp.json() as { detail?: string };
-              errorMsg = json.detail || errorMsg;
-            } else {
-              const text = await resp.text();
-              try {
-                const json = JSON.parse(text) as { detail?: string };
-                errorMsg = json.detail || text.slice(0, 200) || errorMsg;
-              } catch {
-                errorMsg = text.slice(0, 200) || errorMsg;
-              }
-            }
-          } catch { /* mantém errorMsg padrão */ }
+            const payload = await resp.json() as { detail?: string };
+            errorMsg = payload.detail || errorMsg;
+          } catch {
+            errorMsg = await resp.text().catch(() => errorMsg);
+          }
           throw new Error(errorMsg);
         }
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        prevUrlRef.current = objectUrl;
-        setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+        setPlanetLayer({ sceneId: scene.scene_id, enabled: true });
+        setOverlay({ url: null, bounds, loading: false, error: null, sceneKey });
         return;
       }
+
+      setPlanetLayer({ sceneId: null, enabled: false });
 
       const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${source}&scene_date=${date}`;
       const resp = await fetch(url, { headers });
@@ -539,6 +547,7 @@ export default function FieldMap() {
   // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    setPlanetLayer({ sceneId: null, enabled: false });
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);
@@ -625,6 +634,29 @@ export default function FieldMap() {
             <TileLayer attribution="&copy; Esri" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={20} />
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxZoom={20} opacity={0.6} />
           </>
+        )}
+
+        {planetLayer.enabled && planetLayer.sceneId && (
+          <TileLayer
+            attribution="&copy; Planet Labs"
+            crossOrigin="use-credentials"
+            url={`${API_URL}/api/planet/tiles/{z}/{x}/{y}?scene_id=${planetLayer.sceneId}`}
+            opacity={0.9}
+            maxZoom={18}
+            zIndex={390}
+            eventHandlers={{
+              tileerror: () => {
+                setOverlay((prev) => prev.error
+                  ? prev
+                  : { ...prev, loading: false, error: 'Camada Planet indisponível no momento. Tente outra cena ou use Sentinel/Esri.' });
+              },
+              tileload: () => {
+                setOverlay((prev) => prev.error && prev.sceneKey?.includes('|planet|')
+                  ? { ...prev, error: null }
+                  : prev);
+              },
+            }}
+          />
         )}
 
         {/* Overlay da cena selecionada */}
@@ -728,10 +760,10 @@ export default function FieldMap() {
       )}
 
       {/* Badge de overlay ativo */}
-      {overlay.url && !overlay.loading && overlay.sceneKey && (
+      {(overlay.url || (planetLayer.enabled && planetLayer.sceneId)) && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · PlanetScope 3m' : 'Sentinel-2 · True Color'} · Cache 30min
+            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · True Color'} · Cache 30min
           </div>
         </div>
       )}
@@ -763,6 +795,21 @@ export default function FieldMap() {
               {label}
             </button>
           ))}
+          <button
+            type="button"
+            disabled={!planetLayer.sceneId}
+            onClick={() => setPlanetLayer((prev) => ({ ...prev, enabled: prev.sceneId ? !prev.enabled : false }))}
+            className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40"
+            style={{
+              background: planetLayer.enabled ? 'rgba(52,211,153,0.18)' : 'rgba(8,8,9,0.82)',
+              backdropFilter: 'blur(12px)',
+              border: `1px solid ${planetLayer.enabled ? 'rgba(52,211,153,0.4)' : 'rgba(255,255,255,0.1)'}`,
+              color: planetLayer.enabled ? '#34d399' : '#94a3b8',
+            }}
+            title={planetLayer.sceneId ? 'Alternar camada Planet' : 'Selecione uma cena Planet para habilitar a camada'}
+          >
+            Planet
+          </button>
         </div>
       )}
 

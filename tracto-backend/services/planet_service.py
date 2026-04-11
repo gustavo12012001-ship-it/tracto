@@ -5,6 +5,7 @@ Integração com Planet Labs Data API — imagens PlanetScope de alta resoluçã
 
 import logging
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta
@@ -12,10 +13,14 @@ from typing import Any
 
 import httpx
 
-PLANET_BASE_URL = "https://api.planet.com/data/v1"
+PLANET_BASE_URL = os.getenv("PLANET_BASE_URL", "https://api.planet.com/data/v1")
+PLANET_TILE_BASE_URL = os.getenv("PLANET_TILE_BASE_URL", "https://tiles.planet.com/data/v1")
 _cache_lock = threading.Lock()
 _scenes_cache: dict[str, dict[str, Any]] = {}
+_tile_session_lock = threading.Lock()
+_tile_sessions: dict[str, dict[str, Any]] = {}
 CACHE_TTL = 30 * 60
+TILE_SESSION_TTL = 10 * 60
 
 
 def _get_api_key() -> str | None:
@@ -23,6 +28,49 @@ def _get_api_key() -> str | None:
     if not key:
         logging.error("[Planet] PLANET_API_KEY não configurada.")
     return key
+
+
+def _purge_expired_tile_sessions() -> None:
+    now = time.time()
+    expired_tokens = [token for token, data in _tile_sessions.items() if now >= data["expires_at"]]
+    for token in expired_tokens:
+        _tile_sessions.pop(token, None)
+
+
+def create_planet_tile_session(user_id: str, field_id: str, scene_id: str) -> str:
+    token = secrets.token_urlsafe(32)
+    with _tile_session_lock:
+        _purge_expired_tile_sessions()
+        _tile_sessions[token] = {
+            "user_id": user_id,
+            "field_id": field_id,
+            "scene_id": scene_id,
+            "expires_at": time.time() + TILE_SESSION_TTL,
+        }
+    return token
+
+
+def validate_planet_tile_session(token: str | None, scene_id: str) -> bool:
+    return get_planet_tile_session_status(token, scene_id) == "ok"
+
+
+def get_planet_tile_session_status(token: str | None, scene_id: str) -> str:
+    if not token:
+        return "missing"
+
+    with _tile_session_lock:
+        session = _tile_sessions.get(token)
+        if not session:
+            return "invalid"
+
+        if time.time() >= session.get("expires_at", 0):
+            _tile_sessions.pop(token, None)
+            return "expired"
+
+        if session.get("scene_id") != scene_id:
+            return "scene_mismatch"
+
+        return "ok"
 
 
 def get_planet_scenes(
@@ -149,6 +197,28 @@ def get_planet_thumbnail(scene_id: str) -> bytes | None:
     except Exception as exc:
         logging.warning("[Planet] Erro ao buscar thumbnail scene_id=%s: %s", scene_id, exc)
         return None
+
+
+def get_planet_tile(scene_id: str, z: int, x: int, y: int) -> tuple[bytes, str]:
+    api_key = _get_api_key()
+    if not api_key:
+        raise RuntimeError("PLANET_API_KEY não configurada.")
+
+    url = f"{PLANET_TILE_BASE_URL}/PSScene/{scene_id}/{z}/{x}/{y}.png"
+
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.get(url, params={"api_key": api_key})
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "image/png")
+            return resp.content, content_type
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        logging.warning("[Planet] Erro tile scene_id=%s z=%s x=%s y=%s status=%s", scene_id, z, x, y, status)
+        raise
+    except httpx.TimeoutException as exc:
+        logging.warning("[Planet] Timeout tile scene_id=%s z=%s x=%s y=%s: %s", scene_id, z, x, y, exc)
+        raise
 
 
 def get_bbox_from_boundaries(boundaries, lat, lng):

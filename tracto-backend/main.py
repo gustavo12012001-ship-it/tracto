@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request, Response
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request, Response, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -41,7 +41,13 @@ from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
 from services.sentinel_service import get_ndvi_image, get_true_color_overlay, get_available_scenes
-from services.planet_service import get_planet_scenes, get_planet_thumbnail
+from services.planet_service import (
+    create_planet_tile_session,
+    get_planet_tile_session_status,
+    get_planet_scenes,
+    get_planet_thumbnail,
+    get_planet_tile,
+)
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -294,6 +300,12 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 
+def _planet_cookie_options() -> dict:
+    if _is_production():
+        return {"secure": True, "samesite": "none"}
+    return {"secure": False, "samesite": "lax"}
+
+
 @app.post("/api/chat")
 @limiter.limit("5/minute")
 async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: AuthenticatedUser = Depends(get_current_user)):
@@ -508,6 +520,83 @@ async def planet_thumbnail_endpoint(
     )
 
 
+@app.post("/api/planet/tile-session")
+@limiter.limit("20/minute")
+async def planet_tile_session_endpoint(
+    request: Request,
+    response: Response,
+    field_id: str,
+    scene_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    field_data = farm_service.get_field_by_id(user.id, field_id)
+    if not field_data:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+
+    session_token = create_planet_tile_session(user.id, field_id, scene_id)
+    cookie_options = _planet_cookie_options()
+    response.set_cookie(
+        key="planet_tile_session",
+        value=session_token,
+        httponly=True,
+        max_age=600,
+        path="/api/planet/tiles",
+        secure=cookie_options["secure"],
+        samesite=cookie_options["samesite"],
+    )
+    return {"ok": True, "scene_id": scene_id, "expires_in": 600}
+
+
+@app.get("/api/planet/tiles/{z}/{x}/{y}")
+@limiter.limit("240/minute")
+async def planet_tile_proxy_endpoint(
+    request: Request,
+    z: int,
+    x: int,
+    y: int,
+    scene_id: str,
+    planet_tile_session: str | None = Cookie(default=None),
+):
+    session_status = get_planet_tile_session_status(planet_tile_session, scene_id)
+    if session_status != "ok":
+        logging.info(
+            "[/api/planet/tiles] Sessao rejeitada scene_id=%s z=%s x=%s y=%s status=%s",
+            scene_id,
+            z,
+            x,
+            y,
+            session_status,
+        )
+        detail_by_status = {
+            "missing": "Sessão Planet ausente. Reabra a cena para renovar a sessão.",
+            "expired": "Sessão Planet expirada. Reabra a cena para continuar.",
+            "scene_mismatch": "Sessão Planet inválida para esta cena. Selecione a cena novamente.",
+            "invalid": "Sessão Planet inválida. Reabra a cena para renovar a sessão.",
+        }
+        raise HTTPException(status_code=401, detail=detail_by_status.get(session_status, "Sessão Planet inválida."))
+
+    try:
+        tile_bytes, content_type = get_planet_tile(scene_id=scene_id, z=z, x=x, y=y)
+        return Response(
+            content=tile_bytes,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=900"},
+        )
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 502
+        detail = "Tile Planet indisponível."
+        if status_code in (401, 403):
+            detail = "Acesso Planet indisponível ou quota excedida."
+        elif status_code == 404:
+            detail = "Tile Planet não encontrado para esta cena."
+        raise HTTPException(status_code=502, detail=detail) from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Timeout ao buscar tile Planet.") from exc
+    except Exception as exc:
+        logging.error("[/api/planet/tiles] Erro scene_id=%s z=%s x=%s y=%s: %s", scene_id, z, x, y, exc)
+        raise HTTPException(status_code=502, detail="Falha ao buscar tile Planet.") from exc
+
+
 @app.get("/api/planet/overlay")
 @limiter.limit("10/minute")
 async def planet_overlay_endpoint(
@@ -516,7 +605,13 @@ async def planet_overlay_endpoint(
     scene_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    from services.planet_service import get_planet_overlay, get_bbox_from_boundaries
+    from services.planet_service import get_planet_overlay
+
+    if _is_production() and os.getenv("ENABLE_PLANET_OVERLAY_LEGACY", "false").strip().lower() != "true":
+        raise HTTPException(
+            status_code=410,
+            detail="Endpoint legado desabilitado em produção. Use /api/planet/tile-session + /api/planet/tiles.",
+        )
 
     field_data = farm_service.get_field_by_id(user.id, field_id)
     if not field_data:
