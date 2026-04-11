@@ -132,6 +132,16 @@ function mapFieldToDb(field: Omit<Location, 'id'> & { farm_id: string; user_id: 
   };
 }
 
+// ── Satellite overlay compartilhado (FieldMap → Chat) ─────────────────────────
+export interface CurrentSatelliteScene {
+  fieldId: string;
+  source: 's1' | 's2';
+  sceneId: string;
+  sceneDate: string | null;
+  sceneDate_br: string | null;
+  cloudCoverage: number | null;
+}
+
 // ── State Interface ───────────────────────────────────────────────────────────
 
 interface AppState {
@@ -152,6 +162,8 @@ interface AppState {
   isSyncing: boolean;
   syncError: string | null;
   entitlements: Entitlements | null;
+  /** Última cena satelital visível no mapa (não persistida) */
+  currentSatelliteScene: CurrentSatelliteScene | null;
 
   setFarms: (farms: Farm[]) => void;
   setActiveFarm: (id: string | null) => void;
@@ -175,6 +187,7 @@ interface AppState {
   fetchEntitlements: () => Promise<void>;
   syncFromBackend: () => Promise<void>;
   resetStore: () => void;
+  setCurrentSatelliteScene: (scene: CurrentSatelliteScene | null) => void;
 }
 
 const MAX_CHAT_HISTORY = 100;
@@ -199,6 +212,9 @@ export const useAppStore = create<AppState>()(
       isSyncing: false,
       syncError: null,
       entitlements: null,
+      currentSatelliteScene: null,
+
+      setCurrentSatelliteScene: (scene) => set({ currentSatelliteScene: scene }),
 
       setFarms: (farms) => {
         set({ farms });

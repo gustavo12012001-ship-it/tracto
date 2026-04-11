@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
 
-async function buildAuthHeaders() {
+export async function buildAuthHeaders() {
   try {
     let {
       data: { session },

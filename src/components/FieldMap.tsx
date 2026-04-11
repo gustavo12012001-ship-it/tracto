@@ -392,7 +392,7 @@ function ScenesPanel({
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function FieldMap() {
-  const { currentLocation, locationStatus, fields, createField, removeField, activeFarmId, activeFieldId, setActiveField } = useAppStore();
+  const { currentLocation, locationStatus, fields, createField, removeField, activeFarmId, activeFieldId, setActiveField, setCurrentSatelliteScene } = useAppStore();
 
   const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
   const [searchQuery, setSearchQuery] = useState('');
@@ -587,6 +587,18 @@ export default function FieldMap() {
         cacheStatus,
         sceneDate: sceneDateHeader,
       });
+
+      // Compartilha metadados da cena com o chat (para análise da IA)
+      if (activeFieldId && (source === 's1' || source === 's2')) {
+        setCurrentSatelliteScene({
+          fieldId: activeFieldId,
+          source: source as 's1' | 's2',
+          sceneId: sceneId,
+          sceneDate: date || sceneDateHeader || null,
+          sceneDate_br: scene.date_br || null,
+          cloudCoverage: typeof scene.cloud_coverage === 'number' ? scene.cloud_coverage : null,
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar imagem.';
       console.error('[overlay]', msg);
@@ -599,6 +611,7 @@ export default function FieldMap() {
     if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
     setPlanetActivating(false);
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    setCurrentSatelliteScene(null);
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);

@@ -945,7 +945,7 @@ def get_sentinel_overlay_with_cache(
         "[SentinelCache] MISS — gerando via Sentinel Hub field_id=%s source=%s scene=%s",
         field_id, source, effective_scene_id,
     )
-    image_bytes = get_true_color_overlay(
+    _raw = get_true_color_overlay(
         field_id=field_id,
         lat=lat,
         lng=lng,
@@ -956,7 +956,35 @@ def get_sentinel_overlay_with_cache(
         mode=mode,
     )
 
-    if image_bytes is None:
+    # get_true_color_overlay retorna SentinelOverlayResult ou bytes ou None
+    if _raw is None:
+        return None, {
+            "cache_hit": False,
+            "artifact_id": None,
+            "cache_path": None,
+            "cache_source": None,
+            "generated_at": None,
+            "scene_date": scene_date,
+        }
+
+    # Extrai bytes do resultado (pode ser SentinelOverlayResult ou bytes direto)
+    if isinstance(_raw, SentinelOverlayResult):
+        image_bytes = _raw.image_bytes
+        # Se veio do cache interno do get_true_color_overlay, propaga o cache
+        if _raw.cache_hit and image_bytes:
+            _set_cached_overlay(mem_key, image_bytes)
+            return image_bytes, {
+                "cache_hit": True,
+                "artifact_id": None,
+                "cache_path": _raw.cache_path,
+                "cache_source": "memory",
+                "generated_at": _raw.generated_at,
+                "scene_date": _raw.scene_date or scene_date,
+            }
+    else:
+        image_bytes = _raw  # bytes direto (fallback legado)
+
+    if not image_bytes:
         return None, {
             "cache_hit": False,
             "artifact_id": None,
@@ -1008,6 +1036,9 @@ def get_sentinel_overlay_with_cache(
             )
     except Exception as exc:
         logging.warning("[SentinelCache] Falha ao persistir artifact: %s", exc)
+
+    # Salva em memória para próximas requisições na mesma instância
+    _set_cached_overlay(mem_key, image_bytes)
 
     return image_bytes, {
         "cache_hit": False,

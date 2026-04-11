@@ -133,9 +133,9 @@ async def _resolve_satellite(
 			s1_list = available_scenes.get("s1") or []
 			s2_list = available_scenes.get("s2") or []
 			if isinstance(s1_list, list) and s1_list:
-				s1_scene_date = (s1_list[0] or {}).get("scene_date")
+				s1_scene_date = (s1_list[0] or {}).get("date")
 			if isinstance(s2_list, list) and s2_list:
-				s2_scene_date = (s2_list[0] or {}).get("scene_date")
+				s2_scene_date = (s2_list[0] or {}).get("date")
 
 		scene_meta = await asyncio.wait_for(
 			asyncio.to_thread(get_latest_scene_metadata, lat, lng, boundaries, 21, 40),

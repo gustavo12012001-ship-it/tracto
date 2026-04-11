@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import useAppStore from '../store/useAppStore';
-import { apiFetch, type FieldIntelligenceSnapshot } from '../services/api';
+import { apiFetch, buildAuthHeaders, API_URL, type FieldIntelligenceSnapshot } from '../services/api';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../services/supabase';
 
@@ -113,6 +113,7 @@ export default function Chat() {
     activeFieldId,
     weatherCache,
     fetchFieldIntelligence,
+    currentSatelliteScene,
   } = useAppStore();
 
   // Conversation state
@@ -237,7 +238,7 @@ export default function Chat() {
 
     startNewConversation();
     if (activeFieldId) {
-      void fetchFieldIntelligence(activeFieldId, true);
+      void fetchFieldIntelligence(activeFieldId, false); // usa cache — snapshot completo é construído pelo backend
     }
   }, [activeFieldId, fetchFieldIntelligence, startNewConversation]);
 
@@ -310,6 +311,37 @@ export default function Chat() {
     setPendingImage(null);
   };
 
+  // ── Carregar imagem satelital atual para análise ────────────────────────────
+  const loadSatelliteImageForChat = async () => {
+    if (!currentSatelliteScene || !activeFieldId) return;
+    try {
+      const headers = await buildAuthHeaders();
+      const params = new URLSearchParams({
+        field_id: activeFieldId,
+        source: currentSatelliteScene.source,
+        scene_id: currentSatelliteScene.sceneId,
+      });
+      if (currentSatelliteScene.sceneDate) params.set('scene_date', currentSatelliteScene.sceneDate);
+      const resp = await fetch(`${API_URL}/api/sentinel/overlay?${params.toString()}`, { headers });
+      if (!resp.ok) throw new Error(`Erro ${resp.status}`);
+      const blob = await resp.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const preview = URL.createObjectURL(blob);
+        if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage({ base64, mimeType: 'image/png', preview, name: `satelite-${currentSatelliteScene.source}-${currentSatelliteScene.sceneDate ?? 'latest'}.png` });
+        const sourceLabel = currentSatelliteScene.source === 's1' ? 'Sentinel-1 (Radar SAR)' : 'Sentinel-2 (Óptico)';
+        const dateLabel = currentSatelliteScene.sceneDate_br || currentSatelliteScene.sceneDate || 'data desconhecida';
+        const cloudLabel = currentSatelliteScene.cloudCoverage != null ? ` | Nuvens: ${currentSatelliteScene.cloudCoverage}%` : '';
+        setInput((prev) => prev || `Analise esta imagem de satélite ${sourceLabel} do meu talhão. Data da passagem: ${dateLabel}${cloudLabel}.`);
+      };
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : 'Erro ao carregar imagem satelital.');
+    }
+  };
+
   // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = async (text?: string) => {
     const content = (text ?? input).trim();
@@ -353,7 +385,8 @@ export default function Chat() {
         { role: 'user', text: userMsg.text },
       ];
 
-      const snapshot = await fetchFieldIntelligence(activeFieldId, true);
+      // Usa cache (false) — o backend constrói seu próprio snapshot canônico na hora do chat
+      const snapshot = await fetchFieldIntelligence(activeFieldId, false);
       if (!snapshot || snapshot.field_id !== activeFieldId) {
         throw new Error('Não foi possível carregar o snapshot do talhão ativo. Selecione o talhão novamente.');
       }
@@ -747,6 +780,26 @@ export default function Chat() {
 
         {/* ── Input bar ────────────────────────────────────────────────────── */}
         <div className="p-4 border-t flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+          {/* Badge: imagem satelital disponível no mapa */}
+          {currentSatelliteScene && currentSatelliteScene.fieldId === activeFieldId && !pendingImage && (
+            <div className="mb-3">
+              <button
+                onClick={() => void loadSatelliteImageForChat()}
+                disabled={isLoading}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', color: '#34d399' }}
+              >
+                <span className="material-symbols-outlined text-sm">satellite_alt</span>
+                <span className="flex-1 text-left">
+                  📡 Analisar imagem {currentSatelliteScene.source === 's1' ? 'Sentinel-1 (Radar)' : 'Sentinel-2 (Óptico)'} visível no mapa
+                  {currentSatelliteScene.sceneDate_br ? ` · ${currentSatelliteScene.sceneDate_br}` : ''}
+                  {currentSatelliteScene.cloudCoverage != null ? ` · ${currentSatelliteScene.cloudCoverage}% nuvens` : ''}
+                </span>
+                <span className="material-symbols-outlined text-sm">add_photo_alternate</span>
+              </button>
+            </div>
+          )}
+
           {/* Pending image preview */}
           {pendingImage && (
             <div className="mb-3 flex items-start gap-2">
