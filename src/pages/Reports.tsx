@@ -66,7 +66,7 @@ export default function Reports() {
   const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
-  const activeField = fields.find((field) => field.id === activeFieldId) || fields[0] || null;
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) ?? null : null;
 
   const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
     const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;

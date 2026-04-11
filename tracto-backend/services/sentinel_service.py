@@ -87,6 +87,12 @@ def _set_cached_overlay(cache_key: str, image_bytes: bytes) -> None:
 
 
 # ── Utilitários de geometria ──────────────────────────────────────────────────
+def invalidate_field_cache(field_id: str) -> None:
+    with _overlay_lock:
+        for cache_key in list(_overlay_cache.keys()):
+            if cache_key.startswith(f"{field_id}_"):
+                _overlay_cache.pop(cache_key, None)
+
 
 def get_bbox_from_boundaries(
     boundaries: list[list[float]] | None,

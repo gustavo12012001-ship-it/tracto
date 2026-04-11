@@ -10,6 +10,8 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    field_id: str | None = None
+    force_refresh: bool = False
     farm_context: str | None = "Fazenda sem dados especificos no momento."
     image_base64: str | None = None
     image_mime_type: str | None = "image/jpeg"

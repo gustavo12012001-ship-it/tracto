@@ -175,6 +175,7 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousActiveFieldIdRef = useRef<string | null>(activeFieldId);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -191,11 +192,6 @@ export default function Chat() {
   useEffect(() => {
     loadConversations();
   }, []);
-
-  useEffect(() => {
-    if (!activeFieldId) return;
-    void fetchFieldIntelligence(activeFieldId, false);
-  }, [activeFieldId, fetchFieldIntelligence]);
 
   const loadConversations = async () => {
     try {
@@ -253,7 +249,7 @@ export default function Chat() {
   );
 
   // ── Start new conversation ─────────────────────────────────────────────────
-  const startNewConversation = () => {
+  const startNewConversation = useCallback(() => {
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     const newId = uuidv4();
     const createdAt = nowISO();
@@ -264,8 +260,25 @@ export default function Chat() {
     clearChat();
     setApiError(null);
     setInput('');
-    setPendingImage(null);
-  };
+    setPendingImage((current) => {
+      if (current) URL.revokeObjectURL(current.preview);
+      return null;
+    });
+  }, [clearChat]);
+
+  useEffect(() => {
+    const previousFieldId = previousActiveFieldIdRef.current;
+    if (previousFieldId === activeFieldId) {
+      return;
+    }
+
+    previousActiveFieldIdRef.current = activeFieldId;
+
+    startNewConversation();
+    if (activeFieldId) {
+      void fetchFieldIntelligence(activeFieldId, true);
+    }
+  }, [activeFieldId, fetchFieldIntelligence, startNewConversation]);
 
   // ── Load a saved conversation ──────────────────────────────────────────────
   const loadConversation = (conv: SavedConversation) => {
@@ -328,6 +341,13 @@ export default function Chat() {
   const sendMessage = async (text?: string) => {
     const content = (text ?? input).trim();
     if ((!content && !pendingImage) || isLoading) return;
+
+    const selectedField = activeFieldId ? fields.find((field) => field.id === activeFieldId) ?? null : null;
+    if (!activeFieldId || !selectedField) {
+      setApiError('Selecione um talhão ativo válido no mapa antes de analisar com a IA.');
+      return;
+    }
+
     setInput('');
     setApiError(null);
 
@@ -360,7 +380,11 @@ export default function Chat() {
         { role: 'user', text: userMsg.text },
       ];
 
-      const snapshot = activeFieldId ? await fetchFieldIntelligence(activeFieldId, false) : null;
+      const snapshot = await fetchFieldIntelligence(activeFieldId, true);
+      if (!snapshot || snapshot.field_id !== activeFieldId) {
+        throw new Error('Não foi possível carregar o snapshot do talhão ativo. Selecione o talhão novamente.');
+      }
+
       const farm_context = snapshot
         ? buildFarmContextFromSnapshot(snapshot)
         : buildFarmContext(fields, activeFieldId, Boolean(imageBase64));
@@ -380,6 +404,7 @@ export default function Chat() {
         method: 'POST',
         body: JSON.stringify({
           messages: payloadMessages,
+          field_id: activeFieldId,
           farm_context,
           image_base64: imageBase64,
           image_mime_type: imageMime,

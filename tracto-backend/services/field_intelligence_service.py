@@ -301,9 +301,13 @@ async def _build_ai_summary(
 		)
 
 
-async def build_field_intelligence_snapshot(user_id: str, field_id: str) -> FieldIntelligenceSnapshot:
+async def build_field_intelligence_snapshot(
+	user_id: str,
+	field_id: str,
+	force_refresh: bool = False,
+) -> FieldIntelligenceSnapshot:
 	snapshot_cache_key = _cache_key("snapshot", field_id)
-	cached_snapshot = analysis_cache.get(snapshot_cache_key)
+	cached_snapshot = None if force_refresh else analysis_cache.get(snapshot_cache_key)
 	if isinstance(cached_snapshot, dict):
 		try:
 			logging.info("field_intelligence_snapshot cache hit field_id=%s", field_id)

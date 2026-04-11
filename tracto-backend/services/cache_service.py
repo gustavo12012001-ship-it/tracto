@@ -68,6 +68,23 @@ class AnalysisCache:
                     self._save_cache()
             return None
 
+    def delete(self, key: str) -> None:
+        with self._lock:
+            if key in self._cache:
+                del self._cache[key]
+                self._save_cache()
+
+    def delete_prefix(self, prefix: str) -> int:
+        with self._lock:
+            keys_to_remove = [key for key in self._cache.keys() if key.startswith(prefix)]
+            if not keys_to_remove:
+                return 0
+
+            for key in keys_to_remove:
+                del self._cache[key]
+
+            self._save_cache()
+            return len(keys_to_remove)
+
 # Global instance
 analysis_cache = AnalysisCache()
-

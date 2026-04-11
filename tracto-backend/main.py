@@ -41,7 +41,12 @@ from services.billing_service import billing_service
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image, get_true_color_overlay, get_available_scenes
+from services.sentinel_service import (
+    get_ndvi_image,
+    get_true_color_overlay,
+    get_available_scenes,
+    invalidate_field_cache,
+)
 from services.planet_service import (
     create_planet_tile_session,
     get_planet_tile_session_status,
@@ -327,6 +332,12 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
     try:
         if not chat_req.messages:
             raise HTTPException(status_code=400, detail="O historico de mensagens esta vazio.")
+        if not chat_req.field_id:
+            raise HTTPException(status_code=400, detail="Selecione um talhao ativo para conversar com a IA.")
+
+        field = farm_service.get_field_by_id(_user.id, chat_req.field_id)
+        if not field:
+            raise HTTPException(status_code=404, detail="Talhao ativo nao encontrado ou sem permissao de acesso.")
 
         reply = generate_chat_response(
             messages=[message.model_dump() for message in chat_req.messages],
@@ -1018,10 +1029,15 @@ async def get_fields_endpoint(farm_id: str | None = None, user: AuthenticatedUse
 async def get_field_intelligence_endpoint(
     request: Request,
     field_id: str,
+    force_refresh: bool = False,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
-        snapshot = await build_field_intelligence_snapshot(user_id=user.id, field_id=field_id)
+        snapshot = await build_field_intelligence_snapshot(
+            user_id=user.id,
+            field_id=field_id,
+            force_refresh=force_refresh,
+        )
         return snapshot
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1064,7 +1080,18 @@ async def update_field_endpoint(field_id: str, request: FieldBase, user: Authent
 @app.delete("/api/fields/{field_id}")
 async def delete_field_endpoint(field_id: str, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return {"success": farm_service.delete_field(field_id, user.id)}
+        success = farm_service.delete_field(field_id, user.id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Talhao nao encontrado ou acesso negado.")
+
+        analysis_cache.delete(f"field_intelligence:weather:{field_id}")
+        analysis_cache.delete(f"field_intelligence:satellite:{field_id}")
+        analysis_cache.delete(f"field_intelligence:snapshot:{field_id}")
+        invalidate_field_cache(field_id)
+
+        return {"success": True}
+    except HTTPException:
+        raise
     except Exception as exc:
         logging.error("Erro ao deletar talhao: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao deletar talhao.") from exc

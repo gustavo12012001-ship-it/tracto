@@ -219,8 +219,9 @@ export async function analyzeField(
   });
 }
 
-export async function fetchFieldIntelligenceSnapshot(fieldId: string) {
-  return apiFetch<FieldIntelligenceSnapshot>(`/api/fields/${fieldId}/intelligence`, {
+export async function fetchFieldIntelligenceSnapshot(fieldId: string, forceRefresh = false) {
+  const query = forceRefresh ? '?force_refresh=true' : '';
+  return apiFetch<FieldIntelligenceSnapshot>(`/api/fields/${fieldId}/intelligence${query}`, {
     method: 'GET',
   });
 }

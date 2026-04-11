@@ -43,6 +43,23 @@ function normalizeMapLayer(layer: unknown): MapLayer {
   return 'sentinel';
 }
 
+function isFieldNotFoundError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('404') ||
+    normalized.includes('nao encontrado') ||
+    normalized.includes('não encontrado') ||
+    normalized.includes('acesso negado')
+  );
+}
+
+function omitFieldKey<T>(record: Record<string, T>, fieldId: string): Record<string, T> {
+  if (!(fieldId in record)) return record;
+  const next = { ...record };
+  delete next[fieldId];
+  return next;
+}
+
 export interface Alert {
   id: string;
   type: 'critical' | 'warning' | 'info';
@@ -246,12 +263,22 @@ export const useAppStore = create<AppState>()(
         }
 
         const mappedFields = (data ?? []).map(mapDbToField);
+        const validFieldIds = new Set(
+          mappedFields
+            .map((field) => field.id)
+            .filter((id): id is string => Boolean(id))
+        );
+        const pruneByFieldIds = <T>(record: Record<string, T>) =>
+          Object.fromEntries(
+            Object.entries(record).filter(([fieldId]) => validFieldIds.has(fieldId))
+          ) as Record<string, T>;
         const currentActiveFieldId = get().activeFieldId;
         const activeField = currentActiveFieldId
           ? mappedFields.find((field) => field.id === currentActiveFieldId) ?? null
           : null;
         const farms = get().farms;
         const currentActiveFarmId = get().activeFarmId;
+        const currentState = get();
 
         set({
           fields: mappedFields,
@@ -260,6 +287,9 @@ export const useAppStore = create<AppState>()(
             ?? (currentActiveFarmId && farms.some((farm) => farm.id === currentActiveFarmId)
               ? currentActiveFarmId
               : farms[0]?.id ?? null),
+          fieldIntelligenceById: pruneByFieldIds(currentState.fieldIntelligenceById),
+          fieldIntelligenceLoadingById: pruneByFieldIds(currentState.fieldIntelligenceLoadingById),
+          fieldIntelligenceErrorById: pruneByFieldIds(currentState.fieldIntelligenceErrorById),
         });
       },
 
@@ -318,10 +348,21 @@ export const useAppStore = create<AppState>()(
         }
 
         // Otimista: remover do estado local imediatamente
-        set((state) => ({
-          fields: state.fields.filter((f) => f.id !== fieldId),
-          activeFieldId: state.activeFieldId === fieldId ? null : state.activeFieldId,
-        }));
+        set((state) => {
+          const nextSnapshots = omitFieldKey(state.fieldIntelligenceById, fieldId);
+          const nextLoading = omitFieldKey(state.fieldIntelligenceLoadingById, fieldId);
+          const nextErrors = omitFieldKey(state.fieldIntelligenceErrorById, fieldId);
+
+          const removedWasActive = state.activeFieldId === fieldId;
+          return {
+            fields: state.fields.filter((f) => f.id !== fieldId),
+            activeFieldId: removedWasActive ? null : state.activeFieldId,
+            chatHistory: removedWasActive ? [] : state.chatHistory,
+            fieldIntelligenceById: nextSnapshots,
+            fieldIntelligenceLoadingById: nextLoading,
+            fieldIntelligenceErrorById: nextErrors,
+          };
+        });
 
         // Garantia de consistência pós-delete
         await get().syncFields();
@@ -345,6 +386,22 @@ export const useAppStore = create<AppState>()(
       fetchFieldIntelligence: async (fieldId, forceRefresh = false) => {
         if (!fieldId) return null;
 
+        const fieldExists = get().fields.some((field) => field.id === fieldId);
+        if (!fieldExists) {
+          set((state) => {
+            const nextSnapshots = omitFieldKey(state.fieldIntelligenceById, fieldId);
+            const nextLoading = omitFieldKey(state.fieldIntelligenceLoadingById, fieldId);
+            const nextErrors = omitFieldKey(state.fieldIntelligenceErrorById, fieldId);
+
+            return {
+              fieldIntelligenceById: nextSnapshots,
+              fieldIntelligenceLoadingById: nextLoading,
+              fieldIntelligenceErrorById: nextErrors,
+            };
+          });
+          return null;
+        }
+
         const currentSnapshot = get().fieldIntelligenceById[fieldId];
         const currentTime = Date.now();
         const snapshotAgeMs = currentSnapshot
@@ -361,7 +418,7 @@ export const useAppStore = create<AppState>()(
         }));
 
         try {
-          const snapshot = await fetchFieldIntelligenceSnapshot(fieldId);
+          const snapshot = await fetchFieldIntelligenceSnapshot(fieldId, forceRefresh);
           set((state) => ({
             fieldIntelligenceById: { ...state.fieldIntelligenceById, [fieldId]: snapshot },
             fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
@@ -370,6 +427,25 @@ export const useAppStore = create<AppState>()(
           return snapshot;
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Falha ao carregar snapshot do talhão.';
+          if (isFieldNotFoundError(message)) {
+            set((state) => {
+              const nextSnapshots = omitFieldKey(state.fieldIntelligenceById, fieldId);
+              const nextLoading = omitFieldKey(state.fieldIntelligenceLoadingById, fieldId);
+              const nextErrors = omitFieldKey(state.fieldIntelligenceErrorById, fieldId);
+
+              return {
+                activeFieldId: state.activeFieldId === fieldId ? null : state.activeFieldId,
+                fieldIntelligenceById: nextSnapshots,
+                fieldIntelligenceLoadingById: nextLoading,
+                fieldIntelligenceErrorById: {
+                  ...nextErrors,
+                  [fieldId]: 'Talhão não encontrado ou removido. Selecione um talhão válido.',
+                },
+              };
+            });
+            return null;
+          }
+
           set((state) => ({
             fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
             fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: message },
