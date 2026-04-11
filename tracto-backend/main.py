@@ -300,9 +300,20 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
 
 
-def _planet_cookie_options() -> dict:
-    if _is_production():
+def _planet_cookie_options(request: Request) -> dict:
+    """
+    Ajusta cookie de sessão Planet para funcionar em deploy cross-origin
+    (frontend e backend em domínios diferentes) sem quebrar dev local.
+    """
+    origin = (request.headers.get("origin") or "").strip().lower()
+    is_local_origin = ("localhost" in origin) or ("127.0.0.1" in origin)
+    is_https_context = request.url.scheme == "https" or origin.startswith("https://")
+
+    force_cross_site = os.getenv("PLANET_COOKIE_CROSS_SITE", "false").strip().lower() == "true"
+
+    if force_cross_site or (_is_production() and is_https_context and not is_local_origin):
         return {"secure": True, "samesite": "none"}
+
     return {"secure": False, "samesite": "lax"}
 
 
@@ -534,7 +545,7 @@ async def planet_tile_session_endpoint(
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
 
     session_token = create_planet_tile_session(user.id, field_id, scene_id)
-    cookie_options = _planet_cookie_options()
+    cookie_options = _planet_cookie_options(request)
     response.set_cookie(
         key="planet_tile_session",
         value=session_token,
@@ -548,7 +559,7 @@ async def planet_tile_session_endpoint(
 
 
 @app.get("/api/planet/tiles/{z}/{x}/{y}")
-@limiter.limit("240/minute")
+@limiter.limit("1200/minute")
 async def planet_tile_proxy_endpoint(
     request: Request,
     z: int,

@@ -63,7 +63,7 @@ interface OverlayState {
   bounds: L.LatLngBoundsExpression | null;
   loading: boolean;
   error: string | null;
-  sceneKey: string | null; // "field_id|source|date"
+  sceneKey: string | null; // "field_id|source|scene_id"
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -281,7 +281,7 @@ function ScenesPanel({
   activeSceneKey: string | null;
   overlayLoading: boolean;
   onClose: () => void;
-  onSelectScene: (source: 's1' | 's2' | 'planet', date: string) => void;
+  onSelectScene: (scene: SentinelScene) => void;
 }) {
   const [tab, setTab] = useState<'s2' | 's1' | 'planet'>('s2');
 
@@ -356,14 +356,14 @@ function ScenesPanel({
           </div>
         ) : (
           currentScenes.map((scene) => {
-            const key = `${fieldId}|${scene.source}|${scene.date}`;
+            const key = `${fieldId}|${scene.source}|${scene.scene_id}`;
             return (
               <SceneCard
                 key={scene.scene_id}
                 scene={scene}
                 isActive={activeSceneKey === key}
                 isLoading={overlayLoading && activeSceneKey === key}
-                onClick={() => onSelectScene(scene.source, scene.date || '')}
+                onClick={() => onSelectScene(scene)}
               />
             );
           })
@@ -416,6 +416,7 @@ export default function FieldMap() {
   const [planetLayer, setPlanetLayer] = useState<PlanetLayerState>({ sceneId: null, enabled: false });
   const prevUrlRef = useRef<string | null>(null);
   const loadingScenesFieldRef = useRef<string | null>(null);
+  const planetTileErrorCountRef = useRef(0);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
 
@@ -466,10 +467,13 @@ export default function FieldMap() {
   }, [showScenesPanel, activeFieldId, scenes.fieldId, scenes.loading]);
 
   // ── Carregar overlay de cena selecionada ──────────────────────────────────
-  const handleSelectScene = async (source: 's1' | 's2' | 'planet', date: string) => {
+  const handleSelectScene = async (scene: SentinelScene) => {
     if (!activeFieldId) return;
+    const source = scene.source;
+    const date = scene.date || '';
+    const sceneId = scene.scene_id;
 
-    const sceneKey = `${activeFieldId}|${source}|${date}`;
+    const sceneKey = `${activeFieldId}|${source}|${sceneId}`;
     if (source === 'planet' && overlay.sceneKey === sceneKey && planetLayer.sceneId && planetLayer.enabled) return;
     if (source !== 'planet' && overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
 
@@ -485,9 +489,8 @@ export default function FieldMap() {
       const headers = await buildAuthHeaders();
 
       if (source === 'planet') {
-        const scene = scenes.planet.find(s => s.date === date);
-        if (!scene?.scene_id) return;
-        const resp = await fetch(`${API_URL}/api/planet/tile-session?field_id=${activeFieldId}&scene_id=${scene.scene_id}`, {
+        if (!sceneId) return;
+        const resp = await fetch(`${API_URL}/api/planet/tile-session?field_id=${activeFieldId}&scene_id=${sceneId}`, {
           method: 'POST',
           headers,
           credentials: 'include',
@@ -502,7 +505,8 @@ export default function FieldMap() {
           }
           throw new Error(errorMsg);
         }
-        setPlanetLayer({ sceneId: scene.scene_id, enabled: true });
+        planetTileErrorCountRef.current = 0;
+        setPlanetLayer({ sceneId, enabled: true });
         setOverlay({ url: null, bounds, loading: false, error: null, sceneKey });
         return;
       }
@@ -646,11 +650,16 @@ export default function FieldMap() {
             zIndex={390}
             eventHandlers={{
               tileerror: () => {
-                setOverlay((prev) => prev.error
-                  ? prev
-                  : { ...prev, loading: false, error: 'Camada Planet indisponível no momento. Tente outra cena ou use Sentinel/Esri.' });
+                planetTileErrorCountRef.current += 1;
+                // Evita falso positivo com 1 tile isolado falhando.
+                if (planetTileErrorCountRef.current >= 3) {
+                  setOverlay((prev) => prev.error
+                    ? prev
+                    : { ...prev, loading: false, error: 'Camada Planet indisponível no momento. Tente outra cena ou use Sentinel/Esri.' });
+                }
               },
               tileload: () => {
+                planetTileErrorCountRef.current = 0;
                 setOverlay((prev) => prev.error && prev.sceneKey?.includes('|planet|')
                   ? { ...prev, error: null }
                   : prev);
