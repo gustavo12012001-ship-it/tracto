@@ -35,6 +35,7 @@ type MapLayer = 'osm' | 'esri';
 
 interface PlanetLayerState {
   sceneId: string | null;
+  tileToken: string | null;
   enabled: boolean;
 }
 
@@ -413,7 +414,7 @@ export default function FieldMap() {
 
   // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
-  const [planetLayer, setPlanetLayer] = useState<PlanetLayerState>({ sceneId: null, enabled: false });
+  const [planetLayer, setPlanetLayer] = useState<PlanetLayerState>({ sceneId: null, tileToken: null, enabled: false });
   const prevUrlRef = useRef<string | null>(null);
   const loadingScenesFieldRef = useRef<string | null>(null);
   const planetTileErrorCountRef = useRef(0);
@@ -505,13 +506,14 @@ export default function FieldMap() {
           }
           throw new Error(errorMsg);
         }
+        const sessionData = await resp.json() as { tile_token?: string };
         planetTileErrorCountRef.current = 0;
-        setPlanetLayer({ sceneId, enabled: true });
+        setPlanetLayer({ sceneId, tileToken: sessionData.tile_token ?? null, enabled: true });
         setOverlay({ url: null, bounds, loading: false, error: null, sceneKey });
         return;
       }
 
-      setPlanetLayer({ sceneId: null, enabled: false });
+      setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
 
       const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${source}&scene_date=${date}`;
       const resp = await fetch(url, { headers });
@@ -551,7 +553,7 @@ export default function FieldMap() {
   // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
-    setPlanetLayer({ sceneId: null, enabled: false });
+    setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);
@@ -644,7 +646,7 @@ export default function FieldMap() {
           <TileLayer
             attribution="&copy; Planet Labs"
             crossOrigin="use-credentials"
-            url={`${API_URL}/api/planet/tiles/{z}/{x}/{y}?scene_id=${planetLayer.sceneId}`}
+            url={`${API_URL}/api/planet/tiles/{z}/{x}/{y}?scene_id=${planetLayer.sceneId}${planetLayer.tileToken ? `&tile_token=${planetLayer.tileToken}` : ''}`}
             opacity={0.9}
             maxZoom={18}
             zIndex={390}

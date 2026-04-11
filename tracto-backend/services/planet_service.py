@@ -14,13 +14,24 @@ from typing import Any
 import httpx
 
 PLANET_BASE_URL = os.getenv("PLANET_BASE_URL", "https://api.planet.com/data/v1")
+PLANET_BASEMAP_URL = "https://api.planet.com/basemaps/v1"
 PLANET_TILE_BASE_URL = os.getenv("PLANET_TILE_BASE_URL", "https://tiles.planet.com/data/v1")
 _cache_lock = threading.Lock()
 _scenes_cache: dict[str, dict[str, Any]] = {}
 _tile_session_lock = threading.Lock()
 _tile_sessions: dict[str, dict[str, Any]] = {}
+_nicfi_cache_lock = threading.Lock()
+_nicfi_mosaic_cache: dict[str, Any] = {"name": None, "expires_at": 0.0}
 CACHE_TTL = 30 * 60
 TILE_SESSION_TTL = 10 * 60
+NICFI_CACHE_TTL = 60 * 60  # 1 hora
+
+# Pixel transparente 1×1 PNG (fallback quando nenhum tile está disponível)
+import base64 as _b64
+_TRANSPARENT_PNG = _b64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQ"
+    "AABjkB6QAAAABJRU5ErkJggg=="
+)
 
 
 def _get_api_key() -> str | None:
@@ -199,26 +210,80 @@ def get_planet_thumbnail(scene_id: str) -> bytes | None:
         return None
 
 
-def get_planet_tile(scene_id: str, z: int, x: int, y: int) -> tuple[bytes, str]:
+def _get_nicfi_mosaic_name() -> str | None:
+    """Retorna o nome do mosaic NICFI mais recente (cacheado por 1h)."""
     api_key = _get_api_key()
     if not api_key:
-        raise RuntimeError("PLANET_API_KEY não configurada.")
+        return None
 
-    url = f"{PLANET_TILE_BASE_URL}/PSScene/{scene_id}/{z}/{x}/{y}.png"
+    with _nicfi_cache_lock:
+        if _nicfi_mosaic_cache["name"] and time.time() < _nicfi_mosaic_cache["expires_at"]:
+            return _nicfi_mosaic_cache["name"]
 
     try:
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.get(url, params={"api_key": api_key})
-            resp.raise_for_status()
-            content_type = resp.headers.get("content-type", "image/png")
-            return resp.content, content_type
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code if exc.response is not None else "unknown"
-        logging.warning("[Planet] Erro tile scene_id=%s z=%s x=%s y=%s status=%s", scene_id, z, x, y, status)
-        raise
-    except httpx.TimeoutException as exc:
-        logging.warning("[Planet] Timeout tile scene_id=%s z=%s x=%s y=%s: %s", scene_id, z, x, y, exc)
-        raise
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(
+                f"{PLANET_BASEMAP_URL}/mosaics",
+                params={"_page_size": 5, "name_contains": "medres_visual"},
+                auth=(api_key, ""),
+            )
+            if resp.status_code != 200:
+                logging.info("[Planet] NICFI mosaics: status %d (sem acesso)", resp.status_code)
+                return None
+            mosaics = resp.json().get("mosaics", [])
+            if not mosaics:
+                return None
+            mosaics.sort(key=lambda m: m.get("name", ""), reverse=True)
+            name = mosaics[0].get("name")
+            with _nicfi_cache_lock:
+                _nicfi_mosaic_cache["name"] = name
+                _nicfi_mosaic_cache["expires_at"] = time.time() + NICFI_CACHE_TTL
+            logging.info("[Planet] NICFI mosaic em cache: %s", name)
+            return name
+    except Exception as exc:
+        logging.warning("[Planet] Erro ao buscar NICFI mosaic: %s", exc)
+        return None
+
+
+def get_planet_tile(scene_id: str, z: int, x: int, y: int) -> tuple[bytes, str]:
+    """
+    Retorna bytes do tile Planet em 3 camadas:
+    1. Tile individual da cena (tiles.planet.com) — requer tile streaming
+    2. Tile NICFI basemap (api.planet.com/basemaps) — gratuito para trópicos
+    3. Pixel transparente 1×1 — fallback silencioso (sem banner de erro)
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        return _TRANSPARENT_PNG, "image/png"
+
+    # ── 1: tile individual da cena ────────────────────────────────────────────
+    scene_url = f"{PLANET_TILE_BASE_URL}/PSScene/{scene_id}/{z}/{x}/{y}.png"
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(scene_url, params={"api_key": api_key})
+            if resp.status_code == 200:
+                logging.debug("[Planet] Scene tile OK scene=%s z=%s x=%s y=%s", scene_id, z, x, y)
+                return resp.content, resp.headers.get("content-type", "image/png")
+            logging.info("[Planet] Scene tile status=%s scene=%s z=%s x=%s y=%s", resp.status_code, scene_id, z, x, y)
+    except Exception as exc:
+        logging.warning("[Planet] Erro scene tile: %s", exc)
+
+    # ── 2: NICFI basemap tile (gratuito para área tropical / Brasil) ──────────
+    mosaic_name = _get_nicfi_mosaic_name()
+    if mosaic_name:
+        nicfi_url = f"{PLANET_BASEMAP_URL}/mosaics/{mosaic_name}/xyz/{z}/{x}/{y}.png"
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(nicfi_url, params={"api_key": api_key})
+                if resp.status_code == 200:
+                    logging.debug("[Planet] NICFI tile OK mosaic=%s z=%s x=%s y=%s", mosaic_name, z, x, y)
+                    return resp.content, resp.headers.get("content-type", "image/png")
+                logging.info("[Planet] NICFI tile status=%s mosaic=%s z=%s x=%s y=%s", resp.status_code, mosaic_name, z, x, y)
+        except Exception as exc:
+            logging.warning("[Planet] Erro NICFI tile: %s", exc)
+
+    # ── 3: pixel transparente (evita banner de erro, base map Esri fica visível)
+    return _TRANSPARENT_PNG, "image/png"
 
 
 def get_bbox_from_boundaries(boundaries, lat, lng):

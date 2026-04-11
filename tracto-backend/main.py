@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request, Response, Cookie
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, Request, Response, Cookie, Query
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -555,7 +555,9 @@ async def planet_tile_session_endpoint(
         secure=cookie_options["secure"],
         samesite=cookie_options["samesite"],
     )
-    return {"ok": True, "scene_id": scene_id, "expires_in": 600}
+    # Retorna o token também no body para que o frontend possa usá-lo como
+    # query param no TileLayer — contorna limitações de cookie cross-origin.
+    return {"ok": True, "scene_id": scene_id, "expires_in": 600, "tile_token": session_token}
 
 
 @app.get("/api/planet/tiles/{z}/{x}/{y}")
@@ -567,8 +569,11 @@ async def planet_tile_proxy_endpoint(
     y: int,
     scene_id: str,
     planet_tile_session: str | None = Cookie(default=None),
+    tile_token: str | None = Query(default=None),
 ):
-    session_status = get_planet_tile_session_status(planet_tile_session, scene_id)
+    # Cookie tem prioridade; tile_token (query param) é o fallback cross-origin
+    effective_token = planet_tile_session or tile_token
+    session_status = get_planet_tile_session_status(effective_token, scene_id)
     if session_status != "ok":
         logging.info(
             "[/api/planet/tiles] Sessao rejeitada scene_id=%s z=%s x=%s y=%s status=%s",
@@ -586,26 +591,12 @@ async def planet_tile_proxy_endpoint(
         }
         raise HTTPException(status_code=401, detail=detail_by_status.get(session_status, "Sessão Planet inválida."))
 
-    try:
-        tile_bytes, content_type = get_planet_tile(scene_id=scene_id, z=z, x=x, y=y)
-        return Response(
-            content=tile_bytes,
-            media_type=content_type,
-            headers={"Cache-Control": "public, max-age=900"},
-        )
-    except httpx.HTTPStatusError as exc:
-        status_code = exc.response.status_code if exc.response is not None else 502
-        detail = "Tile Planet indisponível."
-        if status_code in (401, 403):
-            detail = "Acesso Planet indisponível ou quota excedida."
-        elif status_code == 404:
-            detail = "Tile Planet não encontrado para esta cena."
-        raise HTTPException(status_code=502, detail=detail) from exc
-    except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=504, detail="Timeout ao buscar tile Planet.") from exc
-    except Exception as exc:
-        logging.error("[/api/planet/tiles] Erro scene_id=%s z=%s x=%s y=%s: %s", scene_id, z, x, y, exc)
-        raise HTTPException(status_code=502, detail="Falha ao buscar tile Planet.") from exc
+    tile_bytes, content_type = get_planet_tile(scene_id=scene_id, z=z, x=x, y=y)
+    return Response(
+        content=tile_bytes,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=900"},
+    )
 
 
 @app.get("/api/planet/overlay")
