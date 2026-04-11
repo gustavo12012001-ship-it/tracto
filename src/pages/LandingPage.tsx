@@ -172,7 +172,9 @@ export default function LandingPage() {
 <div className="w-full lg:w-1/2 relative fade-in-section visible">
 <div className="relative z-10 w-[280px] md:w-[320px] mx-auto rounded-[3rem] border-[10px] border-slate-900 dark:border-slate-950 bg-slate-900 shadow-2xl overflow-hidden ring-1 ring-white/10">
 <div className="bg-brand-green p-4 pt-10 text-white flex items-center gap-4">
-<span className="material-symbols-outlined text-lg">arrow_back</span>
+<svg aria-hidden="true" viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current flex-shrink-0">
+<path d="M20 11H7.83l5.58-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z"></path>
+</svg>
 <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden border border-white/20">
 <img alt="Tracto AI Avatar" className="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA9YpGb0bZjWKAXOj0EldHehbZ3K5vtul8tgwRhsUjRdZ2FASAeb8AD0MCui0QJ2Mp2aYxNuJDOcSaKDBooN80t_4aCJ8mJ9syocA9xkXQ5lN486OD-HlfqsjOrSoAYecg6CIR32ROrEH2JztUZrGJLgcspn8K7GkLepkEhMVSpJTH0_RWRwehawQ_evU9grGQjPDuYWoyFNwALUzf_GdsFCgtFS71Phdl1LWOm13-XIkrXUggFRMMxGmmyxdRkXqybnD-IQCUDjdE"/>
 </div>
@@ -206,7 +208,9 @@ export default function LandingPage() {
 <ul className="space-y-8">
 <li className="flex gap-6">
 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/5 text-primary flex items-center justify-center">
-<span className="material-symbols-outlined text-xl">notifications_active</span>
+<svg aria-hidden="true" viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+<path d="M12 22a2.48 2.48 0 0 0 2.45-2h-4.9A2.48 2.48 0 0 0 12 22zm6-6V11a6 6 0 1 0-12 0v5l-2 2v1h16v-1zM8 16v-5a4 4 0 1 1 8 0v5z"></path>
+</svg>
 </div>
 <div>
 <h6 className="text-sm font-semibold dark:text-white mb-2 tracking-tight">Alertas Proativos</h6>
@@ -215,7 +219,9 @@ export default function LandingPage() {
 </li>
 <li className="flex gap-6">
 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/5 text-primary flex items-center justify-center">
-<span className="material-symbols-outlined text-xl">psychology</span>
+<svg aria-hidden="true" viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+<path d="M12 2a8 8 0 0 0-5 14.24V22l4-2h1a8 8 0 0 0 0-16zm-1 5h2v2h1a2 2 0 1 1-2 2h-2a4 4 0 1 0 4-4V5h-2zm0 8h2v2h-2z"></path>
+</svg>
 </div>
 <div>
 <h6 className="text-sm font-semibold dark:text-white mb-2 tracking-tight">Inteligência Agronômica Dedicada</h6>
