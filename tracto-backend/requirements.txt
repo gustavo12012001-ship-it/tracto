@@ -11,3 +11,4 @@ limits
 requests
 anthropic
 Pillow
+rasterio

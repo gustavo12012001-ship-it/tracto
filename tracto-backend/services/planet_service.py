@@ -520,3 +520,111 @@ def get_planet_overlay(
 
     logging.error("[Planet] Overlay completamente indisponível scene=%s field=%s", scene_id, field_id)
     return None
+
+
+def _activate_planet_asset(scene_id: str, asset_type: str, api_key: str) -> tuple[str, str | None]:
+    """
+    Verifica / ativa um asset PSScene.
+    Retorna (status, location):
+      - status: 'active' | 'activating' | 'unavailable'
+      - location: URL de download quando status == 'active', None caso contrário
+    """
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(
+                f"{PLANET_BASE_URL}/item-types/PSScene/items/{scene_id}/assets",
+                auth=(api_key, ""),
+            )
+            resp.raise_for_status()
+            assets = resp.json()
+
+            asset = assets.get(asset_type, {})
+            status = asset.get("status", "unavailable")
+
+            if status == "active":
+                return "active", asset.get("location")
+
+            if status == "inactive":
+                activate_url = asset.get("_links", {}).get("activate")
+                if activate_url:
+                    act_resp = client.post(activate_url, auth=(api_key, ""))
+                    if act_resp.status_code in (202, 204):
+                        logging.info("[Planet] Asset %s/%s ativação disparada", scene_id, asset_type)
+                        return "activating", None
+
+            return status or "unavailable", None
+    except Exception as exc:
+        logging.warning("[Planet] Erro ao ativar asset %s/%s: %s", scene_id, asset_type, exc)
+        return "unavailable", None
+
+
+def _read_cog_area(cog_url: str, bbox: list[float], target_size: int = 1024) -> bytes | None:
+    """
+    Lê apenas a área do talhão de um COG (Cloud-Optimized GeoTIFF) via HTTP Range requests.
+    Requer rasterio instalado. Retorna PNG bytes ou None em caso de falha.
+    """
+    try:
+        import io as _io
+
+        import numpy as np
+        import rasterio
+        from PIL import Image
+        from rasterio.crs import CRS
+        from rasterio.enums import Resampling
+        from rasterio.warp import transform_bounds
+        from rasterio.windows import from_bounds
+
+        min_lng, min_lat, max_lng, max_lat = bbox
+
+        with rasterio.open(cog_url) as src:
+            # Reprojetar bbox WGS84 → CRS da imagem se necessário
+            if src.crs and not src.crs.is_geographic:
+                dst_bounds = transform_bounds(
+                    CRS.from_epsg(4326), src.crs,
+                    min_lng, min_lat, max_lng, max_lat,
+                )
+            else:
+                dst_bounds = (min_lng, min_lat, max_lng, max_lat)
+
+            window = from_bounds(*dst_bounds, src.transform)
+            w = max(1, int(window.width))
+            h = max(1, int(window.height))
+            scale = min(target_size / w, target_size / h)
+            out_w = min(target_size, max(1, int(w * scale)))
+            out_h = min(target_size, max(1, int(h * scale)))
+
+            bands = min(src.count, 3)
+            data = src.read(
+                list(range(1, bands + 1)),
+                window=window,
+                out_shape=(bands, out_h, out_w),
+                resampling=Resampling.bilinear,
+            )
+
+            # Normalizar para uint8
+            if data.dtype == np.uint16:
+                data = (data / 65535.0 * 255).astype(np.uint8)
+            elif data.dtype != np.uint8:
+                dmin, dmax = float(data.min()), float(data.max())
+                if dmax > dmin:
+                    data = ((data - dmin) / (dmax - dmin) * 255).astype(np.uint8)
+                else:
+                    data = np.zeros_like(data, dtype=np.uint8)
+
+            if bands >= 3:
+                arr = data.transpose(1, 2, 0)[:, :, :3]
+            else:
+                arr = np.stack([data[0]] * 3, axis=2)
+
+            img = Image.fromarray(arr, "RGB")
+            out = _io.BytesIO()
+            img.save(out, format="PNG")
+            logging.info("[Planet] COG field read OK: %dx%d px bbox=%s", img.width, img.height, bbox)
+            return out.getvalue()
+
+    except ImportError:
+        logging.warning("[Planet] rasterio não instalado — COG read indisponível")
+        return None
+    except Exception as exc:
+        logging.warning("[Planet] Erro COG read bbox=%s: %s", bbox, exc)
+        return None

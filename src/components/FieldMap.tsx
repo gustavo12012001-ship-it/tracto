@@ -415,6 +415,8 @@ export default function FieldMap() {
   // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
   const [planetLayer, setPlanetLayer] = useState<PlanetLayerState>({ sceneId: null, tileToken: null, enabled: false });
+  const [planetActivating, setPlanetActivating] = useState(false);
+  const planetRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevUrlRef = useRef<string | null>(null);
   const loadingScenesFieldRef = useRef<string | null>(null);
   const planetTileErrorCountRef = useRef(0);
@@ -491,7 +493,10 @@ export default function FieldMap() {
 
       if (source === 'planet') {
         if (!sceneId) return;
-        // Busca thumbnail com bounds geográficos reais da cena Planet
+        // Cancela retry anterior se houver
+        if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
+        setPlanetActivating(false);
+
         const resp = await fetch(
           `${API_URL}/api/planet/scene-overlay?field_id=${activeFieldId}&scene_id=${sceneId}`,
           { headers },
@@ -506,7 +511,8 @@ export default function FieldMap() {
           }
           throw new Error(errorMsg);
         }
-        // Usa os bounds reais da cena para posicionamento geográfico correto
+
+        // Bounds do talhão retornados pelo backend (sempre field bounds, não scene bounds)
         const boundsHeader = resp.headers.get('X-Scene-Bounds');
         let overlayBounds: L.LatLngBoundsExpression = bounds;
         if (boundsHeader) {
@@ -515,11 +521,23 @@ export default function FieldMap() {
             overlayBounds = [[s, w], [n, e]];
           }
         }
+
         const blob = await resp.blob();
         const objectUrl = URL.createObjectURL(blob);
         prevUrlRef.current = objectUrl;
         setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
         setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey });
+
+        // Se asset ainda está sendo ativado, agenda retry em 30s para buscar alta resolução
+        const assetStatus = resp.headers.get('X-Asset-Status');
+        if (assetStatus === 'activating') {
+          setPlanetActivating(true);
+          planetRetryTimerRef.current = setTimeout(() => {
+            setPlanetActivating(false);
+            planetRetryTimerRef.current = null;
+            handleSelectScene(scene);
+          }, 30000);
+        }
         return;
       }
 
@@ -562,13 +580,18 @@ export default function FieldMap() {
 
   // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
+    if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
+    setPlanetActivating(false);
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
     setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);
 
-  useEffect(() => () => { if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current); }, []);
+  useEffect(() => () => {
+    if (planetRetryTimerRef.current) clearTimeout(planetRetryTimerRef.current);
+    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+  }, []);
 
   // ── Busca geográfica ──────────────────────────────────────────────────────
   const handleSearch = async (e: React.FormEvent) => {
@@ -760,7 +783,7 @@ export default function FieldMap() {
       )}
 
       {/* Badge de loading/erro do overlay */}
-      {(overlay.loading || overlay.error) && (
+      {(overlay.loading || overlay.error || planetActivating) && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           {overlay.loading && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
@@ -768,7 +791,13 @@ export default function FieldMap() {
               Carregando imagem...
             </div>
           )}
-          {!overlay.loading && overlay.error && (
+          {planetActivating && !overlay.loading && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(234,179,8,0.4)', color: '#fbbf24' }}>
+              <div className="w-3 h-3 border-2 border-yellow-500/40 border-t-yellow-400 rounded-full animate-spin" />
+              Processando imagem de alta resolução... (30s)
+            </div>
+          )}
+          {!overlay.loading && !planetActivating && overlay.error && (
             <div className="px-3 py-2.5 rounded-xl text-[10px] font-medium flex flex-col gap-1" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 320 }}>
               <span className="font-bold flex items-center gap-1.5">
                 <span>⚠</span>

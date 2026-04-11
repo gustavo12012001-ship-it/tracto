@@ -1,4 +1,5 @@
-﻿import json
+﻿import asyncio
+import json
 import logging
 import os
 from datetime import datetime
@@ -47,6 +48,10 @@ from services.planet_service import (
     get_planet_scenes,
     get_planet_thumbnail,
     get_planet_tile,
+    get_bbox_from_boundaries,
+    _activate_planet_asset,
+    _read_cog_area,
+    _crop_thumbnail_to_field,
 )
 from services.geo_service import GeoProviderError, search_location
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
@@ -541,8 +546,12 @@ async def planet_scene_overlay_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
-    Retorna o thumbnail da cena Planet com os bounds geográficos reais no header X-Scene-Bounds.
-    O frontend usa esses bounds no ImageOverlay para posicionamento geográfico correto.
+    Retorna imagem da cena Planet recortada para a área do talhão.
+    Prioridade:
+      1. COG partial read via rasterio (alta qualidade, 3m/px) — requer asset ativo
+      2. Thumbnail recortado à área do talhão (baixa qualidade, ~98m/px)
+    Header X-Scene-Bounds sempre reflete os bounds do TALHÃO (não da cena inteira).
+    Header X-Asset-Status: 'activating' quando asset foi disparado mas ainda não está pronto.
     """
     field_data = farm_service.get_field_by_id(user.id, field_id)
     if not field_data:
@@ -551,6 +560,21 @@ async def planet_scene_overlay_endpoint(
     api_key = os.getenv("PLANET_API_KEY")
     if not api_key:
         raise HTTPException(status_code=503, detail="PLANET_API_KEY não configurada.")
+
+    lat = float(field_data.get("latitude") or 0)
+    lng = float(field_data.get("longitude") or 0)
+    boundaries = field_data.get("boundaries")
+    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+
+    # Bounds do talhão (não da cena): south,west,north,east
+    min_lng_b, min_lat_b, max_lng_b, max_lat_b = bbox
+    field_bounds_str = f"{min_lat_b:.6f},{min_lng_b:.6f},{max_lat_b:.6f},{max_lng_b:.6f}"
+
+    base_headers = {
+        "X-Scene-Id": scene_id,
+        "X-Scene-Bounds": field_bounds_str,
+        "Cache-Control": "public, max-age=1800",
+    }
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -563,37 +587,73 @@ async def planet_scene_overlay_endpoint(
 
         geometry = item.get("geometry", {})
         coords = geometry.get("coordinates", [[]])[0]
-        if not coords or len(coords) < 3:
-            raise HTTPException(status_code=502, detail="Geometria da cena inválida.")
 
-        scene_lats = [c[1] for c in coords]
-        scene_lngs = [c[0] for c in coords]
-        bounds_str = (
-            f"{min(scene_lats):.6f},{min(scene_lngs):.6f},"
-            f"{max(scene_lats):.6f},{max(scene_lngs):.6f}"
-        )
+        # ── 1: COG partial read (alta qualidade) ─────────────────────────────
+        asset_activating = False
+        for asset_type in ["ortho_visual", "visual"]:
+            status, location = await asyncio.to_thread(
+                _activate_planet_asset, scene_id, asset_type, api_key
+            )
+            if status == "active" and location:
+                cog_bytes = await asyncio.to_thread(_read_cog_area, location, bbox, 1024)
+                if cog_bytes:
+                    logging.info(
+                        "[Planet] scene-overlay COG OK scene=%s bounds=%s", scene_id, field_bounds_str
+                    )
+                    return Response(
+                        content=cog_bytes,
+                        media_type="image/png",
+                        headers={**base_headers, "X-Image-Quality": "high"},
+                    )
+            elif status == "activating":
+                asset_activating = True
 
+        # ── 2: Thumbnail recortado à área do talhão ───────────────────────────
         thumb_url = item.get("_links", {}).get("thumbnail")
-        if not thumb_url:
-            raise HTTPException(status_code=502, detail="Thumbnail da cena não disponível.")
+        if thumb_url and coords and len(coords) >= 3:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                thumb_resp = await client.get(thumb_url, auth=(api_key, ""))
+                thumb_resp.raise_for_status()
+                thumb_bytes = thumb_resp.content
 
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            thumb_resp = await client.get(thumb_url, auth=(api_key, ""))
-            thumb_resp.raise_for_status()
+            cropped = await asyncio.to_thread(_crop_thumbnail_to_field, thumb_bytes, geometry, bbox)
+            if cropped:
+                extra = {"X-Asset-Status": "activating"} if asset_activating else {}
+                logging.info(
+                    "[Planet] scene-overlay thumbnail recortado OK scene=%s activating=%s",
+                    scene_id, asset_activating,
+                )
+                return Response(
+                    content=cropped,
+                    media_type="image/png",
+                    headers={**base_headers, **extra},
+                )
 
-        logging.info("[Planet] scene-overlay OK scene=%s bounds=%s", scene_id, bounds_str)
-        return Response(
-            content=thumb_resp.content,
-            media_type=thumb_resp.headers.get("content-type", "image/jpeg"),
-            headers={
-                "X-Scene-Bounds": bounds_str,
-                "X-Scene-Id": scene_id,
-                "Cache-Control": "public, max-age=1800",
-            },
-        )
+        # ── 3: Thumbnail bruto com bounds da cena (último recurso) ────────────
+        if thumb_url:
+            if coords and len(coords) >= 3:
+                scene_lats = [c[1] for c in coords]
+                scene_lngs = [c[0] for c in coords]
+                scene_bounds_str = (
+                    f"{min(scene_lats):.6f},{min(scene_lngs):.6f},"
+                    f"{max(scene_lats):.6f},{max(scene_lngs):.6f}"
+                )
+            else:
+                scene_bounds_str = field_bounds_str
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                thumb_resp = await client.get(thumb_url, auth=(api_key, ""))
+                thumb_resp.raise_for_status()
+            return Response(
+                content=thumb_resp.content,
+                media_type=thumb_resp.headers.get("content-type", "image/jpeg"),
+                headers={**base_headers, "X-Scene-Bounds": scene_bounds_str},
+            )
+
+        raise HTTPException(status_code=502, detail="Imagem Planet não disponível.")
+
     except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code if exc.response is not None else 502
-        raise HTTPException(status_code=502, detail=f"Erro Planet API: {status}") from exc
+        status_code = exc.response.status_code if exc.response is not None else 502
+        raise HTTPException(status_code=502, detail=f"Erro Planet API: {status_code}") from exc
     except HTTPException:
         raise
     except Exception as exc:
