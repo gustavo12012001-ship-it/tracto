@@ -1126,11 +1126,6 @@ async def save_conversation_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
-        if request.field_id:
-            field = farm_service.get_field_by_id(user.id, request.field_id)
-            if not field:
-                raise HTTPException(status_code=404, detail="Talhão da conversa não encontrado ou sem permissão.")
-
         return supabase_service.save_conversation(
             user_id=user.id,
             conversation_id=request.conversation_id,
