@@ -417,108 +417,139 @@ def _crop_thumbnail_to_field(
         return None
 
 
+def _convert_image_to_png(image_bytes: bytes) -> bytes | None:
+    import io
+
+    from PIL import Image
+
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert("RGBA")
+
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue()
+    except Exception as exc:
+        logging.warning("[Planet] Erro ao converter imagem para PNG: %s", exc)
+        return None
+
+
 def get_planet_overlay(
     field_id: str,
     scene_id: str,
     lat: float,
     lng: float,
     boundaries: list[list[float]] | None = None,
-) -> bytes | None:
-    import io
-    import math
-
-    from PIL import Image
+) -> dict[str, Any] | None:
 
     api_key = _get_api_key()
     if not api_key:
         return None
 
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+    min_lng_b, min_lat_b, max_lng_b, max_lat_b = bbox
+    field_bounds = [min_lat_b, min_lng_b, max_lat_b, max_lng_b]
 
-    def lat_lng_to_tile(tile_lat: float, tile_lng: float, zoom: int) -> tuple[int, int]:
-        n = 2 ** zoom
-        x = int((tile_lng + 180) / 360 * n)
-        y = int(
-            (1 - math.log(math.tan(math.radians(tile_lat)) + 1 / math.cos(math.radians(tile_lat))) / math.pi)
-            / 2 * n
-        )
-        return x, y
+    def build_result(
+        image_bytes: bytes,
+        *,
+        bounds: list[float] | None = None,
+        asset_status: str | None = None,
+        image_quality: str | None = None,
+        content_type: str = "image/png",
+    ) -> dict[str, Any]:
+        return {
+            "image_bytes": image_bytes,
+            "bounds": bounds or field_bounds,
+            "asset_status": asset_status,
+            "image_quality": image_quality,
+            "content_type": content_type,
+        }
 
-    def composite_tiles(tiles: list[tuple[int, int, bytes]]) -> bytes:
-        size = 256
-        comp = Image.new("RGBA", (size * 3, size * 3))
-        for dx, dy, content in tiles:
-            comp.paste(Image.open(io.BytesIO(content)), ((dx + 1) * size, (dy + 1) * size))
-        out = io.BytesIO()
-        comp.save(out, format="PNG")
-        return out.getvalue()
-
-    zoom = 15
-    min_lng, min_lat, max_lng, max_lat = bbox
-    center_lat = (min_lat + max_lat) / 2
-    center_lng = (min_lng + max_lng) / 2
-    tile_x, tile_y = lat_lng_to_tile(center_lat, center_lng, zoom)
-
-    # ── 1: tiles individuais da cena (requer tile streaming premium) ──────────
     try:
-        tiles: list[tuple[int, int, bytes]] = []
-        status_codes: list[int] = []
-        with httpx.Client(timeout=30.0) as client:
-            for dx in range(-1, 2):
-                for dy in range(-1, 2):
-                    url = (
-                        f"https://tiles.planet.com/data/v1/PSScene/{scene_id}"
-                        f"/{zoom}/{tile_x + dx}/{tile_y + dy}.png?api_key={api_key}"
-                    )
-                    resp = client.get(url)
-                    status_codes.append(resp.status_code)
-                    if resp.status_code == 200:
-                        tiles.append((dx, dy, resp.content))
-        logging.info("[Planet] Scene tiles status: %s (scene=%s)", status_codes, scene_id)
-        if tiles:
-            logging.info("[Planet] Overlay scene tiles OK: %d/9", len(tiles))
-            return composite_tiles(tiles)
-    except Exception as exc:
-        logging.warning("[Planet] Erro scene tiles: %s", exc)
-
-    # ── 2: NICFI basemap tiles (gratuito para área tropical / Brasil) ─────────
-    try:
-        nicfi_tiles = _try_nicfi_tiles(api_key, zoom, tile_x, tile_y)
-        if nicfi_tiles:
-            logging.info("[Planet] Overlay NICFI tiles OK: %d/9", len(nicfi_tiles))
-            return composite_tiles(nicfi_tiles)
-    except Exception as exc:
-        logging.warning("[Planet] Erro NICFI: %s", exc)
-
-    # ── 3: thumbnail recortado geograficamente à área do talhão ──────────────
-    try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=20.0) as client:
             item_resp = client.get(
                 f"{PLANET_BASE_URL}/item-types/PSScene/items/{scene_id}",
                 auth=(api_key, ""),
             )
             item_resp.raise_for_status()
             item = item_resp.json()
-            scene_geometry = item.get("geometry", {})
-            thumb_url = item.get("_links", {}).get("thumbnail")
+    except Exception as exc:
+        logging.warning("[Planet] Erro ao buscar item scene=%s: %s", scene_id, exc)
+        return None
 
-            if thumb_url:
+    geometry = item.get("geometry", {})
+    coords = geometry.get("coordinates", [[]])[0]
+    thumb_url = item.get("_links", {}).get("thumbnail")
+    asset_activating = False
+
+    # ── 1: COG partial read (alta qualidade) ────────────────────────────────
+    for asset_type in ["ortho_visual", "visual"]:
+        status, location = _activate_planet_asset(scene_id, asset_type, api_key)
+        if status == "active" and location:
+            cog_bytes = _read_cog_area(location, bbox, 1024)
+            if cog_bytes:
+                logging.info("[Planet] Overlay COG OK scene=%s field=%s", scene_id, field_id)
+                return build_result(cog_bytes, image_quality="high")
+        elif status == "activating":
+            asset_activating = True
+
+    # ── 2: Thumbnail recortado à área do talhão ─────────────────────────────
+    if thumb_url:
+        try:
+            with httpx.Client(timeout=20.0) as client:
                 thumb_resp = client.get(thumb_url, auth=(api_key, ""))
                 thumb_resp.raise_for_status()
                 thumb_bytes = thumb_resp.content
+                thumb_content_type = thumb_resp.headers.get("content-type", "image/jpeg")
+        except Exception as exc:
+            logging.warning("[Planet] Erro ao buscar thumbnail scene=%s: %s", scene_id, exc)
+            thumb_bytes = None
+            thumb_content_type = "image/jpeg"
 
-                if scene_geometry:
-                    cropped = _crop_thumbnail_to_field(thumb_bytes, scene_geometry, bbox)
-                    if cropped:
-                        return cropped
+        if thumb_bytes:
+            if coords and len(coords) >= 3:
+                cropped = _crop_thumbnail_to_field(thumb_bytes, geometry, bbox)
+                if cropped:
+                    logging.info(
+                        "[Planet] Overlay thumbnail recortado OK scene=%s field=%s activating=%s",
+                        scene_id,
+                        field_id,
+                        asset_activating,
+                    )
+                    return build_result(
+                        cropped,
+                        asset_status="activating" if asset_activating else None,
+                        image_quality="preview",
+                    )
 
-                # Fallback final: thumbnail bruto (última opção)
-                logging.warning("[Planet] Retornando thumbnail bruto sem recorte geográfico.")
-                return thumb_bytes
-    except Exception as exc:
-        logging.warning("[Planet] Erro thumbnail/recorte: %s", exc)
+            scene_bounds = field_bounds
+            if coords and len(coords) >= 3:
+                scene_lats = [c[1] for c in coords]
+                scene_lngs = [c[0] for c in coords]
+                scene_bounds = [min(scene_lats), min(scene_lngs), max(scene_lats), max(scene_lngs)]
 
-    logging.error("[Planet] Overlay completamente indisponível scene=%s field=%s", scene_id, field_id)
+            png_bytes = _convert_image_to_png(thumb_bytes)
+            if png_bytes:
+                logging.info("[Planet] Overlay thumbnail bruto convertido em PNG scene=%s field=%s", scene_id, field_id)
+                return build_result(
+                    png_bytes,
+                    bounds=scene_bounds,
+                    asset_status="activating" if asset_activating else None,
+                    image_quality="preview",
+                )
+
+            logging.warning("[Planet] Fallback para thumbnail sem conversão scene=%s field=%s", scene_id, field_id)
+            return build_result(
+                thumb_bytes,
+                bounds=scene_bounds,
+                asset_status="activating" if asset_activating else None,
+                image_quality="preview",
+                content_type=thumb_content_type,
+            )
+
+    logging.error("[Planet] Overlay indisponível scene=%s field=%s", scene_id, field_id)
     return None
 
 

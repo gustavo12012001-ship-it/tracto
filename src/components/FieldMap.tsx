@@ -33,12 +33,6 @@ L.Icon.Default.mergeOptions({
 type DrawMode = 'none' | 'drawing';
 type MapLayer = 'osm' | 'esri';
 
-interface PlanetLayerState {
-  sceneId: string | null;
-  tileToken: string | null;
-  enabled: boolean;
-}
-
 interface SentinelScene {
   scene_id: string;
   date: string;
@@ -414,12 +408,10 @@ export default function FieldMap() {
 
   // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
-  const [planetLayer, setPlanetLayer] = useState<PlanetLayerState>({ sceneId: null, tileToken: null, enabled: false });
   const [planetActivating, setPlanetActivating] = useState(false);
   const planetRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevUrlRef = useRef<string | null>(null);
   const loadingScenesFieldRef = useRef<string | null>(null);
-  const planetTileErrorCountRef = useRef(0);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
 
@@ -477,8 +469,7 @@ export default function FieldMap() {
     const sceneId = scene.scene_id;
 
     const sceneKey = `${activeFieldId}|${source}|${sceneId}`;
-    if (source === 'planet' && overlay.sceneKey === sceneKey && planetLayer.sceneId && planetLayer.enabled) return;
-    if (source !== 'planet' && overlay.sceneKey === sceneKey && overlay.url) return; // já carregado
+    if (overlay.sceneKey === sceneKey && overlay.url) return;
 
     const activeField = fields.find((f) => f.id === activeFieldId);
     if (!activeField?.boundaries || activeField.boundaries.length < 3) return;
@@ -498,7 +489,7 @@ export default function FieldMap() {
         setPlanetActivating(false);
 
         const resp = await fetch(
-          `${API_URL}/api/planet/scene-overlay?field_id=${activeFieldId}&scene_id=${sceneId}`,
+          `${API_URL}/api/planet/overlay?field_id=${activeFieldId}&scene_id=${sceneId}`,
           { headers },
         );
         if (!resp.ok) {
@@ -525,7 +516,6 @@ export default function FieldMap() {
         const blob = await resp.blob();
         const objectUrl = URL.createObjectURL(blob);
         prevUrlRef.current = objectUrl;
-        setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
         setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey });
 
         // Se asset ainda está sendo ativado, agenda retry em 30s para buscar alta resolução
@@ -540,8 +530,6 @@ export default function FieldMap() {
         }
         return;
       }
-
-      setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
 
       const url = `${API_URL}/api/sentinel/overlay?field_id=${activeFieldId}&source=${source}&scene_date=${date}`;
       const resp = await fetch(url, { headers });
@@ -583,7 +571,6 @@ export default function FieldMap() {
     if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
     setPlanetActivating(false);
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
-    setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
     setShowScenesPanel(false);
   }, [activeFieldId]);
@@ -673,34 +660,6 @@ export default function FieldMap() {
             <TileLayer attribution="&copy; Esri" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={20} />
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxZoom={20} opacity={0.6} />
           </>
-        )}
-
-        {planetLayer.enabled && planetLayer.sceneId && (
-          <TileLayer
-            attribution="&copy; Planet Labs"
-            crossOrigin="use-credentials"
-            url={`${API_URL}/api/planet/tiles/{z}/{x}/{y}?scene_id=${planetLayer.sceneId}${planetLayer.tileToken ? `&tile_token=${planetLayer.tileToken}` : ''}`}
-            opacity={0.9}
-            maxZoom={18}
-            zIndex={390}
-            eventHandlers={{
-              tileerror: () => {
-                planetTileErrorCountRef.current += 1;
-                // Evita falso positivo com 1 tile isolado falhando.
-                if (planetTileErrorCountRef.current >= 3) {
-                  setOverlay((prev) => prev.error
-                    ? prev
-                    : { ...prev, loading: false, error: 'Camada Planet indisponível no momento. Tente outra cena ou use Sentinel/Esri.' });
-                }
-              },
-              tileload: () => {
-                planetTileErrorCountRef.current = 0;
-                setOverlay((prev) => prev.error && prev.sceneKey?.includes('|planet|')
-                  ? { ...prev, error: null }
-                  : prev);
-              },
-            }}
-          />
         )}
 
         {/* Overlay da cena selecionada */}
@@ -845,21 +804,6 @@ export default function FieldMap() {
               {label}
             </button>
           ))}
-          <button
-            type="button"
-            disabled={!planetLayer.sceneId}
-            onClick={() => setPlanetLayer((prev) => ({ ...prev, enabled: prev.sceneId ? !prev.enabled : false }))}
-            className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40"
-            style={{
-              background: planetLayer.enabled ? 'rgba(52,211,153,0.18)' : 'rgba(8,8,9,0.82)',
-              backdropFilter: 'blur(12px)',
-              border: `1px solid ${planetLayer.enabled ? 'rgba(52,211,153,0.4)' : 'rgba(255,255,255,0.1)'}`,
-              color: planetLayer.enabled ? '#34d399' : '#94a3b8',
-            }}
-            title={planetLayer.sceneId ? 'Alternar camada Planet' : 'Selecione uma cena Planet para habilitar a camada'}
-          >
-            Planet
-          </button>
         </div>
       )}
 
