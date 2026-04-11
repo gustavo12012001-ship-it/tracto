@@ -236,7 +236,9 @@ export default function Login() {
               className="text-slate-400 hover:text-white transition-colors text-[9px] uppercase tracking-[0.4em] flex items-center justify-center gap-2 cursor-pointer mx-auto"
               onClick={() => navigate('/')}
             >
-              <span className="material-symbols-outlined text-sm">arrow_back</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4 fill-current flex-shrink-0">
+                <path d="M20 11H7.83l5.58-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z"></path>
+              </svg>
               Voltar para o site
             </button>
           </div>
