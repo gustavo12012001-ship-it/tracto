@@ -528,7 +528,14 @@ async def planet_overlay_endpoint(
     image_bytes = get_planet_overlay(field_id=field_id, scene_id=scene_id, lat=lat, lng=lng, boundaries=boundaries)
 
     if not image_bytes:
-        raise HTTPException(status_code=503, detail="Imagem Planet não disponível.")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Imagem Planet indisponível para esta cena. "
+                "Verifique os logs para o status dos tiles. "
+                "Isso pode indicar que o plano Planet não inclui acesso a tile streaming."
+            ),
+        )
 
     return Response(
         content=image_bytes,

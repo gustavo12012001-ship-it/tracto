@@ -172,14 +172,20 @@ def get_planet_overlay(
     if not api_key:
         return None
 
-    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
-
+    import io
     import math
 
-    def lat_lng_to_tile(tile_lat, tile_lng, zoom):
+    from PIL import Image
+
+    bbox = get_bbox_from_boundaries(boundaries, lat, lng)
+
+    def lat_lng_to_tile(tile_lat: float, tile_lng: float, zoom: int) -> tuple[int, int]:
         n = 2 ** zoom
         x = int((tile_lng + 180) / 360 * n)
-        y = int((1 - math.log(math.tan(math.radians(tile_lat)) + 1 / math.cos(math.radians(tile_lat))) / math.pi) / 2 * n)
+        y = int(
+            (1 - math.log(math.tan(math.radians(tile_lat)) + 1 / math.cos(math.radians(tile_lat))) / math.pi)
+            / 2 * n
+        )
         return x, y
 
     zoom = 15
@@ -188,32 +194,49 @@ def get_planet_overlay(
     center_lng = (min_lng + max_lng) / 2
     tile_x, tile_y = lat_lng_to_tile(center_lat, center_lng, zoom)
 
+    # ── Tentativa 1: tiles XYZ ────────────────────────────────────────────────
     try:
-        import io
-        from PIL import Image
-
         tiles: list[tuple[int, int, bytes]] = []
+        status_codes: list[int] = []
         with httpx.Client(timeout=30.0) as client:
             for dx in range(-1, 2):
                 for dy in range(-1, 2):
-                    url = f"https://tiles.planet.com/data/v1/PSScene/{scene_id}/{zoom}/{tile_x + dx}/{tile_y + dy}.png?api_key={api_key}"
+                    url = (
+                        f"https://tiles.planet.com/data/v1/PSScene/{scene_id}"
+                        f"/{zoom}/{tile_x + dx}/{tile_y + dy}.png?api_key={api_key}"
+                    )
                     resp = client.get(url)
+                    status_codes.append(resp.status_code)
                     if resp.status_code == 200:
                         tiles.append((dx, dy, resp.content))
 
-        if not tiles:
-            return None
+        logging.info("[Planet] Tiles status: %s (scene=%s)", status_codes, scene_id)
 
-        size = 256
-        composite = Image.new("RGBA", (size * 3, size * 3))
-        for dx, dy, content in tiles:
-            tile_img = Image.open(io.BytesIO(content))
-            composite.paste(tile_img, ((dx + 1) * size, (dy + 1) * size))
+        if tiles:
+            size = 256
+            composite = Image.new("RGBA", (size * 3, size * 3))
+            for dx, dy, content in tiles:
+                tile_img = Image.open(io.BytesIO(content))
+                composite.paste(tile_img, ((dx + 1) * size, (dy + 1) * size))
+            output = io.BytesIO()
+            composite.save(output, format="PNG")
+            logging.info("[Planet] Overlay por tiles OK: %d/%d tiles", len(tiles), 9)
+            return output.getvalue()
 
-        output = io.BytesIO()
-        composite.save(output, format="PNG")
-        return output.getvalue()
-
+        logging.warning(
+            "[Planet] Nenhum tile disponível (status=%s). Tentando thumbnail como fallback.", status_codes
+        )
     except Exception as exc:
-        logging.warning("[Planet] Erro overlay field_id=%s scene_id=%s: %s", field_id, scene_id, exc)
-        return None
+        logging.warning("[Planet] Erro ao buscar tiles scene=%s: %s", scene_id, exc)
+
+    # ── Tentativa 2: thumbnail da cena (funciona em qualquer plano) ───────────
+    try:
+        thumb_bytes = get_planet_thumbnail(scene_id)
+        if thumb_bytes:
+            logging.info("[Planet] Overlay via thumbnail fallback scene=%s", scene_id)
+            return thumb_bytes
+    except Exception as exc:
+        logging.warning("[Planet] Thumbnail fallback falhou scene=%s: %s", scene_id, exc)
+
+    logging.error("[Planet] Overlay completamente indisponível scene=%s field=%s", scene_id, field_id)
+    return None
