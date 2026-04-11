@@ -9,9 +9,19 @@ REQUEST_TIMEOUT_SECONDS = 10
 
 
 def _is_missing_field_id_schema_error(exc: Exception) -> bool:
+    # Check both the exception message AND the HTTP response body.
+    # requests.raise_for_status() produces "400 Client Error: Bad Request …" in str(exc);
+    # the actual Supabase detail ("column conversations.field_id does not exist") lives in
+    # response.text — so we must check both.
     message = str(exc).lower()
-    return "field_id" in message and (
-        "column" in message or "schema cache" in message or "could not find" in message
+    response_text = _extract_response_text(exc).lower()
+    combined = message + " " + response_text
+    return "field_id" in combined and (
+        "column" in combined
+        or "schema cache" in combined
+        or "could not find" in combined
+        or "does not exist" in combined
+        or "relationship" in combined
     )
 
 
@@ -96,7 +106,10 @@ def save_conversation(
             )
             response.raise_for_status()
         except Exception as exc:
-            if not field_id or not _is_missing_field_id_schema_error(exc):
+            # Always attempt the legacy save (without field_id) when the column is missing.
+            # _is_missing_field_id_schema_error now checks both str(exc) AND response.text so
+            # it correctly detects PostgREST 400 errors whose detail lives in the response body.
+            if not _is_missing_field_id_schema_error(exc):
                 raise
 
             legacy_payload = {key: value for key, value in payload.items() if key != "field_id"}
@@ -121,43 +134,58 @@ def save_conversation(
 
 
 def get_conversations(user_id: str) -> list:
+    # ── Attempt 1: full select (includes field_id) ───────────────────────────
     try:
-        try:
-            response = requests.get(
-                _base_url(),
-                headers=_get_supabase_headers(),
-                params={
-                    "user_id": f"eq.{user_id}",
-                    "order": "updated_at.desc",
-                    "select": "conversation_id,title,messages,field_id,farm_context,created_at,updated_at",
-                },
-                timeout=REQUEST_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-            rows = response.json()
-            for row in rows:
-                row.setdefault("field_id", None)
-            return rows
-        except Exception as exc:
-            if not _is_missing_field_id_schema_error(exc):
-                raise
-
-            logging.warning("Conversations sem coluna field_id ainda. Lendo em modo legado. detalhes=%s", _extract_response_text(exc) or str(exc))
-            response = requests.get(
-                _base_url(),
-                headers=_get_supabase_headers(),
-                params={
-                    "user_id": f"eq.{user_id}",
-                    "order": "updated_at.desc",
-                    "select": "conversation_id,title,messages,farm_context,created_at,updated_at",
-                },
-                timeout=REQUEST_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-            rows = response.json()
-            return [{**row, "field_id": None} for row in rows]
+        response = requests.get(
+            _base_url(),
+            headers=_get_supabase_headers(),
+            params={
+                "user_id": f"eq.{user_id}",
+                "order": "updated_at.desc",
+                "select": "conversation_id,title,messages,field_id,farm_context,created_at,updated_at",
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        for row in rows:
+            row.setdefault("field_id", None)
+        return rows
     except Exception as exc:
-        logging.error("Erro ao buscar conversas do Supabase user_id=%s: %s %s", user_id, exc, _extract_response_text(exc))
+        resp_text = _extract_response_text(exc)
+        if not _is_missing_field_id_schema_error(exc):
+            # Not a schema issue — log and fall through to the legacy select anyway
+            # so the user still sees their conversations even if something unexpected happened.
+            logging.error(
+                "Erro inesperado ao buscar conversas (select completo) user_id=%s: %s | resp=%s",
+                user_id, exc, resp_text,
+            )
+        else:
+            logging.warning(
+                "Conversations sem coluna field_id ainda. Lendo em modo legado. detalhes=%s",
+                resp_text or str(exc),
+            )
+
+    # ── Attempt 2: legacy select (without field_id) ──────────────────────────
+    try:
+        response = requests.get(
+            _base_url(),
+            headers=_get_supabase_headers(),
+            params={
+                "user_id": f"eq.{user_id}",
+                "order": "updated_at.desc",
+                "select": "conversation_id,title,messages,farm_context,created_at,updated_at",
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return [{**row, "field_id": None} for row in rows]
+    except Exception as exc2:
+        logging.error(
+            "Erro ao buscar conversas do Supabase (select legado) user_id=%s: %s | resp=%s",
+            user_id, exc2, _extract_response_text(exc2),
+        )
         raise
 
 
