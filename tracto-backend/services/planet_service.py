@@ -161,6 +161,127 @@ def get_bbox_from_boundaries(boundaries, lat, lng):
     return [min(lngs) - margin, min(lats) - margin, max(lngs) + margin, max(lats) + margin]
 
 
+def _try_nicfi_tiles(
+    api_key: str,
+    zoom: int,
+    tile_x: int,
+    tile_y: int,
+) -> list[tuple[int, int, bytes]]:
+    """Tenta obter tiles do NICFI basemap da Planet (disponível gratuitamente para área tropical)."""
+    tiles: list[tuple[int, int, bytes]] = []
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(
+                "https://api.planet.com/basemaps/v1/mosaics",
+                params={"_page_size": 5, "name_contains": "medres_visual"},
+                auth=(api_key, ""),
+            )
+            if resp.status_code != 200:
+                logging.info("[Planet] Basemaps API: status %d (sem acesso NICFI)", resp.status_code)
+                return tiles
+            mosaics = resp.json().get("mosaics", [])
+            if not mosaics:
+                logging.info("[Planet] Nenhum mosaic NICFI disponível nesta conta.")
+                return tiles
+            mosaics.sort(key=lambda m: m.get("name", ""), reverse=True)
+            mosaic_name = mosaics[0].get("name")
+            logging.info("[Planet] Usando NICFI mosaic: %s", mosaic_name)
+
+        with httpx.Client(timeout=30.0) as client:
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    url = (
+                        f"https://tiles.planet.com/basemaps/v1/planet-tiles"
+                        f"/{mosaic_name}/gmap/{zoom}/{tile_x + dx}/{tile_y + dy}.png"
+                        f"?api_key={api_key}"
+                    )
+                    r = client.get(url)
+                    if r.status_code == 200:
+                        tiles.append((dx, dy, r.content))
+
+        logging.info("[Planet] NICFI tiles obtidos: %d/9", len(tiles))
+    except Exception as exc:
+        logging.warning("[Planet] Erro NICFI tiles: %s", exc)
+    return tiles
+
+
+def _crop_thumbnail_to_field(
+    thumb_bytes: bytes,
+    scene_geometry: dict,
+    field_bbox: list[float],
+) -> bytes | None:
+    """
+    Recorta o thumbnail da cena para mostrar apenas a área do talhão.
+    Usa a geometria real da cena (do Planet API) para calcular as coordenadas de pixel corretas.
+    """
+    import io
+
+    from PIL import Image
+
+    try:
+        coords = scene_geometry.get("coordinates", [[]])[0]
+        if not coords or len(coords) < 3:
+            logging.warning("[Planet] Geometria da cena inválida para recorte.")
+            return None
+
+        scene_lngs = [c[0] for c in coords]
+        scene_lats = [c[1] for c in coords]
+        s_min_lng, s_max_lng = min(scene_lngs), max(scene_lngs)
+        s_min_lat, s_max_lat = min(scene_lats), max(scene_lats)
+        s_lng_span = s_max_lng - s_min_lng
+        s_lat_span = s_max_lat - s_min_lat
+
+        if s_lng_span <= 0 or s_lat_span <= 0:
+            return None
+
+        f_min_lng, f_min_lat, f_max_lng, f_max_lat = field_bbox
+        # Margem de 60% da extensão do talhão para dar contexto ao redor
+        margin_lng = (f_max_lng - f_min_lng) * 0.6
+        margin_lat = (f_max_lat - f_min_lat) * 0.6
+        c_min_lng = max(s_min_lng, f_min_lng - margin_lng)
+        c_max_lng = min(s_max_lng, f_max_lng + margin_lng)
+        c_min_lat = max(s_min_lat, f_min_lat - margin_lat)
+        c_max_lat = min(s_max_lat, f_max_lat + margin_lat)
+
+        img = Image.open(io.BytesIO(thumb_bytes))
+        w, h = img.size
+
+        # Pixel coords (eixo Y invertido: lat alta = Y pequeno)
+        x1 = int((c_min_lng - s_min_lng) / s_lng_span * w)
+        x2 = int((c_max_lng - s_min_lng) / s_lng_span * w)
+        y1 = int((s_max_lat - c_max_lat) / s_lat_span * h)
+        y2 = int((s_max_lat - c_min_lat) / s_lat_span * h)
+
+        x1, x2 = max(0, x1), min(w, x2)
+        y1, y2 = max(0, y1), min(h, y2)
+
+        if x2 <= x1 or y2 <= y1:
+            logging.warning("[Planet] Recorte resultou em área vazia (%d,%d,%d,%d).", x1, y1, x2, y2)
+            return None
+
+        cropped = img.crop((x1, y1, x2, y2))
+
+        # Upscale para no mínimo 512px no menor lado para ter resolução utilizável
+        min_side = min(cropped.width, cropped.height)
+        if min_side < 512:
+            scale = 512 / min_side
+            new_w = int(cropped.width * scale)
+            new_h = int(cropped.height * scale)
+            cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
+
+        output = io.BytesIO()
+        cropped.save(output, format="PNG")
+        logging.info(
+            "[Planet] Thumbnail recortado OK: %.4f,%.4f → %.4f,%.4f (%dx%d px)",
+            c_min_lng, c_min_lat, c_max_lng, c_max_lat, cropped.width, cropped.height,
+        )
+        return output.getvalue()
+
+    except Exception as exc:
+        logging.warning("[Planet] Erro ao recortar thumbnail: %s", exc)
+        return None
+
+
 def get_planet_overlay(
     field_id: str,
     scene_id: str,
@@ -168,14 +289,14 @@ def get_planet_overlay(
     lng: float,
     boundaries: list[list[float]] | None = None,
 ) -> bytes | None:
-    api_key = _get_api_key()
-    if not api_key:
-        return None
-
     import io
     import math
 
     from PIL import Image
+
+    api_key = _get_api_key()
+    if not api_key:
+        return None
 
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
 
@@ -188,13 +309,22 @@ def get_planet_overlay(
         )
         return x, y
 
+    def composite_tiles(tiles: list[tuple[int, int, bytes]]) -> bytes:
+        size = 256
+        comp = Image.new("RGBA", (size * 3, size * 3))
+        for dx, dy, content in tiles:
+            comp.paste(Image.open(io.BytesIO(content)), ((dx + 1) * size, (dy + 1) * size))
+        out = io.BytesIO()
+        comp.save(out, format="PNG")
+        return out.getvalue()
+
     zoom = 15
     min_lng, min_lat, max_lng, max_lat = bbox
     center_lat = (min_lat + max_lat) / 2
     center_lng = (min_lng + max_lng) / 2
     tile_x, tile_y = lat_lng_to_tile(center_lat, center_lng, zoom)
 
-    # ── Tentativa 1: tiles XYZ ────────────────────────────────────────────────
+    # ── 1: tiles individuais da cena (requer tile streaming premium) ──────────
     try:
         tiles: list[tuple[int, int, bytes]] = []
         status_codes: list[int] = []
@@ -209,34 +339,49 @@ def get_planet_overlay(
                     status_codes.append(resp.status_code)
                     if resp.status_code == 200:
                         tiles.append((dx, dy, resp.content))
-
-        logging.info("[Planet] Tiles status: %s (scene=%s)", status_codes, scene_id)
-
+        logging.info("[Planet] Scene tiles status: %s (scene=%s)", status_codes, scene_id)
         if tiles:
-            size = 256
-            composite = Image.new("RGBA", (size * 3, size * 3))
-            for dx, dy, content in tiles:
-                tile_img = Image.open(io.BytesIO(content))
-                composite.paste(tile_img, ((dx + 1) * size, (dy + 1) * size))
-            output = io.BytesIO()
-            composite.save(output, format="PNG")
-            logging.info("[Planet] Overlay por tiles OK: %d/%d tiles", len(tiles), 9)
-            return output.getvalue()
-
-        logging.warning(
-            "[Planet] Nenhum tile disponível (status=%s). Tentando thumbnail como fallback.", status_codes
-        )
+            logging.info("[Planet] Overlay scene tiles OK: %d/9", len(tiles))
+            return composite_tiles(tiles)
     except Exception as exc:
-        logging.warning("[Planet] Erro ao buscar tiles scene=%s: %s", scene_id, exc)
+        logging.warning("[Planet] Erro scene tiles: %s", exc)
 
-    # ── Tentativa 2: thumbnail da cena (funciona em qualquer plano) ───────────
+    # ── 2: NICFI basemap tiles (gratuito para área tropical / Brasil) ─────────
     try:
-        thumb_bytes = get_planet_thumbnail(scene_id)
-        if thumb_bytes:
-            logging.info("[Planet] Overlay via thumbnail fallback scene=%s", scene_id)
-            return thumb_bytes
+        nicfi_tiles = _try_nicfi_tiles(api_key, zoom, tile_x, tile_y)
+        if nicfi_tiles:
+            logging.info("[Planet] Overlay NICFI tiles OK: %d/9", len(nicfi_tiles))
+            return composite_tiles(nicfi_tiles)
     except Exception as exc:
-        logging.warning("[Planet] Thumbnail fallback falhou scene=%s: %s", scene_id, exc)
+        logging.warning("[Planet] Erro NICFI: %s", exc)
+
+    # ── 3: thumbnail recortado geograficamente à área do talhão ──────────────
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            item_resp = client.get(
+                f"{PLANET_BASE_URL}/item-types/PSScene/items/{scene_id}",
+                auth=(api_key, ""),
+            )
+            item_resp.raise_for_status()
+            item = item_resp.json()
+            scene_geometry = item.get("geometry", {})
+            thumb_url = item.get("_links", {}).get("thumbnail")
+
+            if thumb_url:
+                thumb_resp = client.get(thumb_url, auth=(api_key, ""))
+                thumb_resp.raise_for_status()
+                thumb_bytes = thumb_resp.content
+
+                if scene_geometry:
+                    cropped = _crop_thumbnail_to_field(thumb_bytes, scene_geometry, bbox)
+                    if cropped:
+                        return cropped
+
+                # Fallback final: thumbnail bruto (última opção)
+                logging.warning("[Planet] Retornando thumbnail bruto sem recorte geográfico.")
+                return thumb_bytes
+    except Exception as exc:
+        logging.warning("[Planet] Erro thumbnail/recorte: %s", exc)
 
     logging.error("[Planet] Overlay completamente indisponível scene=%s field=%s", scene_id, field_id)
     return None
