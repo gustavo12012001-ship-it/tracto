@@ -8,7 +8,7 @@ from services import farm_service
 from services.agronomic_engine import AgronomicEngine
 from services.ai_service import generate_alerts_claude
 from services.cache_service import analysis_cache
-from services.sentinel_service import get_ndvi_image
+from services.sentinel_service import get_ndvi_image, get_latest_scene_metadata
 from services.weather_service import fetch_weather_snapshot
 
 WEATHER_TIMEOUT_SECONDS = 5.0

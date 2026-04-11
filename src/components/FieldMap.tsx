@@ -475,7 +475,25 @@ export default function FieldMap() {
         if (!scene?.scene_id) return;
         const url = `${API_URL}/api/planet/overlay?field_id=${activeFieldId}&scene_id=${scene.scene_id}`;
         const resp = await fetch(url, { headers });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          let errorMsg = `Erro ${resp.status}`;
+          try {
+            const ct = resp.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const json = await resp.json() as { detail?: string };
+              errorMsg = json.detail || errorMsg;
+            } else {
+              const text = await resp.text();
+              try {
+                const json = JSON.parse(text) as { detail?: string };
+                errorMsg = json.detail || text.slice(0, 200) || errorMsg;
+              } catch {
+                errorMsg = text.slice(0, 200) || errorMsg;
+              }
+            }
+          } catch { /* mantém errorMsg padrão */ }
+          throw new Error(errorMsg);
+        }
         const blob = await resp.blob();
         const objectUrl = URL.createObjectURL(blob);
         prevUrlRef.current = objectUrl;

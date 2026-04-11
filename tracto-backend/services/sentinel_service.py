@@ -230,6 +230,32 @@ def get_available_scenes(
     return results
 
 
+def get_latest_scene_metadata(
+    lat: float,
+    lng: float,
+    boundaries: list[list[float]] | None = None,
+    lookback_days: int = 21,
+    max_cloud_coverage: int = 40,
+) -> dict | None:
+    results = get_available_scenes(lat, lng, boundaries, lookback_days, max_results_per_source=5)
+    s2_scenes = results.get("s2", [])
+    filtered = [s for s in s2_scenes if s.get("cloud_coverage") is None or s.get("cloud_coverage", 100) <= max_cloud_coverage]
+    if not filtered:
+        filtered = s2_scenes
+    if not filtered:
+        return None
+    scene = filtered[0]
+    return {
+        "status": "ok",
+        "provider": "Sentinel-2",
+        "scene_id": scene.get("scene_id"),
+        "scene_date": scene.get("date"),
+        "scene_date_br": scene.get("date_br"),
+        "cloud_coverage": scene.get("cloud_coverage"),
+        "source": "s2",
+    }
+
+
 # ── Overlay por cena específica ───────────────────────────────────────────────
 
 def get_true_color_overlay(
