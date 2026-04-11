@@ -331,6 +331,44 @@ def _planet_cookie_options(request: Request) -> dict:
 
 
 def _build_farm_context_from_snapshot(snapshot: FieldIntelligenceSnapshot) -> str:
+    return _build_farm_context_from_metadata(
+        metadata={
+            "field_id": snapshot.field_id,
+            "field_name": snapshot.field_name,
+            "crop_type": snapshot.crop_type,
+            "variety": snapshot.variety,
+            "planting_date": snapshot.planting_date,
+            "area_ha": snapshot.area_ha,
+            "lat": snapshot.lat,
+            "lng": snapshot.lng,
+        },
+        snapshot=snapshot,
+    )
+
+
+def _build_canonical_chat_metadata(snapshot: FieldIntelligenceSnapshot, field_data: dict) -> dict:
+    def _pick(*values):
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return value
+        return None
+
+    return {
+        "field_id": _pick(field_data.get("id"), snapshot.field_id),
+        "field_name": _pick(field_data.get("name"), snapshot.field_name, "Talhao"),
+        "crop_type": _pick(field_data.get("crop_type"), snapshot.crop_type),
+        "variety": _pick(field_data.get("variety"), snapshot.variety),
+        "planting_date": _pick(field_data.get("planting_date"), snapshot.planting_date),
+        "area_ha": _pick(field_data.get("area_ha"), snapshot.area_ha),
+        "lat": _pick(field_data.get("latitude"), snapshot.lat),
+        "lng": _pick(field_data.get("longitude"), snapshot.lng),
+    }
+
+
+def _build_farm_context_from_metadata(metadata: dict, snapshot: FieldIntelligenceSnapshot) -> str:
     weather = snapshot.weather or {}
     satellite = snapshot.satellite or {}
     analysis = snapshot.analysis or {}
@@ -341,13 +379,35 @@ def _build_farm_context_from_snapshot(snapshot: FieldIntelligenceSnapshot) -> st
         text = str(value).strip()
         return text if text else fallback
 
+    def _area_text(value) -> str:
+        if value is None:
+            return "Área N/D"
+        try:
+            return f"{float(value):.2f} ha"
+        except (TypeError, ValueError):
+            return _safe(value, "Área N/D")
+
+    def _coord_text(lat, lng) -> str:
+        try:
+            return f"{float(lat):.6f}, {float(lng):.6f}"
+        except (TypeError, ValueError):
+            return "N/D"
+
     spray = (analysis.get("spray_window") or {}).get("label") if isinstance(analysis, dict) else "N/D"
     frost = (analysis.get("frost_risk") or {}).get("label") if isinstance(analysis, dict) else "N/D"
     water = (analysis.get("water_stress") or {}).get("label") if isinstance(analysis, dict) else "N/D"
 
     return "\n".join([
-        f"TALHÃO ATIVO: {snapshot.field_name} | {_safe(snapshot.crop_type)} | {_safe(snapshot.area_ha, 'Área N/D')} | {_safe(snapshot.planting_date)}",
-        f"Variedade: {_safe(snapshot.variety)}",
+        "METADADOS CANONICOS DO TALHAO:",
+        f"- field_id: {_safe(metadata.get('field_id'))}",
+        f"- field_name: {_safe(metadata.get('field_name'))}",
+        f"- crop_type: {_safe(metadata.get('crop_type'))}",
+        f"- variety: {_safe(metadata.get('variety'))}",
+        f"- planting_date: {_safe(metadata.get('planting_date'))}",
+        f"- area_ha: {_area_text(metadata.get('area_ha'))}",
+        f"- coordinates: {_coord_text(metadata.get('lat'), metadata.get('lng'))}",
+        f"TALHÃO ATIVO: {_safe(metadata.get('field_name'))} | {_safe(metadata.get('crop_type'))} | {_area_text(metadata.get('area_ha'))} | {_safe(metadata.get('planting_date'))}",
+        f"Variedade: {_safe(metadata.get('variety'))}",
         f"Clima atual: Temp {_safe(weather.get('temperature'))}C, Umidade {_safe(weather.get('humidity'))}%, Vento {_safe(weather.get('wind_speed'))} km/h",
         f"Última cena Sentinel-2: {_safe(satellite.get('s2_scene_date') or satellite.get('scene_date'))}",
         f"Última cena Sentinel-1: {_safe(satellite.get('s1_scene_date'))}",
@@ -377,12 +437,6 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
 
         if not chat_req.messages:
             raise HTTPException(status_code=400, detail="O historico de mensagens esta vazio.")
-        if not chat_req.field_id:
-            raise HTTPException(status_code=400, detail="Selecione um talhao ativo para conversar com a IA.")
-
-        field = farm_service.get_field_by_id(_user.id, chat_req.field_id)
-        if not field:
-            raise HTTPException(status_code=404, detail="Talhao ativo nao encontrado ou sem permissao de acesso.")
 
         # contexto SEMPRE canônico do snapshot backend para o field_id validado
         try:
@@ -402,7 +456,8 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
                 detail="Snapshot do talhão indisponível. Não é possível responder com segurança sem contexto canônico.",
             )
 
-        farm_context = _build_farm_context_from_snapshot(snapshot)
+        canonical_metadata = _build_canonical_chat_metadata(snapshot, field_data)
+        farm_context = _build_farm_context_from_metadata(canonical_metadata, snapshot)
 
         reply = generate_chat_response(
             messages=[message.model_dump() for message in chat_req.messages],
@@ -415,8 +470,11 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
         satellite = snapshot.satellite or {}
         return ChatResponse(
             reply=reply,
-            used_field_id=snapshot.field_id,
-            used_field_name=snapshot.field_name,
+            used_field_id=str(canonical_metadata.get("field_id") or snapshot.field_id),
+            used_field_name=str(canonical_metadata.get("field_name") or snapshot.field_name),
+            used_variety=canonical_metadata.get("variety"),
+            used_area_ha=float(canonical_metadata.get("area_ha")) if canonical_metadata.get("area_ha") is not None else None,
+            used_planting_date=canonical_metadata.get("planting_date"),
             snapshot_updated_at=snapshot.updated_at,
             s1_scene_date=satellite.get("s1_scene_date"),
             s2_scene_date=satellite.get("s2_scene_date") or satellite.get("scene_date"),
@@ -1086,7 +1144,13 @@ async def save_conversation_endpoint(
     except HTTPException:
         raise
     except Exception as exc:
-        logging.error("Erro ao salvar conversa: %s", exc)
+        logging.error(
+            "Erro ao salvar conversa user_id=%s conversation_id=%s field_id=%s: %s",
+            user.id,
+            request.conversation_id,
+            request.field_id,
+            exc,
+        )
         raise HTTPException(status_code=500, detail="Erro ao salvar conversa.") from exc
 
 

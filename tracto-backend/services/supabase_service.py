@@ -8,6 +8,23 @@ import requests
 REQUEST_TIMEOUT_SECONDS = 10
 
 
+def _is_missing_field_id_schema_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "field_id" in message and (
+        "column" in message or "schema cache" in message or "could not find" in message
+    )
+
+
+def _extract_response_text(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    if response is None:
+        return ""
+    try:
+        return response.text
+    except Exception:
+        return ""
+
+
 def _get_supabase_headers() -> dict[str, str]:
     key = os.getenv("SUPABASE_SERVICE_KEY")
     if not key:
@@ -69,37 +86,78 @@ def save_conversation(
         if created_at:
             payload["created_at"] = created_at
 
-        response = requests.post(
-            _base_url(),
-            json=payload,
-            headers={**_get_supabase_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
-            params={"on_conflict": "conversation_id,user_id"},
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
+        try:
+            response = requests.post(
+                _base_url(),
+                json=payload,
+                headers={**_get_supabase_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+                params={"on_conflict": "conversation_id,user_id"},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            if not field_id or not _is_missing_field_id_schema_error(exc):
+                raise
 
-        response.raise_for_status()
-        return {"success": True, "conversation_id": conversation_id}
+            legacy_payload = {key: value for key, value in payload.items() if key != "field_id"}
+            logging.warning(
+                "Conversations sem coluna field_id ainda. Salvando em modo legado conversation_id=%s detalhes=%s",
+                conversation_id,
+                _extract_response_text(exc) or str(exc),
+            )
+            response = requests.post(
+                _base_url(),
+                json=legacy_payload,
+                headers={**_get_supabase_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+                params={"on_conflict": "conversation_id,user_id"},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+
+        return {"success": True, "conversation_id": conversation_id, "field_id": field_id}
     except Exception as exc:
-        logging.error("Erro ao salvar conversa no Supabase: %s", exc)
+        logging.error("Erro ao salvar conversa no Supabase conversation_id=%s: %s %s", conversation_id, exc, _extract_response_text(exc))
         raise
 
 
 def get_conversations(user_id: str) -> list:
     try:
-        response = requests.get(
-            _base_url(),
-            headers=_get_supabase_headers(),
-            params={
-                "user_id": f"eq.{user_id}",
-                "order": "updated_at.desc",
-                "select": "conversation_id,title,messages,field_id,farm_context,created_at,updated_at",
-            },
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(
+                _base_url(),
+                headers=_get_supabase_headers(),
+                params={
+                    "user_id": f"eq.{user_id}",
+                    "order": "updated_at.desc",
+                    "select": "conversation_id,title,messages,field_id,farm_context,created_at,updated_at",
+                },
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            for row in rows:
+                row.setdefault("field_id", None)
+            return rows
+        except Exception as exc:
+            if not _is_missing_field_id_schema_error(exc):
+                raise
+
+            logging.warning("Conversations sem coluna field_id ainda. Lendo em modo legado. detalhes=%s", _extract_response_text(exc) or str(exc))
+            response = requests.get(
+                _base_url(),
+                headers=_get_supabase_headers(),
+                params={
+                    "user_id": f"eq.{user_id}",
+                    "order": "updated_at.desc",
+                    "select": "conversation_id,title,messages,farm_context,created_at,updated_at",
+                },
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            return [{**row, "field_id": None} for row in rows]
     except Exception as exc:
-        logging.error("Erro ao buscar conversas do Supabase: %s", exc)
+        logging.error("Erro ao buscar conversas do Supabase user_id=%s: %s %s", user_id, exc, _extract_response_text(exc))
         raise
 
 
@@ -137,6 +195,9 @@ def delete_conversations_by_field(user_id: str, field_id: str) -> None:
         )
         response.raise_for_status()
     except Exception as exc:
+        if _is_missing_field_id_schema_error(exc):
+            logging.info("Tabela conversations ainda sem field_id; delete por field foi ignorado para user_id=%s field_id=%s", user_id, field_id)
+            return
         logging.warning("Erro ao deletar conversas do field %s: %s", field_id, exc)
 
 

@@ -13,8 +13,6 @@ class ChatRequest(BaseModel):
 
     field_id: str = Field(validation_alias=AliasChoices("field_id", "activeFieldId"))
     messages: list[ChatMessage]
-    field_id: str | None = None
-    force_refresh: bool = False
     farm_context: str | None = "Fazenda sem dados especificos no momento."
     image_base64: str | None = None
     image_mime_type: str | None = "image/jpeg"
@@ -26,6 +24,9 @@ class ChatResponse(BaseModel):
     reply: str
     used_field_id: str
     used_field_name: str
+    used_variety: str | None = None
+    used_area_ha: float | None = None
+    used_planting_date: str | None = None
     snapshot_updated_at: str | None = None
     s1_scene_date: str | None = None
     s2_scene_date: str | None = None

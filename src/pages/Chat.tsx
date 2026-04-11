@@ -27,6 +27,9 @@ interface ChatApiResponse {
   reply: string;
   used_field_id: string;
   used_field_name: string;
+  used_variety?: string | null;
+  used_area_ha?: number | null;
+  used_planting_date?: string | null;
   snapshot_updated_at?: string | null;
   s1_scene_date?: string | null;
   s2_scene_date?: string | null;
@@ -137,7 +140,6 @@ export default function Chat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousActiveFieldIdRef = useRef<string | null>(activeFieldId);
 
   useEffect(() => {
@@ -146,16 +148,12 @@ export default function Chat() {
 
   useEffect(() => {
     return () => {
-      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
       if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
     };
   }, [pendingImage]);
 
   // ── Load saved conversations on mount ──────────────────────────────────────
-  useEffect(() => {
-    loadConversations();
-  }, []);
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       setLoadingConversations(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -167,53 +165,52 @@ export default function Chat() {
     } finally {
       setLoadingConversations(false);
     }
-  };
+  }, []);
 
-  // ── Auto-save with 3s debounce ──────────────────────────────────────────────
-  const scheduleSave = useCallback(
-    (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string, fieldIdForSave: string | null) => {
-      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-      saveDebounceRef.current = setTimeout(async () => {
-        const userMessages = msgs.filter((m) => m.role !== 'assistant' || msgs.indexOf(m) > 0);
-        if (userMessages.length < 2) return; // só salvar se houver pelo menos 1 troca
+  useEffect(() => {
+    void loadConversations();
+  }, [loadConversations]);
 
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
+  const persistConversation = useCallback(
+    async (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string, fieldIdForSave: string | null) => {
+      const userMessages = msgs.filter((m) => m.role !== 'assistant' || msgs.indexOf(m) > 0);
+      if (userMessages.length < 2) return;
 
-          // Título = primeiros 40 chars da 1ª msg do usuário
-          const firstUserMsg = msgs.find((m) => m.role === 'user');
-          const title = firstUserMsg
-            ? firstUserMsg.text.slice(0, 40) + (firstUserMsg.text.length > 40 ? '...' : '')
-            : 'Nova Conversa';
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-          await apiFetch('/api/conversations/save', {
-            method: 'POST',
-            body: JSON.stringify({
-              conversation_id: cid,
-              title,
-              messages: msgs.map((m) => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                text: m.text,
-              })),
-              field_id: fieldIdForSave,
-              farm_context: farmContextForSave,
-              created_at: createdAt,
-              updated_at: nowISO(),
-            }),
-          });
-          await loadConversations();
-        } catch (error) {
-          setApiError(error instanceof Error ? error.message : 'Nao foi possivel sincronizar a conversa.');
-        }
-      }, 3000);
+        const firstUserMsg = msgs.find((m) => m.role === 'user');
+        const title = firstUserMsg
+          ? firstUserMsg.text.slice(0, 40) + (firstUserMsg.text.length > 40 ? '...' : '')
+          : 'Nova Conversa';
+
+        await apiFetch('/api/conversations/save', {
+          method: 'POST',
+          body: JSON.stringify({
+            conversation_id: cid,
+            title,
+            messages: msgs.map((m) => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              text: m.text,
+            })),
+            field_id: fieldIdForSave,
+            farm_context: farmContextForSave,
+            created_at: createdAt,
+            updated_at: nowISO(),
+          }),
+        });
+        await loadConversations();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Nao foi possivel sincronizar a conversa.';
+        setApiError(`Falha ao salvar conversa: ${message}`);
+      }
     },
-    []
+    [loadConversations]
   );
 
   // ── Start new conversation ─────────────────────────────────────────────────
   const startNewConversation = useCallback(() => {
-    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     const newId = uuidv4();
     const createdAt = nowISO();
     setConversationId(newId);
@@ -246,25 +243,6 @@ export default function Chat() {
 
   // ── Load a saved conversation ──────────────────────────────────────────────
   const loadConversation = (conv: SavedConversation) => {
-    if (!conv.field_id) {
-      setApiError('Conversa antiga sem talhão vinculado. Inicie uma nova conversa no talhão ativo.');
-      startNewConversation();
-      return;
-    }
-
-    const conversationFieldStillExists = fields.some((field) => field.id === conv.field_id);
-    if (!conversationFieldStillExists) {
-      setApiError('Esta conversa pertence a um talhão removido e não pode ser reutilizada.');
-      startNewConversation();
-      return;
-    }
-
-    if (!activeFieldId || conv.field_id !== activeFieldId) {
-      setApiError('Esta conversa pertence a outro talhão. O chat foi reiniciado para o talhão ativo atual.');
-      startNewConversation();
-      return;
-    }
-
     setActiveConversationId(conv.conversation_id);
     setConversationId(conv.conversation_id);
     setConversationCreatedAt(conv.created_at);
@@ -277,7 +255,18 @@ export default function Chat() {
     setInput('');
     setPendingImage(null);
     setApiError(null);
-    setContextUsedLabel(null);
+    if (!conv.field_id) {
+      setContextUsedLabel('Conversa legado carregada. Novas respostas usarão o talhão ativo atual.');
+      return;
+    }
+
+    const conversationField = fields.find((field) => field.id === conv.field_id);
+    if (!conversationField) {
+      setContextUsedLabel('Conversa de talhão removido carregada. Novas respostas usarão o talhão ativo atual.');
+      return;
+    }
+
+    setContextUsedLabel(`Conversa carregada: ${conversationField.name ?? 'Talhão sem nome'}`);
   };
 
   // ── Delete conversation ────────────────────────────────────────────────────
@@ -419,15 +408,19 @@ export default function Chat() {
       if (capturedImage) URL.revokeObjectURL(capturedImage.preview);
 
       const aiText = data.reply ?? '';
-      const contextLine = `Contexto usado na resposta: ${data.used_field_name}`;
+      const auditBits = [
+        data.used_field_name,
+        data.used_variety ? `Variedade ${data.used_variety}` : null,
+        data.used_area_ha != null ? `${Number(data.used_area_ha).toFixed(2)} ha` : null,
+        data.used_planting_date ? `Plantio ${data.used_planting_date}` : null,
+      ].filter(Boolean);
+      const contextLine = `Contexto usado na resposta: ${auditBits.join(' · ')}`;
       const aiMsg: Message = { role: 'assistant', text: `${contextLine}\n\n${aiText}`, time: nowTime() };
       setContextUsedLabel(contextLine);
 
-      setMessages((prev) => {
-        const updated = [...prev, aiMsg];
-        scheduleSave(updated, conversationId, conversationCreatedAt, farm_context, activeFieldId);
-        return updated;
-      });
+      const updatedMessages = [...messages, userMsg, aiMsg];
+      setMessages(updatedMessages);
+      void persistConversation(updatedMessages, conversationId, conversationCreatedAt, farm_context, activeFieldId);
       addMessage('model', aiText);
       setActiveConversationId(conversationId);
     } catch (e: unknown) {
@@ -492,6 +485,12 @@ export default function Chat() {
           <div className="space-y-0.5">
             {savedConversations.map((conv) => {
               const isActive = activeConversationId === conv.conversation_id;
+              const conversationField = conv.field_id ? fields.find((field) => field.id === conv.field_id) : null;
+              const conversationScope = !conv.field_id
+                ? 'Legado'
+                : conversationField
+                  ? conversationField.name ?? 'Talhão sem nome'
+                  : 'Talhão removido';
               return (
                 <div key={conv.conversation_id} className="group relative">
                   <button
@@ -510,6 +509,9 @@ export default function Chat() {
                     </p>
                     <p className="text-[10px] mt-0.5" style={{ color: '#475569' }}>
                       {relativeDate(conv.updated_at)}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: conv.field_id ? '#64748b' : '#f59e0b' }}>
+                      {conversationScope}
                     </p>
                   </button>
                   {/* Delete button — visible on hover */}
