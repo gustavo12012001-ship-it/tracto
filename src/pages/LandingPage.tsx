@@ -138,7 +138,9 @@ export default function LandingPage() {
 <div className="grid md:grid-cols-3 gap-16 lg:gap-24">
 <div className="group fade-in-section visible">
 <div className="mb-8 opacity-50 group-hover:opacity-100 transition-opacity">
-<span className="material-symbols-outlined text-4xl font-light text-primary">satellite_alt</span>
+<svg aria-hidden="true" viewBox="0 0 24 24" className="w-10 h-10 fill-current text-primary">
+<path d="M5 12l1.5-4.5L12 6l5.5 1.5L19 12l-1.5 4.5L12 18l-5.5-1.5zm7-9l1.2 2.4L16 6.6 13.6 7.8 12 10l-1.6-2.2L8 6.6l2.8-1.2zm0 11.2l1.6 2.2 2.4-1.2-2.8-1.2L12 11.6l-1.2 2.4L8 15.2l2.4 1.2z"></path>
+</svg>
 </div>
 <h4 className="text-lg font-semibold mb-4 dark:text-white tracking-tight">Tecnologia Orbital Proprietária</h4>
 <p className="text-slate-500 dark:text-slate-400 text-sm leading-loose font-light">
@@ -147,7 +149,9 @@ export default function LandingPage() {
 </div>
 <div className="group fade-in-section visible">
 <div className="mb-8 opacity-50 group-hover:opacity-100 transition-opacity">
-<span className="material-symbols-outlined text-4xl font-light text-primary">analytics</span>
+<svg aria-hidden="true" viewBox="0 0 24 24" className="w-10 h-10 fill-current text-primary">
+<path d="M4 19h16v2H2V3h2zm3-2H5v-6h2zm4 0H9V7h2zm4 0h-2v-4h2zm4 0h-2V5h2z"></path>
+</svg>
 </div>
 <h4 className="text-lg font-semibold mb-4 dark:text-white tracking-tight">Análise de Frequência Contínua</h4>
 <p className="text-slate-500 dark:text-slate-400 text-sm leading-loose font-light">
@@ -156,7 +160,9 @@ export default function LandingPage() {
 </div>
 <div className="group fade-in-section visible">
 <div className="mb-8 opacity-50 group-hover:opacity-100 transition-opacity">
-<span className="material-symbols-outlined text-4xl font-light text-primary">memory</span>
+<svg aria-hidden="true" viewBox="0 0 24 24" className="w-10 h-10 fill-current text-primary">
+<path d="M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3zm0 3v2h2V7zm4 0v2h2V7zm4 0v2h2V7zM7 11v2h2v-2zm4 0v2h2v-2zm4 0v2h2v-2zM7 15v2h2v-2zm4 0v2h6v-2z"></path>
+</svg>
 </div>
 <h4 className="text-lg font-semibold mb-4 dark:text-white tracking-tight">Inteligência Agronômica Dedicada</h4>
 <p className="text-slate-500 dark:text-slate-400 text-sm leading-loose font-light">
@@ -230,9 +236,11 @@ export default function LandingPage() {
 </li>
 </ul>
 <div className="pt-2">
-<button onClick={() => navigate('/login')} className="bg-primary hover:bg-orange-600 text-white px-12 py-5 rounded-full text-[10px] font-bold uppercase tracking-[0.25em] transition-all flex items-center gap-4 shadow-xl shadow-primary/10">
+<button onClick={() => navigate('/login')} className="bg-[#EC5B13] hover:bg-orange-600 text-white px-12 py-5 rounded-full text-[10px] font-bold uppercase tracking-[0.25em] transition-all flex items-center gap-4 shadow-xl shadow-primary/10">
                             Iniciar Acesso
-                            <span className="material-symbols-outlined text-lg">trending_flat</span>
+                            <svg aria-hidden="true" viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current flex-shrink-0">
+<path d="M14 6l-1.41 1.41L16.17 11H4v2h12.17l-3.58 3.59L14 18l6-6z"></path>
+</svg>
 </button>
 </div>
 </div>
