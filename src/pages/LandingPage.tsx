@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
 export default function LandingPage() {
     const navigate = useNavigate();
+    const heroRef = useRef<HTMLElement | null>(null);
     const [checking, setChecking] = useState(true);
     const [hasSession, setHasSession] = useState(false);
+    const [tractorProgress, setTractorProgress] = useState(0);
     const [lgpdDismissed, setLgpdDismissed] = useState(() => {
         return localStorage.getItem('tracto_lgpd_dismissed') === '1';
     });
@@ -45,6 +47,29 @@ export default function LandingPage() {
         };
     }, [navigate]);
 
+    useEffect(() => {
+        const updateTractorProgress = () => {
+            const hero = heroRef.current;
+            if (!hero) return;
+
+            const heroTop = hero.offsetTop;
+            const heroHeight = hero.offsetHeight || window.innerHeight;
+            const scrollY = window.scrollY;
+            const rawProgress = (scrollY - heroTop) / heroHeight;
+            const clamped = Math.max(0, Math.min(1, rawProgress));
+            setTractorProgress(clamped);
+        };
+
+        updateTractorProgress();
+        window.addEventListener('scroll', updateTractorProgress, { passive: true });
+        window.addEventListener('resize', updateTractorProgress);
+
+        return () => {
+            window.removeEventListener('scroll', updateTractorProgress);
+            window.removeEventListener('resize', updateTractorProgress);
+        };
+    }, []);
+
     if (checking || hasSession) {
         return null;
     }
@@ -59,7 +84,60 @@ export default function LandingPage() {
                     border: 1px solid rgba(255, 255, 255, 0.03);
                 }
                 .hero-gradient {
-                    background: linear-gradient(to bottom, rgba(15, 23, 42, 0.1) 0%, rgba(15, 23, 42, 0.4) 50%, rgba(15, 23, 42, 0.9) 100%);
+                    background: linear-gradient(135deg, #0a1628 0%, #0d2137 40%, #0f3d1f 100%);
+                    background-size: 160% 160%;
+                    animation: heroGradientShift 14s ease-in-out infinite;
+                }
+                .hero-stars {
+                    position: absolute;
+                    inset: 0;
+                    overflow: hidden;
+                    pointer-events: none;
+                }
+                .hero-stars::before,
+                .hero-stars::after {
+                    content: '';
+                    position: absolute;
+                    inset: -15%;
+                    background-repeat: repeat;
+                    opacity: 0.3;
+                }
+                .hero-stars::before {
+                    background-image:
+                        radial-gradient(circle, rgba(255, 255, 255, 0.8) 1px, transparent 1.2px),
+                        radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1.2px);
+                    background-size: 180px 180px, 240px 240px;
+                    background-position: 0 0, 60px 90px;
+                    animation: driftStarsA 28s linear infinite;
+                }
+                .hero-stars::after {
+                    background-image:
+                        radial-gradient(circle, rgba(255, 255, 255, 0.55) 0.8px, transparent 1px),
+                        radial-gradient(circle, rgba(255, 255, 255, 0.35) 0.8px, transparent 1px);
+                    background-size: 140px 140px, 220px 220px;
+                    background-position: 40px 50px, 110px 140px;
+                    animation: driftStarsB 36s linear infinite;
+                }
+                .hero-tractor {
+                    position: absolute;
+                    bottom: 5rem;
+                    width: 210px;
+                    height: auto;
+                    pointer-events: none;
+                    filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.35));
+                }
+                @keyframes heroGradientShift {
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
+                }
+                @keyframes driftStarsA {
+                    from { transform: translate3d(0, 0, 0); }
+                    to { transform: translate3d(-80px, 60px, 0); }
+                }
+                @keyframes driftStarsB {
+                    from { transform: translate3d(0, 0, 0); }
+                    to { transform: translate3d(90px, -70px, 0); }
                 }
                 section {
                     padding-top: 100px;
@@ -90,14 +168,28 @@ export default function LandingPage() {
 </div>
 </div>
 </nav>
-<section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-0 pb-0">
+<section ref={heroRef} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-0 pb-0">
 <div className="absolute inset-0 z-0">
-<img 
-  alt="Vista aérea de fazenda" 
-  className="w-full h-full object-cover object-center" 
-  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBo6DW0mlLl01OpM-nNE6jQApM60H56OazuG6Jtp3sxsgX6lAo1LXOyu_JttoOmPNlnMpgPlQbJpAhDq5VeEUUNcLV1jFe1hEPDKudX7NGU0WVSgc3hERq2HUeSt2HkNDWoWQWwlF30I75vq_BKHkhbJDufw2QngU4jQT4SKPEY6rJ2YTZCTaurJg1CQHmynwgKTdRDiYH-fzqvecmgKWHx6wg-nag-tpEWL2lg4lJTopW21OF_MzEnn1Du38qJ0r4Pkbpcsrxwp90"
-/>
 <div className="absolute inset-0 hero-gradient"></div>
+<div className="hero-stars"></div>
+<svg
+    className="hero-tractor"
+    viewBox="0 0 220 120"
+    aria-hidden="true"
+    style={{ left: `${-28 + tractorProgress * 138}%` }}
+>
+    <rect x="88" y="46" width="72" height="32" rx="7" fill="#ec5b13" />
+    <rect x="120" y="24" width="34" height="28" rx="5" fill="#f97316" />
+    <rect x="124" y="28" width="22" height="14" rx="3" fill="#ffd5b2" />
+    <rect x="74" y="58" width="18" height="14" rx="3" fill="#f97316" />
+    <rect x="160" y="58" width="20" height="10" rx="3" fill="#f97316" />
+    <circle cx="70" cy="90" r="24" fill="#111827" />
+    <circle cx="70" cy="90" r="12" fill="#1f2937" />
+    <circle cx="160" cy="94" r="16" fill="#111827" />
+    <circle cx="160" cy="94" r="8" fill="#1f2937" />
+    <rect x="98" y="76" width="52" height="8" rx="4" fill="#c2410c" />
+    <rect x="152" y="32" width="8" height="28" rx="2" fill="#c2410c" />
+</svg>
 </div>
 <div className="relative z-10 max-w-5xl mx-auto px-6 text-center text-white mt-10 fade-in-section visible">
 <h1 className="text-4xl md:text-5xl font-light tracking-tight mb-8 leading-snug">
