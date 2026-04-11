@@ -123,6 +123,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Scene-Bounds", "X-Scene-Id"],
 )
 
 
@@ -529,6 +530,75 @@ async def planet_thumbnail_endpoint(
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+@app.get("/api/planet/scene-overlay")
+@limiter.limit("30/minute")
+async def planet_scene_overlay_endpoint(
+    request: Request,
+    scene_id: str,
+    field_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Retorna o thumbnail da cena Planet com os bounds geográficos reais no header X-Scene-Bounds.
+    O frontend usa esses bounds no ImageOverlay para posicionamento geográfico correto.
+    """
+    field_data = farm_service.get_field_by_id(user.id, field_id)
+    if not field_data:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+
+    api_key = os.getenv("PLANET_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="PLANET_API_KEY não configurada.")
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            item_resp = await client.get(
+                f"https://api.planet.com/data/v1/item-types/PSScene/items/{scene_id}",
+                auth=(api_key, ""),
+            )
+            item_resp.raise_for_status()
+            item = item_resp.json()
+
+        geometry = item.get("geometry", {})
+        coords = geometry.get("coordinates", [[]])[0]
+        if not coords or len(coords) < 3:
+            raise HTTPException(status_code=502, detail="Geometria da cena inválida.")
+
+        scene_lats = [c[1] for c in coords]
+        scene_lngs = [c[0] for c in coords]
+        bounds_str = (
+            f"{min(scene_lats):.6f},{min(scene_lngs):.6f},"
+            f"{max(scene_lats):.6f},{max(scene_lngs):.6f}"
+        )
+
+        thumb_url = item.get("_links", {}).get("thumbnail")
+        if not thumb_url:
+            raise HTTPException(status_code=502, detail="Thumbnail da cena não disponível.")
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            thumb_resp = await client.get(thumb_url, auth=(api_key, ""))
+            thumb_resp.raise_for_status()
+
+        logging.info("[Planet] scene-overlay OK scene=%s bounds=%s", scene_id, bounds_str)
+        return Response(
+            content=thumb_resp.content,
+            media_type=thumb_resp.headers.get("content-type", "image/jpeg"),
+            headers={
+                "X-Scene-Bounds": bounds_str,
+                "X-Scene-Id": scene_id,
+                "Cache-Control": "public, max-age=1800",
+            },
+        )
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 502
+        raise HTTPException(status_code=502, detail=f"Erro Planet API: {status}") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[Planet] scene-overlay erro scene=%s: %s", scene_id, exc)
+        raise HTTPException(status_code=503, detail="Erro ao buscar imagem Planet.") from exc
 
 
 @app.post("/api/planet/tile-session")

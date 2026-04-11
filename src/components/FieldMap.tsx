@@ -491,11 +491,11 @@ export default function FieldMap() {
 
       if (source === 'planet') {
         if (!sceneId) return;
-        const resp = await fetch(`${API_URL}/api/planet/tile-session?field_id=${activeFieldId}&scene_id=${sceneId}`, {
-          method: 'POST',
-          headers,
-          credentials: 'include',
-        });
+        // Busca thumbnail com bounds geográficos reais da cena Planet
+        const resp = await fetch(
+          `${API_URL}/api/planet/scene-overlay?field_id=${activeFieldId}&scene_id=${sceneId}`,
+          { headers },
+        );
         if (!resp.ok) {
           let errorMsg = `Erro ${resp.status}`;
           try {
@@ -506,10 +506,20 @@ export default function FieldMap() {
           }
           throw new Error(errorMsg);
         }
-        const sessionData = await resp.json() as { tile_token?: string };
-        planetTileErrorCountRef.current = 0;
-        setPlanetLayer({ sceneId, tileToken: sessionData.tile_token ?? null, enabled: true });
-        setOverlay({ url: null, bounds, loading: false, error: null, sceneKey });
+        // Usa os bounds reais da cena para posicionamento geográfico correto
+        const boundsHeader = resp.headers.get('X-Scene-Bounds');
+        let overlayBounds: L.LatLngBoundsExpression = bounds;
+        if (boundsHeader) {
+          const [s, w, n, e] = boundsHeader.split(',').map(Number);
+          if (!isNaN(s) && !isNaN(w) && !isNaN(n) && !isNaN(e)) {
+            overlayBounds = [[s, w], [n, e]];
+          }
+        }
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        prevUrlRef.current = objectUrl;
+        setPlanetLayer({ sceneId: null, tileToken: null, enabled: false });
+        setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey });
         return;
       }
 
@@ -771,7 +781,7 @@ export default function FieldMap() {
       )}
 
       {/* Badge de overlay ativo */}
-      {(overlay.url || (planetLayer.enabled && planetLayer.sceneId)) && !overlay.loading && overlay.sceneKey && (
+      {overlay.url && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
             🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · True Color'} · Cache 30min
