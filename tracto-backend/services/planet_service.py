@@ -442,6 +442,14 @@ def get_planet_overlay(
     lng: float,
     boundaries: list[list[float]] | None = None,
 ) -> dict[str, Any] | None:
+    import io
+    import math
+
+    try:
+        from PIL import Image
+    except ImportError:
+        logging.error("[Planet] Pillow não instalado. Adicione 'Pillow' ao requirements.txt")
+        return None
 
     api_key = _get_api_key()
     if not api_key:
@@ -467,6 +475,85 @@ def get_planet_overlay(
             "content_type": content_type,
         }
 
+    def deg_to_tile(lat_deg: float, lng_deg: float, zoom: int) -> tuple[int, int]:
+        lat_deg = max(min(lat_deg, 85.05112878), -85.05112878)
+        lat_r = math.radians(lat_deg)
+        n = 2 ** zoom
+        x = int((lng_deg + 180.0) / 360.0 * n)
+        y = int((1.0 - math.log(math.tan(lat_r) + 1.0 / math.cos(lat_r)) / math.pi) / 2.0 * n)
+        x = max(0, min(x, n - 1))
+        y = max(0, min(y, n - 1))
+        return x, y
+
+    def tile_to_deg(x: int, y: int, zoom: int) -> tuple[float, float]:
+        n = 2 ** zoom
+        lng = x / n * 360.0 - 180.0
+        lat_r = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
+        lat_deg = math.degrees(lat_r)
+        return lat_deg, lng
+
+    # ── 1: Mosaico de tiles cobrindo todo o bbox do talhão ──────────────────
+    zoom = 17
+    min_lng, min_lat, max_lng, max_lat = bbox
+    x_min, y_max = deg_to_tile(min_lat, min_lng, zoom)
+    x_max, y_min = deg_to_tile(max_lat, max_lng, zoom)
+
+    x_min = max(x_min - 1, 0)
+    y_min = max(y_min - 1, 0)
+    x_max = x_max + 1
+    y_max = y_max + 1
+
+    cols = x_max - x_min + 1
+    rows = y_max - y_min + 1
+
+    if cols > 6 or rows > 6:
+        logging.warning("[Planet] Área muito grande para overlay: %dx%d tiles", cols, rows)
+        cols = min(cols, 6)
+        rows = min(rows, 6)
+        x_max = x_min + cols - 1
+        y_max = y_min + rows - 1
+
+    tile_size = 256
+    composite = Image.new("RGBA", (cols * tile_size, rows * tile_size), (0, 0, 0, 0))
+    has_any_tile = False
+
+    with httpx.Client(timeout=30.0) as client:
+        for xi, tile_x in enumerate(range(x_min, x_max + 1)):
+            for yi, tile_y in enumerate(range(y_min, y_max + 1)):
+                url = f"https://tiles.planet.com/data/v1/PSScene/{scene_id}/{zoom}/{tile_x}/{tile_y}.png?api_key={api_key}"
+                try:
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        tile_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+                        composite.paste(tile_img, (xi * tile_size, yi * tile_size))
+                        has_any_tile = True
+                    else:
+                        logging.debug(
+                            "[Planet] Tile sem dados scene=%s z=%s x=%s y=%s status=%s",
+                            scene_id,
+                            zoom,
+                            tile_x,
+                            tile_y,
+                            resp.status_code,
+                        )
+                except Exception as exc:
+                    logging.warning("[Planet] Tile falhou %d/%d/%d: %s", zoom, tile_x, tile_y, exc)
+
+    if has_any_tile:
+        north, west = tile_to_deg(x_min, y_min, zoom)
+        south, east = tile_to_deg(x_max + 1, y_max + 1, zoom)
+        output = io.BytesIO()
+        composite = composite.resize((1024, 1024), Image.LANCZOS)
+        composite.save(output, format="PNG")
+        logging.info("[Planet] Overlay gerado scene=%s field=%s zoom=%s tiles=%dx%d", scene_id, field_id, zoom, cols, rows)
+        return build_result(
+            output.getvalue(),
+            bounds=[south, west, north, east],
+            image_quality="tile-mosaic",
+        )
+
+    logging.warning("[Planet] Nenhum tile retornou dados para scene_id=%s", scene_id)
+
     try:
         with httpx.Client(timeout=20.0) as client:
             item_resp = client.get(
@@ -484,7 +571,7 @@ def get_planet_overlay(
     thumb_url = item.get("_links", {}).get("thumbnail")
     asset_activating = False
 
-    # ── 1: COG partial read (alta qualidade) ────────────────────────────────
+    # ── 2: COG partial read (alta qualidade) ────────────────────────────────
     for asset_type in ["ortho_visual", "visual"]:
         status, location = _activate_planet_asset(scene_id, asset_type, api_key)
         if status == "active" and location:
@@ -495,7 +582,7 @@ def get_planet_overlay(
         elif status == "activating":
             asset_activating = True
 
-    # ── 2: Thumbnail recortado à área do talhão ─────────────────────────────
+    # ── 3: Thumbnail recortado à área do talhão ─────────────────────────────
     if thumb_url:
         try:
             with httpx.Client(timeout=20.0) as client:
