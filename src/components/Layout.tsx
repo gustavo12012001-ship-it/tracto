@@ -108,9 +108,19 @@ function SidebarContent({
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--sidebar)' }}>
       {/* Logo */}
-      <div className="px-5 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h1 className="text-base font-black tracking-[0.15em] text-white">TRACTO</h1>
-        <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--muted)' }}>Plataforma AgTech</p>
+      <div className="px-4 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-center gap-3">
+          <img
+            src="/tracto-icon.png"
+            alt="Tracto"
+            className="tracto-brand-icon flex-shrink-0"
+            style={{ width: 36, height: 36, objectFit: 'contain' }}
+          />
+          <div>
+            <h1 className="text-base font-black tracking-[0.15em] text-white leading-none">TRACTO</h1>
+            <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--muted)' }}>Plataforma AgTech</p>
+          </div>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -353,6 +363,10 @@ export default function Layout() {
         /* Scrollbar */
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+        /* ── Ícone da marca: preto no claro, branco no escuro ── */
+        .tracto-brand-icon { filter: invert(1) drop-shadow(0 0 0px transparent); }
+        [data-theme="light"] .tracto-brand-icon { filter: none; }
 
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }

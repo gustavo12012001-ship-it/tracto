@@ -173,6 +173,24 @@ export default function Dashboard() {
       <section className="flex-1 flex flex-col overflow-hidden p-4 gap-4 min-w-0">
         <div className="flex-1 relative rounded-xl overflow-hidden min-h-0" style={{ border: '1px solid rgba(255,255,255,0.07)', background: '#0c0c0e' }}>
           <FieldMap />
+          {/* Marca d'água — ícone Tracto no canto do mapa */}
+          <div
+            className="absolute bottom-5 left-5 z-[400] pointer-events-none select-none flex items-center gap-2"
+            style={{ opacity: 0.55 }}
+          >
+            <img
+              src="/tracto-icon.png"
+              alt=""
+              className="tracto-brand-icon"
+              style={{ width: 28, height: 28, objectFit: 'contain' }}
+            />
+            <span
+              className="text-[11px] font-black tracking-[0.18em] text-white"
+              style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
+            >
+              TRACTO
+            </span>
+          </div>
         </div>
       </section>
 
