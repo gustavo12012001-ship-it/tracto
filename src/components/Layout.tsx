@@ -4,6 +4,22 @@ import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
 
+// ── Theme helpers ─────────────────────────────────────────────────────────────
+type Theme = 'dark' | 'light';
+
+function getInitialTheme(): Theme {
+  try {
+    return (localStorage.getItem('tracto-theme') as Theme) || 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('tracto-theme', theme); } catch { /* ignore */ }
+}
+
 
 
 const NAV_ITEMS = [
@@ -64,8 +80,18 @@ const NAV_ITEMS = [
   },
 ];
 
-// â”€â”€ Sidebar content (shared between desktop & mobile drawer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void, handleLogout: () => Promise<void> }) {
+// ── Sidebar content (shared between desktop & mobile drawer) ──────────────────
+function SidebarContent({
+  onNavClick,
+  handleLogout,
+  theme,
+  toggleTheme,
+}: {
+  onNavClick?: () => void;
+  handleLogout: () => Promise<void>;
+  theme: Theme;
+  toggleTheme: () => void;
+}) {
   const { alerts } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
   const [userName, setUserName] = useState('Usuário');
@@ -116,9 +142,12 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
 
       {/* User Footer */}
       <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
+        {/* Avatar row */}
         <div className="flex items-center gap-3 px-2 py-2 mb-2">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-            style={{ background: 'var(--primary)', color: '#fff' }}>
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+            style={{ background: 'var(--primary)', color: '#fff' }}
+          >
             {userName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
@@ -127,8 +156,26 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
               {userName === 'Usuário' ? 'Carregando...' : 'Administrador'}
             </p>
           </div>
-          <button className="text-slate-600 hover:text-white transition-colors flex-shrink-0">
+          {/* Settings gear → /app/settings */}
+          <NavLink
+            to="/app/settings"
+            onClick={onNavClick}
+            title="Configurações"
+            className={({ isActive }) =>
+              `flex-shrink-0 transition-colors ${isActive ? 'text-[var(--primary)]' : 'text-slate-600 hover:text-white'}`
+            }
+          >
             <span className="material-symbols-outlined text-base">settings</span>
+          </NavLink>
+          {/* Dark / Light toggle */}
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
+            className="flex-shrink-0 text-slate-600 hover:text-white transition-colors"
+          >
+            <span className="material-symbols-outlined text-base">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
           </button>
         </div>
 
@@ -155,10 +202,16 @@ function SidebarContent({ onNavClick, handleLogout }: { onNavClick?: () => void,
   );
 }
 
-// â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Layout ────────────────────────────────────────────────────────────────────
 export default function Layout() {
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+
+  // Apply theme on mount + whenever it changes
+  useEffect(() => { applyTheme(theme); }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   const {
     farms,
@@ -242,6 +295,33 @@ export default function Layout() {
           --muted: #64748b;
         }
 
+        /* ── Light Mode ──────────────────────────────── */
+        [data-theme="light"] {
+          --primary: #d44e0a;
+          --primary-dim: rgba(212,78,10,0.10);
+          --primary-border: rgba(212,78,10,0.22);
+          --bg: #f4f3ef;
+          --sidebar: #ffffff;
+          --surface: rgba(0,0,0,0.03);
+          --border: rgba(0,0,0,0.09);
+          --border-strong: rgba(0,0,0,0.18);
+          --muted: #64748b;
+        }
+        [data-theme="light"] body {
+          background-color: #f4f3ef;
+          color: #1e293b;
+        }
+        [data-theme="light"] .text-white { color: #1e293b !important; }
+        [data-theme="light"] .text-slate-300 { color: #475569 !important; }
+        [data-theme="light"] .text-slate-400 { color: #64748b !important; }
+        [data-theme="light"] .header-glass {
+          background: rgba(244,243,239,0.92) !important;
+        }
+        [data-theme="light"] .nav-item { color: #64748b; }
+        [data-theme="light"] .nav-item:hover { color: #1e293b; background: rgba(0,0,0,0.04); }
+        [data-theme="light"] .nav-item.active { color: #d44e0a; background: rgba(212,78,10,0.08); }
+        [data-theme="light"] .card-glass { background: rgba(0,0,0,0.02); }
+
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
@@ -280,17 +360,17 @@ export default function Layout() {
 
       <div className="flex h-screen w-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
-        {/* â”€â”€ Desktop Sidebar (hidden on mobile) â”€â”€ */}
+        {/* ── Desktop Sidebar (hidden on mobile) ── */}
         <aside className="hidden md:flex w-60 flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border)' }}>
-          <SidebarContent handleLogout={handleLogout} />
+          <SidebarContent handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />
         </aside>
 
-        {/* â”€â”€ Mobile Drawer Overlay â”€â”€ */}
+        {/* â"€â"€ Mobile Drawer Overlay â"€â"€ */}
         {drawerOpen && (
           <div className="drawer-overlay md:hidden" onClick={() => setDrawerOpen(false)} />
         )}
 
-        {/* â”€â”€ Mobile Drawer Panel â”€â”€ */}
+        {/* â"€â"€ Mobile Drawer Panel â"€â"€ */}
         <div className={`drawer-panel md:hidden ${drawerOpen ? 'open' : 'closed'}`} style={{ background: 'var(--sidebar)', borderRight: '1px solid var(--border)' }}>
           {/* Close button */}
           <button
@@ -300,10 +380,10 @@ export default function Layout() {
           >
             <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>close</span>
           </button>
-          <SidebarContent onNavClick={() => setDrawerOpen(false)} handleLogout={handleLogout} />
+          <SidebarContent onNavClick={() => setDrawerOpen(false)} handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />
         </div>
 
-        {/* â”€â”€ Main Content â”€â”€ */}
+        {/* â"€â"€ Main Content â"€â"€ */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
           {/* TopBar */}
@@ -313,7 +393,7 @@ export default function Layout() {
           >
             {/* Left Section: Operational Context */}
             <div className="flex items-center gap-4 md:gap-5">
-              {/* Hamburguer â€” mobile only */}
+              {/* Hamburguer â€" mobile only */}
               <button
                 onClick={() => setDrawerOpen(true)}
                 className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg transition-all"
@@ -371,7 +451,7 @@ export default function Layout() {
 
             {/* Right Section: Actions & Weather */}
             <div className="flex items-center gap-3 md:gap-4">
-              {/* Weather Info â€” hidden on mobile */}
+              {/* Weather Info â€" hidden on mobile */}
               <div className="hidden lg:flex items-center gap-4 text-xs font-semibold">
                 <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
                   <span className="material-symbols-outlined text-base" style={{ color: '#f97316' }}>wb_sunny</span>
@@ -432,7 +512,7 @@ export default function Layout() {
             </div>
           </header>
 
-          {/* Page Content â€” scrolls correctly on mobile */}
+          {/* Page Content â€" scrolls correctly on mobile */}
           <main className="flex-1 flex overflow-hidden min-h-0">
             <Outlet />
           </main>

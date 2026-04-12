@@ -11,6 +11,7 @@ import LandingPage from './pages/LandingPage';
 import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
+import Settings from './pages/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -42,6 +43,7 @@ function App() {
           <Route path="reports" element={<Reports />} />
           <Route path="market" element={<Market />} />
           <Route path="billing" element={<Pricing />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>
