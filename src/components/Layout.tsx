@@ -111,7 +111,7 @@ function SidebarContent({
       <div className="px-4 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-3">
           <img
-            src="/tracto-icon.png"
+            src="/tracto-icon.svg"
             alt="Tracto"
             className="tracto-brand-icon flex-shrink-0"
             style={{ width: 36, height: 36, objectFit: 'contain' }}

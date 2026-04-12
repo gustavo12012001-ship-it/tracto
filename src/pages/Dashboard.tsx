@@ -179,7 +179,7 @@ export default function Dashboard() {
             style={{ opacity: 0.55 }}
           >
             <img
-              src="/tracto-icon.png"
+              src="/tracto-icon.svg"
               alt=""
               className="tracto-brand-icon"
               style={{ width: 28, height: 28, objectFit: 'contain' }}
