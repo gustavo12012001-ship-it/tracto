@@ -192,7 +192,7 @@ export default function Reports() {
     : [];
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: '#080809' }}>
+    <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: 'var(--bg)' }}>
       {/* VALIDAÇÃO: Nenhum talhão selecionado */}
       {!activeFieldId || !fields.some((f) => f.id === activeFieldId) ? (
         <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-50 to-indigo-100">

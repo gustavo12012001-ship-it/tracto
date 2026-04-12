@@ -608,7 +608,7 @@ export default function Chat() {
       </div>
 
       {/* ── Chat Principal ─────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0" style={{ background: '#080809' }}>
+      <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg)' }}>
         {/* Header */}
         <div
           className="px-5 py-3 border-b flex items-center justify-between flex-shrink-0"

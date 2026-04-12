@@ -322,6 +322,38 @@ export default function Layout() {
         [data-theme="light"] .nav-item.active { color: #d44e0a; background: rgba(212,78,10,0.08); }
         [data-theme="light"] .card-glass { background: rgba(0,0,0,0.02); }
 
+        /* ── Light mode: sobrescrever surfaces escuras ──── */
+        [data-theme="light"] .bg-slate-800\/50,
+        [data-theme="light"] .bg-slate-700\/50,
+        [data-theme="light"] .bg-slate-900 { background-color: rgba(0,0,0,0.06) !important; }
+        [data-theme="light"] .text-slate-100,
+        [data-theme="light"] .text-slate-200 { color: #1e293b !important; }
+        [data-theme="light"] .text-slate-300 { color: #334155 !important; }
+        [data-theme="light"] .text-slate-400,
+        [data-theme="light"] .text-slate-500 { color: #64748b !important; }
+        /* Cards e superfícies com rgba branco */
+        [data-theme="light"] [style*="rgba(255,255,255,0.0"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.1"] {
+          background: rgba(0,0,0,0.03) !important;
+        }
+        [data-theme="light"] [style*="rgba(255,255,255,0.02)"] { background: rgba(0,0,0,0.03) !important; }
+        [data-theme="light"] [style*="rgba(255,255,255,0.03)"] { background: rgba(0,0,0,0.04) !important; }
+        [data-theme="light"] [style*="rgba(255,255,255,0.05)"] { background: rgba(0,0,0,0.05) !important; }
+        [data-theme="light"] [style*="rgba(255,255,255,0.06)"] { background: rgba(0,0,0,0.06) !important; }
+        /* Bordas claras → bordas escuras suaves */
+        [data-theme="light"] [style*="rgba(255,255,255,0.07)"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.08)"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.09)"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.10)"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.12)"] {
+          border-color: rgba(0,0,0,0.10) !important;
+        }
+        /* Ticker do mercado */
+        [data-theme="light"] .text-white { color: #1e293b !important; }
+        /* Scrollbar */
+        [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+        [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }

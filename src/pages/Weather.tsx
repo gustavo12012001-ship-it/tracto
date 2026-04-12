@@ -162,7 +162,7 @@ export default function Weather() {
   const nowHour = new Date().getHours();
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: '#080809' }}>
+    <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: 'var(--bg)' }}>
       <div className="p-5 flex flex-col gap-4 max-w-5xl mx-auto w-full">
 
         {/* ── Header ── */}

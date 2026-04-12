@@ -145,8 +145,8 @@ export default function Market() {
   const gridNews = news.slice(1, 5);
 
   return (
-    <div className="min-h-screen font-sans pb-16 overflow-x-hidden selection:bg-orange-500/30" style={{ background: '#080809' }}>
-      
+    <div className="flex-1 overflow-y-auto scrollbar-thin font-sans selection:bg-orange-500/30" style={{ background: 'var(--bg)' }}>
+
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(0); }
@@ -169,6 +169,10 @@ export default function Market() {
         .glass-panel {
           background: rgba(255,255,255,0.02);
           border: 0.5px solid rgba(255,255,255,0.08);
+        }
+        [data-theme="light"] .glass-panel {
+          background: rgba(0,0,0,0.03);
+          border: 0.5px solid rgba(0,0,0,0.09);
         }
       `}</style>
 
@@ -193,7 +197,7 @@ export default function Market() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 mt-10">
+      <div className="max-w-6xl mx-auto px-6 mt-6 pb-10">
         
         {/* CABEÇALHO */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
