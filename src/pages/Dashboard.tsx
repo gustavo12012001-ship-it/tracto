@@ -179,7 +179,7 @@ export default function Dashboard() {
             style={{ opacity: 0.55 }}
           >
             <img
-              src="/tracto-icon.svg"
+              src="/tracto-icon.png" onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/tracto-icon.svg"; }}
               alt=""
               className="tracto-brand-icon"
               style={{ width: 28, height: 28, objectFit: 'contain' }}
