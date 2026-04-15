@@ -1,12 +1,44 @@
 // src/pages/Maps.tsx — Hub de Mapas Agronômicos
-// NDVI, NDRE, EVI, Calor, Topografia, Aplicação, Umidade, SAR
+// Cada mapa usa imagens reais de Sentinel-1, Sentinel-2 ou Planet
+// O overlay é gerado pelo backend com a combinação de bandas correta
 
-import { useState } from 'react';
-import { MapContainer, TileLayer, Polygon } from 'react-leaflet';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ImageOverlay, MapContainer, Polygon, TileLayer, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
+import { API_URL } from '../services/api';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
+interface SentinelScene {
+  scene_id: string;
+  date: string;
+  date_br: string;
+  cloud_coverage: number | null;
+  source: 's1' | 's2' | 'planet';
+  collection: string;
+  thumbnail_url: string | null;
+  orbit?: string;
+}
+
+interface ScenesState {
+  s2: SentinelScene[];
+  s1: SentinelScene[];
+  planet: SentinelScene[];
+  loading: boolean;
+  error: string | null;
+  fieldId: string | null;
+}
+
+interface OverlayState {
+  url: string | null;
+  bounds: L.LatLngBoundsExpression | null;
+  loading: boolean;
+  error: string | null;
+  sceneKey: string | null;
+}
+
+// Cada tipo de mapa define qual satélite usa e qual parâmetro de banda envia
 interface MapType {
   id: string;
   name: string;
@@ -15,13 +47,14 @@ interface MapType {
   icon: string;
   color: string;
   bgColor: string;
-  tileLayer: 'satellite' | 'osm' | 'topo' | 'dark';
-  fillOpacity: number;
+  // Satélite fonte principal
+  source: 's2' | 's1' | 'planet' | 'dem';
+  // Parâmetro enviado ao backend para o tipo de visualização
+  band: string;
   legend: { color: string; label: string }[];
-  source: string;
   resolution: string;
   updateFreq: string;
-  band?: string;
+  sourceLabel: string;
 }
 
 const MAP_TYPES: MapType[] = [
@@ -29,12 +62,11 @@ const MAP_TYPES: MapType[] = [
     id: 'ndvi',
     name: 'NDVI',
     fullName: 'Índice de Vegetação por Diferença Normalizada',
-    description: 'Mede saúde e densidade da vegetação. Valores altos indicam vegetação vigorosa. Essencial para monitoramento de lavouras e detecção de estresse.',
+    description: 'Mede saúde e densidade da vegetação. Calculado a partir das bandas NIR e Red do Sentinel-2. Valores altos = vegetação vigorosa.',
     icon: 'grass',
     color: '#22c55e',
     bgColor: 'rgba(34,197,94,0.12)',
-    tileLayer: 'satellite',
-    fillOpacity: 0.22,
+    source: 's2',
     band: 'NDVI',
     legend: [
       { color: '#d73027', label: '< 0.1 — Sem vegetação' },
@@ -43,20 +75,19 @@ const MAP_TYPES: MapType[] = [
       { color: '#d9ef8b', label: '0.5–0.7 — Boa' },
       { color: '#1a9850', label: '> 0.7 — Densa / saudável' },
     ],
-    source: 'Sentinel-2 (ESA)',
     resolution: '10 m/pixel',
     updateFreq: 'A cada 5 dias',
+    sourceLabel: 'Sentinel-2 (ESA)',
   },
   {
     id: 'ndre',
     name: 'NDRE',
     fullName: 'Índice de Vegetação Red-Edge',
-    description: 'Detecta estresse precoce e teor de clorofila. Mais sensível que o NDVI em dossel denso. Ideal para monitoramento fino e nutrição nitrogenada.',
+    description: 'Detecta estresse precoce e teor de clorofila. Usa bandas NIR e Red-Edge do Sentinel-2. Mais sensível em dossel denso que o NDVI.',
     icon: 'biotech',
     color: '#a855f7',
     bgColor: 'rgba(168,85,247,0.12)',
-    tileLayer: 'satellite',
-    fillOpacity: 0.22,
+    source: 's2',
     band: 'NDRE',
     legend: [
       { color: '#9b2226', label: '< 0.1 — Estresse severo' },
@@ -65,20 +96,19 @@ const MAP_TYPES: MapType[] = [
       { color: '#0a9396', label: '0.4–0.55 — Saudável' },
       { color: '#005f73', label: '> 0.55 — Muito saudável' },
     ],
-    source: 'Sentinel-2 (ESA)',
     resolution: '20 m/pixel',
     updateFreq: 'A cada 5 dias',
+    sourceLabel: 'Sentinel-2 (ESA)',
   },
   {
     id: 'evi',
     name: 'EVI',
     fullName: 'Índice de Vegetação Melhorado',
-    description: 'Aprimora o NDVI reduzindo influência do solo e da atmosfera. Mais robusto em áreas com vegetação muito densa ou com alta concentração de aerossóis.',
+    description: 'Aprimora o NDVI reduzindo influência do solo e atmosfera. Usa bandas Blue, Red e NIR do Sentinel-2. Mais robusto em vegetação densa.',
     icon: 'eco',
     color: '#10b981',
     bgColor: 'rgba(16,185,129,0.12)',
-    tileLayer: 'satellite',
-    fillOpacity: 0.20,
+    source: 's2',
     band: 'EVI',
     legend: [
       { color: '#dc2626', label: '< 0.2 — Baixo' },
@@ -86,40 +116,58 @@ const MAP_TYPES: MapType[] = [
       { color: '#4ade80', label: '0.4–0.6 — Alto' },
       { color: '#166534', label: '> 0.6 — Muito alto' },
     ],
-    source: 'Sentinel-2 / MODIS',
     resolution: '10 m/pixel',
     updateFreq: 'A cada 5 dias',
+    sourceLabel: 'Sentinel-2 (ESA)',
+  },
+  {
+    id: 'rgb',
+    name: 'Cor Real',
+    fullName: 'Composição RGB — Cor Real Sentinel-2',
+    description: 'Composição de bandas Red, Green, Blue do Sentinel-2. Imagem de cor real de alta resolução para inspeção visual detalhada da lavoura.',
+    icon: 'image',
+    color: '#60a5fa',
+    bgColor: 'rgba(96,165,250,0.12)',
+    source: 's2',
+    band: 'RGB',
+    legend: [
+      { color: '#166534', label: 'Vegetação' },
+      { color: '#92400e', label: 'Solo exposto' },
+      { color: '#1d4ed8', label: 'Água' },
+      { color: '#9ca3af', label: 'Urbano / infraestrutura' },
+    ],
+    resolution: '10 m/pixel',
+    updateFreq: 'A cada 5 dias',
+    sourceLabel: 'Sentinel-2 (ESA)',
   },
   {
     id: 'sar',
     name: 'SAR / Radar',
-    fullName: 'Imageamento por Radar de Abertura Sintética',
-    description: 'Penetra nuvens e chuva — monitora a lavoura independente das condições climáticas. Detecta biomassa, estrutura do dossel e umidade do solo.',
+    fullName: 'Radar de Abertura Sintética — Sentinel-1',
+    description: 'Penetra nuvens e chuva. Monitora a lavoura independente do clima. Detecta biomassa, estrutura do dossel e umidade do solo pelo radar.',
     icon: 'radar',
-    color: '#94a3b8',
-    bgColor: 'rgba(148,163,184,0.12)',
-    tileLayer: 'dark',
-    fillOpacity: 0.18,
+    color: '#a78bfa',
+    bgColor: 'rgba(167,139,250,0.12)',
+    source: 's1',
     band: 'SAR',
     legend: [
-      { color: '#1e293b', label: 'Baixa retrodispersão' },
-      { color: '#475569', label: 'Média retrodispersão' },
-      { color: '#e2e8f0', label: 'Alta retrodispersão' },
+      { color: '#1e293b', label: 'Baixa retrodispersão (água/liso)' },
+      { color: '#475569', label: 'Média retrodispersão (solo)' },
+      { color: '#e2e8f0', label: 'Alta retrodispersão (vegetação)' },
     ],
-    source: 'Sentinel-1 (ESA)',
     resolution: '10 m/pixel',
     updateFreq: 'A cada 6 dias',
+    sourceLabel: 'Sentinel-1 (ESA)',
   },
   {
     id: 'moisture',
     name: 'Umidade',
-    fullName: 'Índice de Umidade da Vegetação e Solo',
-    description: 'Estima conteúdo de água na vegetação e no solo superficial. Auxilia no manejo de irrigação e na identificação precoce de estresse hídrico.',
+    fullName: 'Índice de Umidade da Vegetação (NDMI)',
+    description: 'Estima conteúdo de água na vegetação usando bandas NIR e SWIR do Sentinel-2. Auxilia no manejo de irrigação e detecção de estresse hídrico.',
     icon: 'water_drop',
     color: '#06b6d4',
     bgColor: 'rgba(6,182,212,0.12)',
-    tileLayer: 'satellite',
-    fillOpacity: 0.25,
+    source: 's2',
     band: 'NDMI',
     legend: [
       { color: '#ea580c', label: 'Seco — estresse hídrico' },
@@ -127,383 +175,540 @@ const MAP_TYPES: MapType[] = [
       { color: '#67e8f9', label: 'Normal' },
       { color: '#0284c7', label: 'Úmido' },
     ],
-    source: 'Sentinel-1 SAR + Sentinel-2',
-    resolution: '10 m/pixel',
-    updateFreq: 'A cada 6 dias',
+    resolution: '20 m/pixel',
+    updateFreq: 'A cada 5 dias',
+    sourceLabel: 'Sentinel-2 (ESA)',
+  },
+  {
+    id: 'planet_rgb',
+    name: 'Planet HD',
+    fullName: 'PlanetScope — Alta Resolução (≈3 m)',
+    description: 'Imagem de altíssima resolução do Planet Labs. Constelação de satélites com revisita diária. Resolução ≈3m ideal para inspeção de cultura.',
+    icon: 'public',
+    color: '#34d399',
+    bgColor: 'rgba(52,211,153,0.12)',
+    source: 'planet',
+    band: 'RGB',
+    legend: [
+      { color: '#166534', label: 'Vegetação' },
+      { color: '#92400e', label: 'Solo exposto' },
+      { color: '#1d4ed8', label: 'Água' },
+    ],
+    resolution: '≈3 m/pixel',
+    updateFreq: 'Diária (constelação)',
+    sourceLabel: 'Planet Labs',
   },
   {
     id: 'heat',
-    name: 'Mapa de Calor',
+    name: 'Calor / Zonas',
     fullName: 'Variabilidade de Produtividade — Zonas de Manejo',
-    description: 'Identifica zonas de manejo por variabilidade histórica de produtividade. Base para agricultura de precisão e definição de receitas de aplicação variável.',
+    description: 'Análise multitemporal de NDVI para identificar zonas de manejo. Base para agricultura de precisão e receitas de aplicação variável.',
     icon: 'thermostat',
     color: '#ef4444',
     bgColor: 'rgba(239,68,68,0.12)',
-    tileLayer: 'satellite',
-    fillOpacity: 0.30,
+    source: 's2',
+    band: 'HEAT',
     legend: [
       { color: '#1e40af', label: 'Zona baixa produtividade' },
       { color: '#16a34a', label: 'Zona média produtividade' },
       { color: '#dc2626', label: 'Zona alta produtividade' },
     ],
-    source: 'Histórico multitemporal',
-    resolution: '30 m/pixel',
+    resolution: '10 m/pixel',
     updateFreq: 'Por safra',
-  },
-  {
-    id: 'topography',
-    name: 'Topografia',
-    fullName: 'Modelo Digital de Elevação e Declividade',
-    description: 'Visualiza curvas de nível, declividade e drenagem da área. Fundamental para planejamento de plantio, irrigação, manejo de erosão e zoneamento.',
-    icon: 'landscape',
-    color: '#f59e0b',
-    bgColor: 'rgba(245,158,11,0.12)',
-    tileLayer: 'topo',
-    fillOpacity: 0.12,
-    legend: [
-      { color: '#1a5276', label: 'Baixada (< 5% declive)' },
-      { color: '#2ecc71', label: 'Suave (5–10%)' },
-      { color: '#f39c12', label: 'Moderado (10–20%)' },
-      { color: '#e74c3c', label: 'Íngreme (> 20%)' },
-    ],
-    source: 'SRTM / OpenTopoMap',
-    resolution: '12.5 m/pixel',
-    updateFreq: 'Estático (terreno)',
-  },
-  {
-    id: 'application',
-    name: 'Aplicação',
-    fullName: 'Mapa de Aplicação Prescritiva',
-    description: 'Gera receitas de aplicação variável de insumos (fertilizantes, defensivos) com base em zonas de manejo. Reduz custos e aumenta eficiência agronômica.',
-    icon: 'agriculture',
-    color: '#3b82f6',
-    bgColor: 'rgba(59,130,246,0.12)',
-    tileLayer: 'satellite',
-    fillOpacity: 0.28,
-    legend: [
-      { color: '#bfdbfe', label: 'Dose mínima (kg/ha)' },
-      { color: '#3b82f6', label: 'Dose média (kg/ha)' },
-      { color: '#1e3a8a', label: 'Dose máxima (kg/ha)' },
-    ],
-    source: 'Gerado por IA + NDVI',
-    resolution: 'Variável por talhão',
-    updateFreq: 'Por demanda / safra',
+    sourceLabel: 'Sentinel-2 multitemporal',
   },
 ];
 
-// ── Tile URLs ─────────────────────────────────────────────────────────────────
-const TILE_URLS: Record<MapType['tileLayer'], string> = {
-  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  topo: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-  dark: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png',
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function buildAuthHeaders(): Promise<HeadersInit> {
+  const { supabase } = await import('../services/supabase');
+  let { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    const r = await supabase.auth.refreshSession();
+    session = r.data.session;
+  }
+  if (!session?.access_token) throw new Error('Sessão expirada.');
+  return { Authorization: `Bearer ${session.access_token}` };
+}
+
+function computeBounds(boundaries: [number, number][]): L.LatLngBoundsExpression {
+  const lats = boundaries.map((p) => p[0]);
+  const lngs = boundaries.map((p) => p[1]);
+  return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+}
+
+// ── FlyController ─────────────────────────────────────────────────────────────
+function FlyToBounds({ boundaries }: { boundaries: [number, number][] | null }) {
+  const map = useMap();
+  const prevRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!boundaries || boundaries.length < 3) return;
+    const key = JSON.stringify(boundaries[0]);
+    if (prevRef.current === key) return;
+    prevRef.current = key;
+    map.flyToBounds(computeBounds(boundaries) as L.LatLngBoundsExpression, { padding: [40, 40], duration: 1 });
+  }, [boundaries, map]);
+  return null;
+}
+
+// ── SceneRow ──────────────────────────────────────────────────────────────────
+function SceneRow({
+  scene,
+  isActive,
+  isLoading,
+  onClick,
+}: {
+  scene: SentinelScene;
+  isActive: boolean;
+  isLoading: boolean;
+  onClick: () => void;
+}) {
+  const isS2 = scene.source === 's2';
+  const isPlanet = scene.source === 'planet';
+  const cloudOk = scene.cloud_coverage !== null && scene.cloud_coverage <= 30;
+  const cloudMid = scene.cloud_coverage !== null && scene.cloud_coverage > 30 && scene.cloud_coverage <= 60;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-xl p-2.5 transition-all flex items-center gap-2.5"
+      style={{
+        background: isActive ? 'rgba(236,91,19,0.15)' : 'rgba(255,255,255,0.03)',
+        border: `1px solid ${isActive ? 'rgba(236,91,19,0.5)' : 'var(--border)'}`,
+      }}
+    >
+      <div>
+        <p className="text-xs font-bold leading-tight" style={{ color: 'var(--text, #e2e8f0)' }}>
+          {scene.date_br}
+        </p>
+        <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
+          {isS2
+            ? scene.cloud_coverage !== null
+              ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
+              : 'Cobertura N/D'
+            : isPlanet
+              ? 'PlanetScope · ≈3m'
+              : scene.orbit ? `Órbita ${scene.orbit}` : 'SAR · Radar'}
+        </p>
+      </div>
+
+      <div className="ml-auto flex items-center gap-1.5">
+        {isS2 && scene.cloud_coverage !== null && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{
+            background: cloudOk ? 'rgba(74,222,128,0.15)' : cloudMid ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
+            color: cloudOk ? '#4ade80' : cloudMid ? '#fbbf24' : '#f87171',
+          }}>
+            {cloudOk ? 'LIMPO' : cloudMid ? 'PARCIAL' : 'NUBLADO'}
+          </span>
+        )}
+        {isPlanet && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>
+            ≈3m
+          </span>
+        )}
+        {isLoading && (
+          <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin" />
+        )}
+        {isActive && !isLoading && (
+          <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>check_circle</span>
+        )}
+      </div>
+    </button>
+  );
+}
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function Maps() {
   const { fields, activeFieldId, activeFarmId, farms } = useAppStore();
   const [selectedMap, setSelectedMap] = useState<MapType>(MAP_TYPES[0]);
-  const [useTopoOverride, setUseTopoOverride] = useState(false);
+  const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], planet: [], loading: false, error: null, fieldId: null });
+  const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+  const prevUrlRef = useRef<string | null>(null);
+  const loadingFieldRef = useRef<string | null>(null);
+  const planetRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeField = fields.find((f) => f.id === activeFieldId) ?? fields[0] ?? null;
   const activeFarm = farms.find((f) => f.id === (activeField?.farm_id ?? activeFarmId)) ?? null;
-
-  const center: [number, number] = activeField
-    ? [activeField.lat, activeField.lng]
-    : [-15.7801, -47.9292];
-
-  const zoom = activeField ? 14 : 5;
   const fieldBoundaries = activeField?.boundaries as [number, number][] | undefined;
 
-  const activeTileUrl = useTopoOverride
-    ? TILE_URLS.topo
-    : TILE_URLS[selectedMap.tileLayer];
+  const center: [number, number] = activeField ? [activeField.lat, activeField.lng] : [-15.7801, -47.9292];
+  const zoom = activeField ? 14 : 5;
 
+  // Cenas disponíveis para o tipo de mapa selecionado
+  const availableScenes: SentinelScene[] =
+    selectedMap.source === 's1' ? scenes.s1
+    : selectedMap.source === 'planet' ? scenes.planet
+    : scenes.s2;
+
+  // ── Buscar cenas ao montar / trocar talhão ─────────────────────────────────
+  useEffect(() => {
+    if (!activeField?.id) return;
+    const fieldId = activeField.id;
+    if (scenes.fieldId === fieldId && !scenes.loading) return;
+    if (loadingFieldRef.current === fieldId) return;
+
+    loadingFieldRef.current = fieldId;
+    setScenes({ s2: [], s1: [], planet: [], loading: true, error: null, fieldId });
+    // Limpar overlay ao trocar talhão
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
+
+    const fetchScenes = async () => {
+      try {
+        const headers = await buildAuthHeaders();
+        const [sentinelResp, planetResp] = await Promise.allSettled([
+          fetch(`${API_URL}/api/sentinel/scenes?field_id=${fieldId}&lookback_days=90`, { headers }),
+          fetch(`${API_URL}/api/planet/scenes?field_id=${fieldId}&lookback_days=90`, { headers }),
+        ]);
+        const sentinelData = sentinelResp.status === 'fulfilled' && sentinelResp.value.ok
+          ? await sentinelResp.value.json() as { s2: SentinelScene[]; s1: SentinelScene[] }
+          : { s2: [], s1: [] };
+        const planetData = planetResp.status === 'fulfilled' && planetResp.value.ok
+          ? await planetResp.value.json() as { scenes: SentinelScene[] }
+          : { scenes: [] };
+        setScenes({
+          s2: sentinelData.s2 || [],
+          s1: sentinelData.s1 || [],
+          planet: planetData.scenes || [],
+          loading: false,
+          error: null,
+          fieldId,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
+        setScenes({ s2: [], s1: [], planet: [], loading: false, error: msg, fieldId });
+      } finally {
+        if (loadingFieldRef.current === fieldId) loadingFieldRef.current = null;
+      }
+    };
+    void fetchScenes();
+  }, [activeField?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Carregar overlay ao selecionar cena ───────────────────────────────────
+  const handleSelectScene = useCallback(async (scene: SentinelScene) => {
+    if (!activeField?.id || !fieldBoundaries || fieldBoundaries.length < 3) return;
+    const fieldId = activeField.id;
+    const sceneKey = `${fieldId}|${selectedMap.id}|${scene.scene_id}`;
+    if (overlay.sceneKey === sceneKey && overlay.url) return;
+
+    const bounds = computeBounds(fieldBoundaries);
+    setOverlay({ url: null, bounds, loading: true, error: null, sceneKey });
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    if (planetRetryRef.current) { clearTimeout(planetRetryRef.current); planetRetryRef.current = null; }
+
+    try {
+      const headers = await buildAuthHeaders();
+
+      if (scene.source === 'planet') {
+        const resp = await fetch(`${API_URL}/api/planet/overlay?field_id=${fieldId}&scene_id=${scene.scene_id}`, { headers });
+        if (!resp.ok) throw new Error((await resp.json() as { detail?: string }).detail || `Erro ${resp.status}`);
+        const boundsHeader = resp.headers.get('X-Scene-Bounds');
+        let overlayBounds: L.LatLngBoundsExpression = bounds;
+        if (boundsHeader) {
+          const [s, w, n, e] = boundsHeader.split(',').map(Number);
+          if (!isNaN(s)) overlayBounds = [[s, w], [n, e]];
+        }
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        prevUrlRef.current = objectUrl;
+        setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey });
+        // retry se ativo ativando
+        if (resp.headers.get('X-Asset-Status') === 'activating') {
+          planetRetryRef.current = setTimeout(() => { void handleSelectScene(scene); }, 30000);
+        }
+        return;
+      }
+
+      // Sentinel-1 ou Sentinel-2 — envia parâmetro band para o índice correto
+      const params = new URLSearchParams({
+        field_id: fieldId,
+        source: scene.source,
+        scene_date: scene.date,
+        scene_id: scene.scene_id,
+        band: selectedMap.band, // NDVI, NDRE, EVI, RGB, SAR, NDMI, HEAT…
+      });
+      if (typeof scene.cloud_coverage === 'number') params.set('cloud_coverage', String(scene.cloud_coverage));
+
+      const resp = await fetch(`${API_URL}/api/sentinel/overlay?${params}`, { headers });
+      if (!resp.ok) {
+        const ct = resp.headers.get('content-type') || '';
+        let msg = `Erro ${resp.status}`;
+        try {
+          msg = ct.includes('json')
+            ? ((await resp.json() as { detail?: string }).detail || msg)
+            : (await resp.text()).slice(0, 200) || msg;
+        } catch { /* mantém */ }
+        throw new Error(msg);
+      }
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      prevUrlRef.current = objectUrl;
+      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao carregar imagem.';
+      setOverlay({ url: null, bounds, loading: false, error: msg, sceneKey });
+    }
+  }, [activeField?.id, fieldBoundaries, selectedMap.id, selectedMap.band, overlay.sceneKey, overlay.url]);
+
+  // Limpar overlay ao trocar tipo de mapa
   function handleSelectMap(mt: MapType) {
     setSelectedMap(mt);
-    setUseTopoOverride(false);
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
   }
 
+  // Cleanup
+  useEffect(() => () => {
+    if (planetRetryRef.current) clearTimeout(planetRetryRef.current);
+    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+  }, []);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex overflow-hidden min-h-0 h-full">
 
-      {/* ── Painel lateral ── */}
+      {/* ── Sidebar: tipo de mapa ── */}
       <aside
-        className="w-72 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
+        className="w-64 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
         style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
       >
-        {/* Header */}
-        <div className="px-4 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>map</span>
+        <div className="px-4 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>satellite_alt</span>
             <h2 className="text-sm font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>Mapas Agronômicos</h2>
           </div>
-          <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
-            {activeField ? (
-              <>
-                <span style={{ color: 'var(--primary)' }}>{activeField.name}</span>
-                {activeFarm ? ` · ${activeFarm.name}` : ''}
-              </>
-            ) : (
-              'Selecione um talhão no mapa'
-            )}
+          <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
+            {activeField
+              ? <><span style={{ color: 'var(--primary)' }}>{activeField.name}</span>{activeFarm ? ` · ${activeFarm.name}` : ''}</>
+              : 'Selecione um talhão'}
           </p>
         </div>
 
-        {/* Map type list */}
-        <div className="p-3 space-y-1">
-          <p className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
-            Tipos de mapa
+        <div className="p-2 space-y-0.5">
+          <p className="px-2 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
+            Tipo de análise
           </p>
           {MAP_TYPES.map((mt) => {
             const isActive = selectedMap.id === mt.id;
+            // Contagem de cenas disponíveis para este tipo
+            const count = mt.source === 's1' ? scenes.s1.length : mt.source === 'planet' ? scenes.planet.length : scenes.s2.length;
             return (
               <button
                 key={mt.id}
                 onClick={() => handleSelectMap(mt)}
-                className="w-full text-left rounded-xl p-3 transition-all"
+                className="w-full text-left rounded-xl px-3 py-2.5 transition-all flex items-center gap-2.5"
                 style={{
                   background: isActive ? mt.bgColor : 'transparent',
-                  border: `1px solid ${isActive ? mt.color + '55' : 'transparent'}`,
+                  border: `1px solid ${isActive ? mt.color + '44' : 'transparent'}`,
                 }}
               >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className="material-symbols-outlined text-xl flex-shrink-0"
-                    style={{ color: mt.color }}
-                  >
-                    {mt.icon}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="text-[13px] font-bold"
-                        style={{ color: isActive ? mt.color : 'var(--text, #e2e8f0)' }}
-                      >
-                        {mt.name}
-                      </span>
-                    </div>
-                    <p className="text-[10px] mt-0.5 leading-tight" style={{ color: 'var(--muted)' }}>
-                      {mt.source}
-                    </p>
-                  </div>
-                  {isActive && (
-                    <span className="material-symbols-outlined text-sm flex-shrink-0" style={{ color: mt.color }}>
-                      chevron_right
+                <span className="material-symbols-outlined text-xl flex-shrink-0" style={{ color: mt.color }}>
+                  {mt.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[13px] font-bold" style={{ color: isActive ? mt.color : 'var(--text, #e2e8f0)' }}>
+                      {mt.name}
                     </span>
-                  )}
+                    {scenes.fieldId && count > 0 && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded"
+                        style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--muted)' }}>
+                        {count}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>{mt.sourceLabel}</p>
                 </div>
+                {isActive && (
+                  <span className="material-symbols-outlined text-sm" style={{ color: mt.color }}>chevron_right</span>
+                )}
               </button>
             );
           })}
         </div>
       </aside>
 
-      {/* ── Área principal ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* ── Mapa ── */}
+      <div className="flex-1 relative min-w-0">
+        {activeField ? (
+          <MapContainer
+            key={activeField.id}
+            center={center}
+            zoom={zoom}
+            style={{ height: '100%', width: '100%' }}
+            zoomControl={false}
+          >
+            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+            <FlyToBounds boundaries={fieldBoundaries ?? null} />
 
-        {/* Toolbar */}
-        <div
-          className="flex items-center justify-between px-4 py-2.5 border-b flex-shrink-0"
-          style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
-        >
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-xl" style={{ color: selectedMap.color }}>
-              {selectedMap.icon}
-            </span>
-            <div>
-              <h3 className="text-sm font-bold leading-tight" style={{ color: 'var(--text, #e2e8f0)' }}>
-                {selectedMap.name}
-                {selectedMap.band && (
-                  <span className="ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded align-middle"
-                    style={{ background: selectedMap.bgColor, color: selectedMap.color }}>
-                    {selectedMap.band}
-                  </span>
-                )}
-              </h3>
-              <p className="text-[10px]" style={{ color: 'var(--muted)' }}>{selectedMap.fullName}</p>
+            {/* Polígono do talhão */}
+            {fieldBoundaries && fieldBoundaries.length > 0 && (
+              <Polygon
+                positions={fieldBoundaries}
+                pathOptions={{
+                  color: overlay.url ? selectedMap.color : 'rgba(255,255,255,0.7)',
+                  fillColor: selectedMap.color,
+                  fillOpacity: overlay.url ? 0 : 0.08,
+                  weight: overlay.url ? 1.5 : 2,
+                  dashArray: overlay.url ? undefined : '5 4',
+                }}
+              />
+            )}
+
+            {/* Overlay da imagem de satélite */}
+            {overlay.url && overlay.bounds && (
+              <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.92} />
+            )}
+          </MapContainer>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg)' }}>
+            <span className="material-symbols-outlined text-5xl" style={{ color: 'var(--muted)' }}>satellite_alt</span>
+            <div className="text-center">
+              <p className="text-sm font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>Nenhum talhão selecionado</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                Acesse <strong>Mapa / Talhões</strong> e selecione um talhão.
+              </p>
             </div>
           </div>
+        )}
 
-          <div className="flex items-center gap-2">
-            {/* Topo overlay toggle */}
-            <button
-              onClick={() => setUseTopoOverride((v) => !v)}
-              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-all"
-              style={{
-                background: useTopoOverride ? 'rgba(245,158,11,0.15)' : 'var(--surface)',
-                border: `1px solid ${useTopoOverride ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`,
-                color: useTopoOverride ? '#fbbf24' : 'var(--muted)',
-              }}
-              title="Alternar base topográfica"
-            >
-              <span className="material-symbols-outlined text-sm">terrain</span>
-              Topo
+        {/* Loading overlay */}
+        {overlay.loading && (
+          <div className="absolute inset-0 z-[500] flex items-center justify-center pointer-events-none"
+            style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(2px)' }}>
+            <div className="flex flex-col items-center gap-3 rounded-2xl px-8 py-6"
+              style={{ background: 'rgba(8,8,9,0.95)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="w-8 h-8 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+              <p className="text-xs font-semibold text-white">Gerando mapa {selectedMap.name}…</p>
+              <p className="text-[10px]" style={{ color: '#64748b' }}>{selectedMap.sourceLabel}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Erro overlay */}
+        {overlay.error && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[500] rounded-xl px-4 py-2.5 flex items-center gap-2"
+            style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)' }}>
+            <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>error</span>
+            <p className="text-xs font-semibold" style={{ color: '#f87171' }}>{overlay.error}</p>
+            <button onClick={() => setOverlay((s) => ({ ...s, error: null }))} style={{ color: '#f87171' }}>
+              <span className="material-symbols-outlined text-sm">close</span>
             </button>
+          </div>
+        )}
 
-            {/* Fonte badge */}
-            <span
-              className="hidden sm:block text-[10px] font-medium px-2 py-1.5 rounded-lg"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-            >
-              {selectedMap.source}
-            </span>
-
-            {/* Atualização */}
-            <span
-              className="hidden md:flex items-center gap-1 text-[10px] font-medium px-2 py-1.5 rounded-lg"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-            >
-              <span className="material-symbols-outlined text-sm">refresh</span>
-              {selectedMap.updateFreq}
-            </span>
-
-            {/* Export */}
+        {/* Badge: imagem carregada */}
+        {overlay.url && !overlay.loading && (
+          <div className="absolute top-3 left-3 z-[500] flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl"
+            style={{ background: 'rgba(8,8,9,0.9)', border: '1px solid rgba(255,255,255,0.09)', backdropFilter: 'blur(8px)' }}>
+            <span className="material-symbols-outlined text-sm" style={{ color: selectedMap.color }}>{selectedMap.icon}</span>
+            <span className="text-[11px] font-bold text-white">{selectedMap.name}</span>
             <button
-              className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all"
-              style={{
-                background: 'var(--primary-dim)',
-                border: '1px solid var(--primary-border)',
-                color: 'var(--primary)',
-              }}
+              onClick={() => { if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; } setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null }); }}
+              className="ml-1 text-slate-500 hover:text-white transition-colors"
             >
-              <span className="material-symbols-outlined text-sm">download</span>
-              Exportar
+              <span className="material-symbols-outlined text-sm">close</span>
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Painel direito: cenas + legenda ── */}
+      <div
+        className="w-64 flex-shrink-0 flex flex-col border-l overflow-hidden"
+        style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
+      >
+        {/* Header do tipo de mapa */}
+        <div className="px-4 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)', background: selectedMap.bgColor }}>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="material-symbols-outlined text-base" style={{ color: selectedMap.color }}>{selectedMap.icon}</span>
+            <span className="text-sm font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{selectedMap.name}</span>
+          </div>
+          <p className="text-[10px] leading-tight" style={{ color: 'var(--muted)' }}>{selectedMap.description}</p>
+        </div>
+
+        {/* Specs rápidas */}
+        <div className="px-4 py-2 flex items-center gap-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="text-center">
+            <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Resolução</p>
+            <p className="text-[11px] font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{selectedMap.resolution}</p>
+          </div>
+          <div className="w-px h-6" style={{ background: 'var(--border)' }} />
+          <div className="text-center">
+            <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Revisita</p>
+            <p className="text-[11px] font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{selectedMap.updateFreq}</p>
           </div>
         </div>
 
-        {/* Map + info */}
-        <div className="flex-1 flex min-h-0">
+        {/* Lista de cenas */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          <div className="px-3 pt-3 pb-1">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
+                Imagens disponíveis
+              </p>
+              {scenes.loading && (
+                <div className="w-3 h-3 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+              )}
+            </div>
 
-          {/* Map */}
-          <div className="flex-1 relative min-w-0">
-            {activeField ? (
-              <MapContainer
-                key={`${activeField.id}-${selectedMap.id}-${useTopoOverride}`}
-                center={center}
-                zoom={zoom}
-                style={{ height: '100%', width: '100%' }}
-                zoomControl={false}
-              >
-                <TileLayer url={activeTileUrl} />
-                {fieldBoundaries && fieldBoundaries.length > 0 && (
-                  <Polygon
-                    positions={fieldBoundaries}
-                    pathOptions={{
-                      color: selectedMap.color,
-                      fillColor: selectedMap.color,
-                      fillOpacity: selectedMap.fillOpacity,
-                      weight: 2.5,
-                      dashArray: selectedMap.id === 'application' ? '6 4' : undefined,
-                    }}
-                  />
-                )}
-              </MapContainer>
+            {!activeField ? (
+              <p className="text-[11px] py-4 text-center" style={{ color: 'var(--muted)' }}>
+                Selecione um talhão para ver as imagens disponíveis.
+              </p>
+            ) : scenes.loading ? (
+              <p className="text-[11px] py-4 text-center" style={{ color: 'var(--muted)' }}>
+                Buscando imagens disponíveis…
+              </p>
+            ) : scenes.error ? (
+              <div className="py-4 text-center">
+                <span className="material-symbols-outlined text-2xl block mb-1" style={{ color: '#f87171' }}>cloud_off</span>
+                <p className="text-[11px]" style={{ color: '#f87171' }}>{scenes.error}</p>
+              </div>
+            ) : availableScenes.length === 0 ? (
+              <div className="py-4 text-center">
+                <span className="material-symbols-outlined text-2xl block mb-1" style={{ color: 'var(--muted)' }}>
+                  {selectedMap.source === 's1' ? 'radar' : selectedMap.source === 'planet' ? 'public_off' : 'cloud_off'}
+                </span>
+                <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                  Nenhuma imagem nos últimos 90 dias.
+                </p>
+              </div>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg)' }}>
-                <div
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-                >
-                  <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--muted)' }}>map</span>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-semibold" style={{ color: 'var(--text, #e2e8f0)' }}>Nenhum talhão selecionado</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                    Acesse <strong>Mapa / Talhões</strong> e selecione um talhão para visualizar os mapas.
-                  </p>
-                </div>
+              <div className="space-y-1.5">
+                {availableScenes.map((scene) => {
+                  const key = `${activeField?.id}|${selectedMap.id}|${scene.scene_id}`;
+                  return (
+                    <SceneRow
+                      key={scene.scene_id}
+                      scene={scene}
+                      isActive={overlay.sceneKey === key}
+                      isLoading={overlay.loading && overlay.sceneKey === key}
+                      onClick={() => void handleSelectScene(scene)}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Right info panel */}
-          <div
-            className="w-60 flex-shrink-0 flex flex-col border-l overflow-y-auto scrollbar-thin"
-            style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
-          >
-            {/* Descrição */}
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--muted)' }}>
-                Sobre
-              </p>
-              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text, #e2e8f0)' }}>
-                {selectedMap.description}
-              </p>
-            </div>
-
-            {/* Specs */}
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>
-                Especificações
-              </p>
-              <div className="space-y-2.5">
-                <SpecRow icon="satellite_alt" label="Fonte" value={selectedMap.source} />
-                <SpecRow icon="straighten" label="Resolução" value={selectedMap.resolution} />
-                <SpecRow icon="refresh" label="Revisita" value={selectedMap.updateFreq} />
-                {selectedMap.band && (
-                  <SpecRow icon="functions" label="Índice" value={selectedMap.band} />
-                )}
+        {/* Legenda */}
+        <div className="p-3 border-t flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--muted)' }}>
+            Legenda
+          </p>
+          <div className="space-y-1.5">
+            {selectedMap.legend.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded flex-shrink-0"
+                  style={{ background: item.color, border: '1px solid rgba(255,255,255,0.1)' }} />
+                <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{item.label}</span>
               </div>
-            </div>
-
-            {/* Legenda */}
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>
-                Legenda
-              </p>
-              <div className="space-y-2">
-                {selectedMap.legend.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div
-                      className="w-3.5 h-3.5 rounded flex-shrink-0"
-                      style={{ background: item.color, border: '1px solid rgba(255,255,255,0.1)' }}
-                    />
-                    <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Botão de ação */}
-            <div className="p-4">
-              <button
-                className="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
-                style={{
-                  background: 'var(--primary)',
-                  color: '#fff',
-                }}
-              >
-                <span className="material-symbols-outlined text-sm">satellite_alt</span>
-                Gerar análise
-              </button>
-              {activeField && (
-                <p className="text-[10px] text-center mt-2" style={{ color: 'var(--muted)' }}>
-                  Talhão: {activeField.name}
-                </p>
-              )}
-            </div>
+            ))}
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── SpecRow ───────────────────────────────────────────────────────────────────
-function SpecRow({ icon, label, value, valueColor }: {
-  icon: string; label: string; value: string; valueColor?: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-2">
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <span className="material-symbols-outlined text-sm" style={{ color: 'var(--muted)' }}>{icon}</span>
-        <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{label}</span>
-      </div>
-      <span className="text-[10px] font-semibold text-right" style={{ color: valueColor ?? 'var(--text, #e2e8f0)' }}>
-        {value}
-      </span>
     </div>
   );
 }
