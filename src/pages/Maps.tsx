@@ -1,13 +1,12 @@
 // src/pages/Maps.tsx — Hub de Mapas Agronômicos
-// NDVI, NDRE, Calor, Topografia, Aplicação e mais
+// NDVI, NDRE, EVI, Calor, Topografia, Aplicação, Umidade, SAR
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { MapContainer, TileLayer, Polygon } from 'react-leaflet';
-import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 
-// ── Tipos de mapa disponíveis ─────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 interface MapType {
   id: string;
   name: string;
@@ -16,12 +15,13 @@ interface MapType {
   icon: string;
   color: string;
   bgColor: string;
-  available: boolean;
-  comingSoon?: boolean;
+  tileLayer: 'satellite' | 'osm' | 'topo' | 'dark';
+  fillOpacity: number;
   legend: { color: string; label: string }[];
   source: string;
   resolution: string;
   updateFreq: string;
+  band?: string;
 }
 
 const MAP_TYPES: MapType[] = [
@@ -29,17 +29,19 @@ const MAP_TYPES: MapType[] = [
     id: 'ndvi',
     name: 'NDVI',
     fullName: 'Índice de Vegetação por Diferença Normalizada',
-    description: 'Mede saúde e densidade da vegetação. Valores altos indicam vegetação vigorosa e saudável. Essencial para monitoramento de lavouras.',
+    description: 'Mede saúde e densidade da vegetação. Valores altos indicam vegetação vigorosa. Essencial para monitoramento de lavouras e detecção de estresse.',
     icon: 'grass',
     color: '#22c55e',
     bgColor: 'rgba(34,197,94,0.12)',
-    available: true,
+    tileLayer: 'satellite',
+    fillOpacity: 0.22,
+    band: 'NDVI',
     legend: [
-      { color: '#d73027', label: 'Sem vegetação (< 0.1)' },
-      { color: '#fc8d59', label: 'Vegetação esparsa (0.1–0.3)' },
-      { color: '#fee08b', label: 'Vegetação moderada (0.3–0.5)' },
-      { color: '#d9ef8b', label: 'Vegetação boa (0.5–0.7)' },
-      { color: '#1a9850', label: 'Vegetação densa (> 0.7)' },
+      { color: '#d73027', label: '< 0.1 — Sem vegetação' },
+      { color: '#fc8d59', label: '0.1–0.3 — Esparsa' },
+      { color: '#fee08b', label: '0.3–0.5 — Moderada' },
+      { color: '#d9ef8b', label: '0.5–0.7 — Boa' },
+      { color: '#1a9850', label: '> 0.7 — Densa / saudável' },
     ],
     source: 'Sentinel-2 (ESA)',
     resolution: '10 m/pixel',
@@ -49,17 +51,19 @@ const MAP_TYPES: MapType[] = [
     id: 'ndre',
     name: 'NDRE',
     fullName: 'Índice de Vegetação Red-Edge',
-    description: 'Detecta estresse precoce da vegetação e teor de clorofila. Mais sensível que o NDVI em dossel denso. Ideal para monitoramento fino.',
+    description: 'Detecta estresse precoce e teor de clorofila. Mais sensível que o NDVI em dossel denso. Ideal para monitoramento fino e nutrição nitrogenada.',
     icon: 'biotech',
     color: '#a855f7',
     bgColor: 'rgba(168,85,247,0.12)',
-    available: true,
+    tileLayer: 'satellite',
+    fillOpacity: 0.22,
+    band: 'NDRE',
     legend: [
-      { color: '#9b2226', label: 'Estresse severo (< 0.1)' },
-      { color: '#e9d8a6', label: 'Estresse leve (0.1–0.25)' },
-      { color: '#94d2bd', label: 'Normal (0.25–0.4)' },
-      { color: '#0a9396', label: 'Saudável (0.4–0.55)' },
-      { color: '#005f73', label: 'Muito saudável (> 0.55)' },
+      { color: '#9b2226', label: '< 0.1 — Estresse severo' },
+      { color: '#e9d8a6', label: '0.1–0.25 — Estresse leve' },
+      { color: '#94d2bd', label: '0.25–0.4 — Normal' },
+      { color: '#0a9396', label: '0.4–0.55 — Saudável' },
+      { color: '#005f73', label: '> 0.55 — Muito saudável' },
     ],
     source: 'Sentinel-2 (ESA)',
     resolution: '20 m/pixel',
@@ -69,38 +73,80 @@ const MAP_TYPES: MapType[] = [
     id: 'evi',
     name: 'EVI',
     fullName: 'Índice de Vegetação Melhorado',
-    description: 'Aprimora o NDVI reduzindo influência do solo e da atmosfera. Mais robusto em áreas com vegetação muito densa ou com aerossóis.',
+    description: 'Aprimora o NDVI reduzindo influência do solo e da atmosfera. Mais robusto em áreas com vegetação muito densa ou com alta concentração de aerossóis.',
     icon: 'eco',
     color: '#10b981',
     bgColor: 'rgba(16,185,129,0.12)',
-    available: false,
-    comingSoon: true,
+    tileLayer: 'satellite',
+    fillOpacity: 0.20,
+    band: 'EVI',
     legend: [
-      { color: '#dc2626', label: 'Baixo (< 0.2)' },
-      { color: '#facc15', label: 'Médio (0.2–0.4)' },
-      { color: '#4ade80', label: 'Alto (0.4–0.6)' },
-      { color: '#166534', label: 'Muito alto (> 0.6)' },
+      { color: '#dc2626', label: '< 0.2 — Baixo' },
+      { color: '#facc15', label: '0.2–0.4 — Médio' },
+      { color: '#4ade80', label: '0.4–0.6 — Alto' },
+      { color: '#166534', label: '> 0.6 — Muito alto' },
     ],
     source: 'Sentinel-2 / MODIS',
     resolution: '10 m/pixel',
     updateFreq: 'A cada 5 dias',
   },
   {
+    id: 'sar',
+    name: 'SAR / Radar',
+    fullName: 'Imageamento por Radar de Abertura Sintética',
+    description: 'Penetra nuvens e chuva — monitora a lavoura independente das condições climáticas. Detecta biomassa, estrutura do dossel e umidade do solo.',
+    icon: 'radar',
+    color: '#94a3b8',
+    bgColor: 'rgba(148,163,184,0.12)',
+    tileLayer: 'dark',
+    fillOpacity: 0.18,
+    band: 'SAR',
+    legend: [
+      { color: '#1e293b', label: 'Baixa retrodispersão' },
+      { color: '#475569', label: 'Média retrodispersão' },
+      { color: '#e2e8f0', label: 'Alta retrodispersão' },
+    ],
+    source: 'Sentinel-1 (ESA)',
+    resolution: '10 m/pixel',
+    updateFreq: 'A cada 6 dias',
+  },
+  {
+    id: 'moisture',
+    name: 'Umidade',
+    fullName: 'Índice de Umidade da Vegetação e Solo',
+    description: 'Estima conteúdo de água na vegetação e no solo superficial. Auxilia no manejo de irrigação e na identificação precoce de estresse hídrico.',
+    icon: 'water_drop',
+    color: '#06b6d4',
+    bgColor: 'rgba(6,182,212,0.12)',
+    tileLayer: 'satellite',
+    fillOpacity: 0.25,
+    band: 'NDMI',
+    legend: [
+      { color: '#ea580c', label: 'Seco — estresse hídrico' },
+      { color: '#fde68a', label: 'Moderado' },
+      { color: '#67e8f9', label: 'Normal' },
+      { color: '#0284c7', label: 'Úmido' },
+    ],
+    source: 'Sentinel-1 SAR + Sentinel-2',
+    resolution: '10 m/pixel',
+    updateFreq: 'A cada 6 dias',
+  },
+  {
     id: 'heat',
     name: 'Mapa de Calor',
-    fullName: 'Variabilidade de Produtividade (Zonas de Manejo)',
-    description: 'Identifica zonas de manejo por variabilidade histórica de produtividade. Base para agricultura de precisão e aplicação variável.',
+    fullName: 'Variabilidade de Produtividade — Zonas de Manejo',
+    description: 'Identifica zonas de manejo por variabilidade histórica de produtividade. Base para agricultura de precisão e definição de receitas de aplicação variável.',
     icon: 'thermostat',
     color: '#ef4444',
     bgColor: 'rgba(239,68,68,0.12)',
-    available: false,
-    comingSoon: true,
+    tileLayer: 'satellite',
+    fillOpacity: 0.30,
     legend: [
-      { color: '#1e40af', label: 'Zona baixa' },
-      { color: '#22c55e', label: 'Zona média' },
-      { color: '#ef4444', label: 'Zona alta' },
+      { color: '#1e40af', label: 'Zona baixa produtividade' },
+      { color: '#16a34a', label: 'Zona média produtividade' },
+      { color: '#dc2626', label: 'Zona alta produtividade' },
     ],
-    source: 'Histórico + Satélite',
+    source: 'Histórico multitemporal',
     resolution: '30 m/pixel',
     updateFreq: 'Por safra',
   },
@@ -108,19 +154,19 @@ const MAP_TYPES: MapType[] = [
     id: 'topography',
     name: 'Topografia',
     fullName: 'Modelo Digital de Elevação e Declividade',
-    description: 'Visualiza curvas de nível, declividade e drenagem da área. Fundamental para planejamento de plantio, irrigação e manejo de erosão.',
+    description: 'Visualiza curvas de nível, declividade e drenagem da área. Fundamental para planejamento de plantio, irrigação, manejo de erosão e zoneamento.',
     icon: 'landscape',
     color: '#f59e0b',
     bgColor: 'rgba(245,158,11,0.12)',
-    available: false,
-    comingSoon: true,
+    tileLayer: 'topo',
+    fillOpacity: 0.12,
     legend: [
-      { color: '#1a5276', label: 'Baixada (< 5%)' },
+      { color: '#1a5276', label: 'Baixada (< 5% declive)' },
       { color: '#2ecc71', label: 'Suave (5–10%)' },
       { color: '#f39c12', label: 'Moderado (10–20%)' },
       { color: '#e74c3c', label: 'Íngreme (> 20%)' },
     ],
-    source: 'SRTM / ALOS',
+    source: 'SRTM / OpenTopoMap',
     resolution: '12.5 m/pixel',
     updateFreq: 'Estático (terreno)',
   },
@@ -128,86 +174,60 @@ const MAP_TYPES: MapType[] = [
     id: 'application',
     name: 'Aplicação',
     fullName: 'Mapa de Aplicação Prescritiva',
-    description: 'Gera receitas de aplicação variável de insumos (fertilizantes, defensivos) baseadas em zonas de manejo. Reduz custos e aumenta eficiência.',
+    description: 'Gera receitas de aplicação variável de insumos (fertilizantes, defensivos) com base em zonas de manejo. Reduz custos e aumenta eficiência agronômica.',
     icon: 'agriculture',
     color: '#3b82f6',
     bgColor: 'rgba(59,130,246,0.12)',
-    available: false,
-    comingSoon: true,
+    tileLayer: 'satellite',
+    fillOpacity: 0.28,
     legend: [
-      { color: '#bfdbfe', label: 'Dose mínima' },
-      { color: '#3b82f6', label: 'Dose média' },
-      { color: '#1e3a8a', label: 'Dose máxima' },
+      { color: '#bfdbfe', label: 'Dose mínima (kg/ha)' },
+      { color: '#3b82f6', label: 'Dose média (kg/ha)' },
+      { color: '#1e3a8a', label: 'Dose máxima (kg/ha)' },
     ],
-    source: 'Gerado pelo sistema',
-    resolution: 'Variável',
-    updateFreq: 'Por demanda',
-  },
-  {
-    id: 'moisture',
-    name: 'Umidade',
-    fullName: 'Índice de Umidade da Vegetação e Solo',
-    description: 'Estima conteúdo de água na vegetação e solo superficial. Auxilia no manejo de irrigação e identificação de estresse hídrico.',
-    icon: 'water_drop',
-    color: '#06b6d4',
-    bgColor: 'rgba(6,182,212,0.12)',
-    available: false,
-    comingSoon: true,
-    legend: [
-      { color: '#ea580c', label: 'Seco (estresse hídrico)' },
-      { color: '#facc15', label: 'Normal' },
-      { color: '#0284c7', label: 'Úmido' },
-    ],
-    source: 'Sentinel-1 (SAR) + S-2',
-    resolution: '10 m/pixel',
-    updateFreq: 'A cada 6 dias',
-  },
-  {
-    id: 'sar',
-    name: 'SAR / Radar',
-    fullName: 'Imageamento por Radar de Abertura Sintética',
-    description: 'Penetra nuvens e chuva. Monitora cultura independente de condições climáticas. Detecta biomassa, estrutura do dossel e umidade do solo.',
-    icon: 'radar',
-    color: '#64748b',
-    bgColor: 'rgba(100,116,139,0.12)',
-    available: true,
-    legend: [
-      { color: '#1e293b', label: 'Baixa retrodispersão' },
-      { color: '#94a3b8', label: 'Média retrodispersão' },
-      { color: '#f8fafc', label: 'Alta retrodispersão' },
-    ],
-    source: 'Sentinel-1 (ESA)',
-    resolution: '10 m/pixel',
-    updateFreq: 'A cada 6 dias',
+    source: 'Gerado por IA + NDVI',
+    resolution: 'Variável por talhão',
+    updateFreq: 'Por demanda / safra',
   },
 ];
+
+// ── Tile URLs ─────────────────────────────────────────────────────────────────
+const TILE_URLS: Record<MapType['tileLayer'], string> = {
+  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  topo: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  dark: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png',
+};
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function Maps() {
   const { fields, activeFieldId, activeFarmId, farms } = useAppStore();
   const [selectedMap, setSelectedMap] = useState<MapType>(MAP_TYPES[0]);
-  const [mapLayer, setMapLayer] = useState<'osm' | 'satellite'>('satellite');
+  const [useTopoOverride, setUseTopoOverride] = useState(false);
 
   const activeField = fields.find((f) => f.id === activeFieldId) ?? fields[0] ?? null;
   const activeFarm = farms.find((f) => f.id === (activeField?.farm_id ?? activeFarmId)) ?? null;
 
-  // Center map on active field or Brazil
   const center: [number, number] = activeField
     ? [activeField.lat, activeField.lng]
     : [-15.7801, -47.9292];
 
   const zoom = activeField ? 14 : 5;
-
   const fieldBoundaries = activeField?.boundaries as [number, number][] | undefined;
 
-  const tileUrl =
-    mapLayer === 'satellite'
-      ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const activeTileUrl = useTopoOverride
+    ? TILE_URLS.topo
+    : TILE_URLS[selectedMap.tileLayer];
+
+  function handleSelectMap(mt: MapType) {
+    setSelectedMap(mt);
+    setUseTopoOverride(false);
+  }
 
   return (
     <div className="flex-1 flex overflow-hidden min-h-0 h-full">
-      {/* ── Painel lateral de tipos de mapa ── */}
+
+      {/* ── Painel lateral ── */}
       <aside
         className="w-72 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
         style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
@@ -220,126 +240,125 @@ export default function Maps() {
           </div>
           <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
             {activeField ? (
-              <span>
+              <>
                 <span style={{ color: 'var(--primary)' }}>{activeField.name}</span>
                 {activeFarm ? ` · ${activeFarm.name}` : ''}
-              </span>
+              </>
             ) : (
               'Selecione um talhão no mapa'
             )}
           </p>
         </div>
 
-        {/* Map type cards */}
-        <div className="p-3 space-y-1.5">
-          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
+        {/* Map type list */}
+        <div className="p-3 space-y-1">
+          <p className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
             Tipos de mapa
           </p>
-          {MAP_TYPES.map((mt) => (
-            <button
-              key={mt.id}
-              onClick={() => setSelectedMap(mt)}
-              className="w-full text-left rounded-xl p-3 transition-all"
-              style={{
-                background: selectedMap.id === mt.id ? mt.bgColor : 'transparent',
-                border: `1px solid ${selectedMap.id === mt.id ? mt.color + '44' : 'var(--border)'}`,
-              }}
-            >
-              <div className="flex items-center gap-2.5">
-                <span
-                  className="material-symbols-outlined text-lg flex-shrink-0"
-                  style={{ color: mt.color }}
-                >
-                  {mt.icon}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-bold" style={{ color: selectedMap.id === mt.id ? mt.color : 'var(--text, #e2e8f0)' }}>
-                      {mt.name}
-                    </span>
-                    {mt.available && (
+          {MAP_TYPES.map((mt) => {
+            const isActive = selectedMap.id === mt.id;
+            return (
+              <button
+                key={mt.id}
+                onClick={() => handleSelectMap(mt)}
+                className="w-full text-left rounded-xl p-3 transition-all"
+                style={{
+                  background: isActive ? mt.bgColor : 'transparent',
+                  border: `1px solid ${isActive ? mt.color + '55' : 'transparent'}`,
+                }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="material-symbols-outlined text-xl flex-shrink-0"
+                    style={{ color: mt.color }}
+                  >
+                    {mt.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
                       <span
-                        className="text-[9px] font-black px-1.5 py-0.5 rounded"
-                        style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}
+                        className="text-[13px] font-bold"
+                        style={{ color: isActive ? mt.color : 'var(--text, #e2e8f0)' }}
                       >
-                        ATIVO
+                        {mt.name}
                       </span>
-                    )}
-                    {mt.comingSoon && (
-                      <span
-                        className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                        style={{ background: 'rgba(245,158,11,0.12)', color: '#fbbf24' }}
-                      >
-                        EM BREVE
-                      </span>
-                    )}
+                    </div>
+                    <p className="text-[10px] mt-0.5 leading-tight" style={{ color: 'var(--muted)' }}>
+                      {mt.source}
+                    </p>
                   </div>
-                  <p className="text-[10px] mt-0.5 leading-tight truncate" style={{ color: 'var(--muted)' }}>
-                    {mt.fullName}
-                  </p>
+                  {isActive && (
+                    <span className="material-symbols-outlined text-sm flex-shrink-0" style={{ color: mt.color }}>
+                      chevron_right
+                    </span>
+                  )}
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </aside>
 
       {/* ── Área principal ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
         {/* Toolbar */}
         <div
-          className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
+          className="flex items-center justify-between px-4 py-2.5 border-b flex-shrink-0"
           style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
         >
           <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-lg" style={{ color: selectedMap.color }}>
+            <span className="material-symbols-outlined text-xl" style={{ color: selectedMap.color }}>
               {selectedMap.icon}
             </span>
             <div>
               <h3 className="text-sm font-bold leading-tight" style={{ color: 'var(--text, #e2e8f0)' }}>
                 {selectedMap.name}
+                {selectedMap.band && (
+                  <span className="ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded align-middle"
+                    style={{ background: selectedMap.bgColor, color: selectedMap.color }}>
+                    {selectedMap.band}
+                  </span>
+                )}
               </h3>
               <p className="text-[10px]" style={{ color: 'var(--muted)' }}>{selectedMap.fullName}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Layer toggle */}
-            <div
-              className="flex rounded-lg overflow-hidden text-[11px] font-semibold"
-              style={{ border: '1px solid var(--border)' }}
+            {/* Topo overlay toggle */}
+            <button
+              onClick={() => setUseTopoOverride((v) => !v)}
+              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-all"
+              style={{
+                background: useTopoOverride ? 'rgba(245,158,11,0.15)' : 'var(--surface)',
+                border: `1px solid ${useTopoOverride ? 'rgba(245,158,11,0.3)' : 'var(--border)'}`,
+                color: useTopoOverride ? '#fbbf24' : 'var(--muted)',
+              }}
+              title="Alternar base topográfica"
             >
-              <button
-                onClick={() => setMapLayer('satellite')}
-                className="px-3 py-1.5 transition-all"
-                style={{
-                  background: mapLayer === 'satellite' ? 'var(--primary-dim)' : 'transparent',
-                  color: mapLayer === 'satellite' ? 'var(--primary)' : 'var(--muted)',
-                }}
-              >
-                Satélite
-              </button>
-              <button
-                onClick={() => setMapLayer('osm')}
-                className="px-3 py-1.5 transition-all"
-                style={{
-                  background: mapLayer === 'osm' ? 'var(--primary-dim)' : 'transparent',
-                  color: mapLayer === 'osm' ? 'var(--primary)' : 'var(--muted)',
-                }}
-              >
-                OSM
-              </button>
-            </div>
+              <span className="material-symbols-outlined text-sm">terrain</span>
+              Topo
+            </button>
 
-            {/* Source badge */}
+            {/* Fonte badge */}
             <span
-              className="text-[10px] font-medium px-2 py-1 rounded-lg"
+              className="hidden sm:block text-[10px] font-medium px-2 py-1.5 rounded-lg"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
             >
               {selectedMap.source}
             </span>
 
-            {/* Export button */}
+            {/* Atualização */}
+            <span
+              className="hidden md:flex items-center gap-1 text-[10px] font-medium px-2 py-1.5 rounded-lg"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+            >
+              <span className="material-symbols-outlined text-sm">refresh</span>
+              {selectedMap.updateFreq}
+            </span>
+
+            {/* Export */}
             <button
               className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all"
               style={{
@@ -354,36 +373,35 @@ export default function Maps() {
           </div>
         </div>
 
-        {/* Map + info layout */}
+        {/* Map + info */}
         <div className="flex-1 flex min-h-0">
+
           {/* Map */}
           <div className="flex-1 relative min-w-0">
             {activeField ? (
               <MapContainer
-                key={`${activeField.id}-${selectedMap.id}`}
+                key={`${activeField.id}-${selectedMap.id}-${useTopoOverride}`}
                 center={center}
                 zoom={zoom}
                 style={{ height: '100%', width: '100%' }}
                 zoomControl={false}
               >
-                <TileLayer url={tileUrl} />
+                <TileLayer url={activeTileUrl} />
                 {fieldBoundaries && fieldBoundaries.length > 0 && (
                   <Polygon
                     positions={fieldBoundaries}
                     pathOptions={{
                       color: selectedMap.color,
                       fillColor: selectedMap.color,
-                      fillOpacity: selectedMap.available ? 0.25 : 0.08,
-                      weight: 2,
+                      fillOpacity: selectedMap.fillOpacity,
+                      weight: 2.5,
+                      dashArray: selectedMap.id === 'application' ? '6 4' : undefined,
                     }}
                   />
                 )}
               </MapContainer>
             ) : (
-              <div
-                className="h-full flex flex-col items-center justify-center gap-4"
-                style={{ background: 'var(--bg)' }}
-              >
+              <div className="h-full flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg)' }}>
                 <div
                   className="w-16 h-16 rounded-2xl flex items-center justify-center"
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
@@ -398,107 +416,74 @@ export default function Maps() {
                 </div>
               </div>
             )}
-
-            {/* Overlay: disponibilidade do mapa */}
-            {!selectedMap.available && activeField && (
-              <div className="absolute inset-0 flex items-center justify-center z-10" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-                <div
-                  className="rounded-2xl p-6 max-w-sm text-center mx-4"
-                  style={{ background: 'var(--sidebar)', border: '1px solid var(--border)' }}
-                >
-                  <span className="material-symbols-outlined text-4xl mb-3 block" style={{ color: 'var(--primary)' }}>
-                    {selectedMap.icon}
-                  </span>
-                  <h4 className="text-base font-bold mb-2" style={{ color: 'var(--text, #e2e8f0)' }}>
-                    {selectedMap.name} — Em Desenvolvimento
-                  </h4>
-                  <p className="text-xs leading-relaxed mb-4" style={{ color: 'var(--muted)' }}>
-                    {selectedMap.description}
-                  </p>
-                  <div className="flex items-center justify-center gap-2">
-                    <span
-                      className="text-[10px] font-bold px-3 py-1.5 rounded-lg"
-                      style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.2)' }}
-                    >
-                      Disponível em breve
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Right info panel */}
           <div
-            className="w-64 flex-shrink-0 flex flex-col border-l overflow-y-auto scrollbar-thin"
+            className="w-60 flex-shrink-0 flex flex-col border-l overflow-y-auto scrollbar-thin"
             style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
           >
-            {/* Description */}
+            {/* Descrição */}
             <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--muted)' }}>Descrição</p>
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text, #e2e8f0)' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--muted)' }}>
+                Sobre
+              </p>
+              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text, #e2e8f0)' }}>
                 {selectedMap.description}
               </p>
             </div>
 
             {/* Specs */}
             <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>Especificações</p>
-              <div className="space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>
+                Especificações
+              </p>
+              <div className="space-y-2.5">
                 <SpecRow icon="satellite_alt" label="Fonte" value={selectedMap.source} />
                 <SpecRow icon="straighten" label="Resolução" value={selectedMap.resolution} />
-                <SpecRow icon="refresh" label="Atualização" value={selectedMap.updateFreq} />
-                <SpecRow
-                  icon="circle"
-                  label="Status"
-                  value={selectedMap.available ? 'Disponível' : 'Em breve'}
-                  valueColor={selectedMap.available ? '#4ade80' : '#fbbf24'}
-                />
+                <SpecRow icon="refresh" label="Revisita" value={selectedMap.updateFreq} />
+                {selectedMap.band && (
+                  <SpecRow icon="functions" label="Índice" value={selectedMap.band} />
+                )}
               </div>
             </div>
 
-            {/* Legend */}
-            <div className="p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>Legenda</p>
-              <div className="space-y-1.5">
+            {/* Legenda */}
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>
+                Legenda
+              </p>
+              <div className="space-y-2">
                 {selectedMap.legend.map((item, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <div
-                      className="w-4 h-4 rounded flex-shrink-0"
-                      style={{ background: item.color, border: '1px solid rgba(255,255,255,0.15)' }}
+                      className="w-3.5 h-3.5 rounded flex-shrink-0"
+                      style={{ background: item.color, border: '1px solid rgba(255,255,255,0.1)' }}
                     />
-                    <span className="text-[11px]" style={{ color: 'var(--muted)' }}>{item.label}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{item.label}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Action button */}
-            {activeField && (
-              <div className="p-4 mt-auto border-t" style={{ borderColor: 'var(--border)' }}>
-                <button
-                  className="w-full py-2.5 rounded-xl text-xs font-bold transition-all"
-                  style={{
-                    background: selectedMap.available ? 'var(--primary)' : 'var(--surface)',
-                    color: selectedMap.available ? '#fff' : 'var(--muted)',
-                    border: selectedMap.available ? 'none' : '1px solid var(--border)',
-                    cursor: selectedMap.available ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  {selectedMap.available ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="material-symbols-outlined text-sm">satellite_alt</span>
-                      Gerar mapa agora
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="material-symbols-outlined text-sm">schedule</span>
-                      Notificar quando disponível
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
+            {/* Botão de ação */}
+            <div className="p-4">
+              <button
+                className="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+                style={{
+                  background: 'var(--primary)',
+                  color: '#fff',
+                }}
+              >
+                <span className="material-symbols-outlined text-sm">satellite_alt</span>
+                Gerar análise
+              </button>
+              {activeField && (
+                <p className="text-[10px] text-center mt-2" style={{ color: 'var(--muted)' }}>
+                  Talhão: {activeField.name}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -506,15 +491,17 @@ export default function Maps() {
   );
 }
 
-// ── Sub-componente de spec row ────────────────────────────────────────────────
-function SpecRow({ icon, label, value, valueColor }: { icon: string; label: string; value: string; valueColor?: string }) {
+// ── SpecRow ───────────────────────────────────────────────────────────────────
+function SpecRow({ icon, label, value, valueColor }: {
+  icon: string; label: string; value: string; valueColor?: string;
+}) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-1.5">
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center gap-1.5 flex-shrink-0">
         <span className="material-symbols-outlined text-sm" style={{ color: 'var(--muted)' }}>{icon}</span>
-        <span className="text-[11px]" style={{ color: 'var(--muted)' }}>{label}</span>
+        <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{label}</span>
       </div>
-      <span className="text-[11px] font-semibold" style={{ color: valueColor ?? 'var(--text, #e2e8f0)' }}>
+      <span className="text-[10px] font-semibold text-right" style={{ color: valueColor ?? 'var(--text, #e2e8f0)' }}>
         {value}
       </span>
     </div>
