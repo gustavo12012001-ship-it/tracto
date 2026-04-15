@@ -364,9 +364,8 @@ export default function Layout() {
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
 
-        /* ── Ícone da marca: preto no claro, branco no escuro ── */
-        .tracto-brand-icon { filter: invert(1) drop-shadow(0 0 0px transparent); }
-        [data-theme="light"] .tracto-brand-icon { filter: none; }
+        /* ── Ícone da marca: badge branco arredondado em todos os temas ── */
+        .tracto-brand-icon { background: #fff; border-radius: 7px; padding: 2px; }
 
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
