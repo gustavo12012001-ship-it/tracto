@@ -70,6 +70,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: '/app/maps',
+    label: 'Mapas Agro',
+    badge: 'NDVI',
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+        <path d="M9 3v15M15 6v15" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+      </svg>
+    ),
+  },
+  {
     to: '/app/market',
     label: 'Mercado',
     icon: (
@@ -303,6 +314,8 @@ export default function Layout() {
           --border: rgba(255,255,255,0.07);
           --border-strong: rgba(255,255,255,0.12);
           --muted: #64748b;
+          --text: #e2e8f0;
+          --text-secondary: #94a3b8;
         }
 
         /* ── Light Mode ──────────────────────────────── */
@@ -315,20 +328,32 @@ export default function Layout() {
           --surface: rgba(0,0,0,0.03);
           --border: rgba(0,0,0,0.09);
           --border-strong: rgba(0,0,0,0.18);
-          --muted: #64748b;
+          --muted: #475569;
+          --text: #0f172a;
+          --text-secondary: #334155;
         }
         [data-theme="light"] body {
           background-color: #f4f3ef;
-          color: #1e293b;
+          color: #0f172a;
         }
-        [data-theme="light"] .text-white { color: #1e293b !important; }
-        [data-theme="light"] .text-slate-300 { color: #475569 !important; }
-        [data-theme="light"] .text-slate-400 { color: #64748b !important; }
+        /* Texto claro → escuro no modo claro */
+        [data-theme="light"] .text-white { color: #0f172a !important; }
+        [data-theme="light"] .text-slate-50,
+        [data-theme="light"] .text-slate-100,
+        [data-theme="light"] .text-slate-200 { color: #1e293b !important; }
+        [data-theme="light"] .text-slate-300 { color: #334155 !important; }
+        [data-theme="light"] .text-slate-400,
+        [data-theme="light"] .text-slate-500 { color: #475569 !important; }
+        [data-theme="light"] .text-slate-600 { color: #64748b !important; }
+        /* Qualquer elemento com cor branca/clara em inline style → escuro */
+        [data-theme="light"] p, [data-theme="light"] span, [data-theme="light"] h1,
+        [data-theme="light"] h2, [data-theme="light"] h3, [data-theme="light"] h4,
+        [data-theme="light"] h5, [data-theme="light"] label { color: inherit; }
         [data-theme="light"] .header-glass {
-          background: rgba(244,243,239,0.92) !important;
+          background: rgba(244,243,239,0.95) !important;
         }
-        [data-theme="light"] .nav-item { color: #64748b; }
-        [data-theme="light"] .nav-item:hover { color: #1e293b; background: rgba(0,0,0,0.04); }
+        [data-theme="light"] .nav-item { color: #475569; }
+        [data-theme="light"] .nav-item:hover { color: #0f172a; background: rgba(0,0,0,0.04); }
         [data-theme="light"] .nav-item.active { color: #d44e0a; background: rgba(212,78,10,0.08); }
         [data-theme="light"] .card-glass { background: rgba(0,0,0,0.02); }
 
@@ -336,11 +361,6 @@ export default function Layout() {
         [data-theme="light"] .bg-slate-800\/50,
         [data-theme="light"] .bg-slate-700\/50,
         [data-theme="light"] .bg-slate-900 { background-color: rgba(0,0,0,0.06) !important; }
-        [data-theme="light"] .text-slate-100,
-        [data-theme="light"] .text-slate-200 { color: #1e293b !important; }
-        [data-theme="light"] .text-slate-300 { color: #334155 !important; }
-        [data-theme="light"] .text-slate-400,
-        [data-theme="light"] .text-slate-500 { color: #64748b !important; }
         /* Cards e superfícies com rgba branco */
         [data-theme="light"] [style*="rgba(255,255,255,0.0"],
         [data-theme="light"] [style*="rgba(255,255,255,0.1"] {
@@ -358,8 +378,6 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(255,255,255,0.12)"] {
           border-color: rgba(0,0,0,0.10) !important;
         }
-        /* Ticker do mercado */
-        [data-theme="light"] .text-white { color: #1e293b !important; }
         /* Scrollbar */
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }

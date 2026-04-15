@@ -12,6 +12,7 @@ import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
 import Settings from './pages/Settings';
+import Maps from './pages/Maps';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -41,6 +42,7 @@ function App() {
           <Route path="chat" element={<Chat />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="maps" element={<Maps />} />
           <Route path="market" element={<Market />} />
           <Route path="billing" element={<Pricing />} />
           <Route path="settings" element={<Settings />} />
