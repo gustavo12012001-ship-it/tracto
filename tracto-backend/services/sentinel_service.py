@@ -534,6 +534,95 @@ function evaluatePixel(s) {
 }
 """
         data_type = "sentinel-2-l2a"
+    elif mode == "ndre":
+        evalscript = """
+//VERSION=3
+function setup() {
+    return {
+        input: [{ bands: ["B05", "B08A", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
+}
+function evaluatePixel(s) {
+    if (s.dataMask === 0) return [0,0,0,0];
+    let ndre = (s.B08A - s.B05) / (s.B08A + s.B05 + 0.0001);
+    if (ndre < 0.1)  return [155,23,35,255];
+    if (ndre < 0.25) return [233,216,166,255];
+    if (ndre < 0.40) return [148,210,189,255];
+    if (ndre < 0.55) return [10,147,150,255];
+    return [0,95,115,255];
+}
+"""
+        data_type = "sentinel-2-l2a"
+    elif mode == "evi":
+        evalscript = """
+//VERSION=3
+function setup() {
+    return {
+        input: [{ bands: ["B02", "B04", "B08", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
+}
+function evaluatePixel(s) {
+    if (s.dataMask === 0) return [0,0,0,0];
+    let evi = 2.5 * (s.B08 - s.B04) / (s.B08 + 6*s.B04 - 7.5*s.B02 + 1.0 + 0.0001);
+    if (evi < 0.1)  return [220,38,38,255];
+    if (evi < 0.2)  return [234,179,8,255];
+    if (evi < 0.35) return [132,204,22,255];
+    if (evi < 0.5)  return [74,222,128,255];
+    return [22,101,52,255];
+}
+"""
+        data_type = "sentinel-2-l2a"
+    elif mode == "ndmi":
+        evalscript = """
+//VERSION=3
+function setup() {
+    return {
+        input: [{ bands: ["B08", "B11", "dataMask"] }],
+        output: { bands: 4, sampleType: "UINT8" }
+    };
+}
+function evaluatePixel(s) {
+    if (s.dataMask === 0) return [0,0,0,0];
+    let ndmi = (s.B08 - s.B11) / (s.B08 + s.B11 + 0.0001);
+    if (ndmi < -0.2) return [234,88,12,255];
+    if (ndmi < 0.0)  return [253,224,71,255];
+    if (ndmi < 0.2)  return [103,232,249,255];
+    return [2,132,199,255];
+}
+"""
+        data_type = "sentinel-2-l2a"
+    elif mode == "falsecolor":
+        evalscript = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B08", "B04", "B03", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
+  return [adj(s.B08), adj(s.B04), adj(s.B03), s.dataMask * 255];
+}
+"""
+        data_type = "sentinel-2-l2a"
+    elif mode == "agriculture":
+        evalscript = """
+//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B11", "B08", "B02", "dataMask"] }],
+    output: { bands: 4, sampleType: "UINT8" }
+  };
+}
+function evaluatePixel(s) {
+  function adj(v) { return Math.round(Math.pow(Math.min(Math.max(v * 3.5, 0), 1), 0.85) * 255); }
+  return [adj(s.B11), adj(s.B08), adj(s.B02), s.dataMask * 255];
+}
+"""
+        data_type = "sentinel-2-l2a"
     else:
         evalscript = """
 //VERSION=3
