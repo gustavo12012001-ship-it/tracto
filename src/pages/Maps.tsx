@@ -136,7 +136,7 @@ const MAP_TYPES: MapType[] = [
     bgColor: 'rgba(34,197,94,0.12)',
     band: 'NDVI',
     compatibleSources: ['s2', 'planet'],
-    backendReady: false,
+    backendReady: true,
     legend: [
       { color: '#d73027', label: '< 0.1 — Sem vegetação' },
       { color: '#fc8d59', label: '0.1–0.3 — Esparsa' },
@@ -158,7 +158,7 @@ const MAP_TYPES: MapType[] = [
     bgColor: 'rgba(168,85,247,0.12)',
     band: 'NDRE',
     compatibleSources: ['s2'],
-    backendReady: false,
+    backendReady: true,
     legend: [
       { color: '#9b2226', label: '< 0.1 — Estresse severo' },
       { color: '#e9d8a6', label: '0.1–0.25 — Estresse leve' },
@@ -180,7 +180,7 @@ const MAP_TYPES: MapType[] = [
     bgColor: 'rgba(16,185,129,0.12)',
     band: 'EVI',
     compatibleSources: ['s2', 'planet'],
-    backendReady: false,
+    backendReady: true,
     legend: [
       { color: '#dc2626', label: '< 0.2 — Baixo' },
       { color: '#facc15', label: '0.2–0.4 — Médio' },
@@ -201,7 +201,7 @@ const MAP_TYPES: MapType[] = [
     bgColor: 'rgba(6,182,212,0.12)',
     band: 'NDMI',
     compatibleSources: ['s2'],
-    backendReady: false,
+    backendReady: true,
     legend: [
       { color: '#ea580c', label: 'Seco — estresse hídrico' },
       { color: '#fde68a', label: 'Moderado' },
@@ -485,7 +485,17 @@ export default function Maps() {
         }
         return;
       }
-      const params = new URLSearchParams({ field_id: fieldId, source: scene.source, scene_date: scene.date, scene_id: scene.scene_id, band });
+      const bandToMode: Record<string, string> = {
+        'RGB': 'truecolor',
+        'SAR': 'truecolor',
+        'NDVI': 'ndvi',
+        'NDRE': 'ndre',
+        'EVI': 'evi',
+        'NDMI': 'ndmi',
+        'HEAT': 'truecolor',
+      };
+      const mode = rawMode ? 'truecolor' : (bandToMode[band] ?? band.toLowerCase());
+      const params = new URLSearchParams({ field_id: fieldId, source: scene.source, scene_date: scene.date, scene_id: scene.scene_id, mode });
       if (typeof scene.cloud_coverage === 'number') params.set('cloud_coverage', String(scene.cloud_coverage));
       const resp = await fetch(`${API_URL}/api/sentinel/overlay?${params}`, { headers });
       if (!resp.ok) {
