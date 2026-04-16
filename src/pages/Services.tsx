@@ -65,7 +65,7 @@ async function searchNominatim(
     q: query,
     format: 'jsonv2',
     addressdetails: '1',
-    limit: '20',
+    limit: '50',
     countrycodes: 'br',
     viewbox,
     bounded: '0',
@@ -80,15 +80,31 @@ async function searchNominatim(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any[] = await res.json();
 
-  return data.map((item) => ({
-    osm_id: item.osm_id,
-    name: item.name || item.display_name.split(',')[0],
-    display_name: item.display_name,
-    lat: parseFloat(item.lat),
-    lng: parseFloat(item.lon),
-    type: item.type ?? item.category ?? '',
-    distance: haversine(lat, lng, parseFloat(item.lat), parseFloat(item.lon)),
-  }));
+  // Exclude non-establishment results (streets, boundaries, cities, etc.)
+  // Only keep actual POIs: shops, amenities, offices, crafts, tourism spots, etc.
+  const POI_CATEGORIES = new Set([
+    'amenity', 'shop', 'office', 'craft', 'tourism', 'leisure',
+    'healthcare', 'emergency', 'education', 'food', 'service',
+    'commercial', 'industrial',
+  ]);
+
+  return data
+    .filter((item) => {
+      const cat: string = item.category ?? '';
+      // Must have a name (not just an address)
+      if (!item.name) return false;
+      // Must be a real POI category, not a road/boundary/place
+      return POI_CATEGORIES.has(cat);
+    })
+    .map((item) => ({
+      osm_id: item.osm_id,
+      name: item.name,
+      display_name: item.display_name,
+      lat: parseFloat(item.lat),
+      lng: parseFloat(item.lon),
+      type: item.type ?? item.category ?? '',
+      distance: haversine(lat, lng, parseFloat(item.lat), parseFloat(item.lon)),
+    }));
 }
 
 // ── Helper: short address ─────────────────────────────────────────────────────
