@@ -52,13 +52,19 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ── Non-POI categories to exclude (streets, admin boundaries, etc.) ───────────
+const EXCLUDED_CATEGORIES = new Set([
+  'highway', 'boundary', 'landuse', 'waterway', 'railway',
+  'natural', 'barrier', 'aeroway', 'route', 'man_made',
+]);
+
 // ── Nominatim search ──────────────────────────────────────────────────────────
 async function searchNominatim(
   query: string,
   lat: number,
   lng: number
 ): Promise<ServiceResult[]> {
-  const delta = 1.5; // ~150 km bounding box
+  const delta = 0.4; // ~44 km — stays within the city/region
   const viewbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
 
   const params = new URLSearchParams({
@@ -68,7 +74,7 @@ async function searchNominatim(
     limit: '50',
     countrycodes: 'br',
     viewbox,
-    bounded: '0',
+    bounded: '1', // force results inside the viewbox
   });
 
   const res = await fetch(
@@ -80,21 +86,13 @@ async function searchNominatim(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any[] = await res.json();
 
-  // Exclude non-establishment results (streets, boundaries, cities, etc.)
-  // Only keep actual POIs: shops, amenities, offices, crafts, tourism spots, etc.
-  const POI_CATEGORIES = new Set([
-    'amenity', 'shop', 'office', 'craft', 'tourism', 'leisure',
-    'healthcare', 'emergency', 'education', 'food', 'service',
-    'commercial', 'industrial',
-  ]);
-
   return data
     .filter((item) => {
+      // Must have a proper name
+      if (!item.name || item.name.trim() === '') return false;
+      // Exclude non-establishment types (roads, borders, landuse areas, etc.)
       const cat: string = item.category ?? '';
-      // Must have a name (not just an address)
-      if (!item.name) return false;
-      // Must be a real POI category, not a road/boundary/place
-      return POI_CATEGORIES.has(cat);
+      return !EXCLUDED_CATEGORIES.has(cat);
     })
     .map((item) => ({
       osm_id: item.osm_id,
@@ -105,6 +103,18 @@ async function searchNominatim(
       type: item.type ?? item.category ?? '',
       distance: haversine(lat, lng, parseFloat(item.lat), parseFloat(item.lon)),
     }));
+}
+
+// ── Get device GPS location ───────────────────────────────────────────────────
+function getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 5000, maximumAge: 60000 }
+    );
+  });
 }
 
 // ── Helper: short address ─────────────────────────────────────────────────────
@@ -272,22 +282,41 @@ export default function Services() {
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
 
+  const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
+
   const doSearch = useCallback(
     async (q: string) => {
       if (!q.trim()) return;
       setQuery(q);
-
-      // Use farm location if available, fallback to center of Brazil
-      const lat = currentLocation?.lat ?? -15.8;
-      const lng = currentLocation?.lng ?? -47.9;
-
       setLoading(true);
       setError(null);
       setSearched(true);
 
       try {
+        // Priority: farm location > device GPS > refuse to search with no location
+        let lat: number;
+        let lng: number;
+
+        if (currentLocation) {
+          lat = currentLocation.lat;
+          lng = currentLocation.lng;
+        } else {
+          // Try device GPS
+          let geo = deviceLocation;
+          if (!geo) {
+            geo = await getDeviceLocation();
+            if (geo) setDeviceLocation(geo);
+          }
+          if (!geo) {
+            setError('Não foi possível determinar sua localização. Defina a localização da fazenda para buscar serviços próximos.');
+            setLoading(false);
+            return;
+          }
+          lat = geo.lat;
+          lng = geo.lng;
+        }
+
         const res = await searchNominatim(q, lat, lng);
-        // Sort by distance
         const sorted = res.sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
         setResults(sorted);
       } catch {
@@ -297,7 +326,7 @@ export default function Services() {
         setLoading(false);
       }
     },
-    [currentLocation]
+    [currentLocation, deviceLocation]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -403,7 +432,7 @@ export default function Services() {
             </div>
 
             {/* Location note */}
-            {!currentLocation && (
+            {!currentLocation && !deviceLocation && (
               <p className="text-[10px]" style={{ color: '#f59e0b' }}>
                 <span
                   className="material-symbols-outlined"
@@ -411,7 +440,18 @@ export default function Services() {
                 >
                   location_off
                 </span>{' '}
-                Localização da fazenda não definida — resultados podem não estar próximos de você.
+                Localização da fazenda não definida — ao buscar, usaremos o GPS do seu dispositivo.
+              </p>
+            )}
+            {!currentLocation && deviceLocation && (
+              <p className="text-[10px]" style={{ color: '#22c55e' }}>
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontSize: 11, verticalAlign: 'middle' }}
+                >
+                  my_location
+                </span>{' '}
+                Usando sua localização atual para buscar serviços próximos.
               </p>
             )}
           </form>
