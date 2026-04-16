@@ -24,6 +24,8 @@ export default defineConfig({
           if (id.includes('node_modules/recharts') || id.includes('node_modules/react-is')) {
             return 'recharts'
           }
+          if (id.includes('node_modules/leaflet')) return 'leaflet'
+          if (id.includes('node_modules/framer-motion')) return 'framer-motion'
         }
       }
     }
