@@ -39,6 +39,8 @@ export interface Farm {
   id: string;
   name: string;
   description?: string;
+  city?: string;
+  boundaries?: [number, number][];
   fields: Location[];
 }
 
@@ -206,6 +208,8 @@ interface AppState {
   updateGeolocation: () => Promise<void>;
   addFarm: (farm: Farm) => void;
   syncFields: () => Promise<void>;
+  createFarm: (name: string, city: string, boundaries?: [number, number][]) => Promise<Farm>;
+  updateFarmBoundaries: (farmId: string, boundaries: [number, number][], name?: string, city?: string) => Promise<void>;
   createField: (farmId: string, field: Omit<Location, 'id'>) => Promise<void>;
   updateField: (fieldId: string, updates: Partial<Location>) => Promise<void>;
   removeField: (farmId: string, fieldId: string) => Promise<void>;
@@ -376,6 +380,48 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ fields: [...state.fields, mapped] }));
         // Seleciona imediatamente o talhão criado e sincroniza fazenda ativa.
         get().setActiveField(mapped.id ?? null);
+      },
+
+      // ── createFarm: cria fazenda nova direto no Supabase ─────────────────────
+      createFarm: async (name, city, boundaries) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuário não autenticado.');
+
+        const { data, error } = await supabase
+          .from('farms')
+          .insert({ name, description: city, city, user_id: user.id, boundaries: boundaries ?? null, is_default: false })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const newFarm: Farm = { id: data.id, name: data.name, description: data.description, city: data.city, boundaries: data.boundaries ?? undefined, fields: [] };
+        set((state) => ({ farms: [...state.farms, newFarm], activeFarmId: state.activeFarmId ?? newFarm.id }));
+        return newFarm;
+      },
+
+      // ── updateFarmBoundaries: atualiza polígono e nome da fazenda ─────────────
+      updateFarmBoundaries: async (farmId, boundaries, name, city) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuário não autenticado.');
+
+        const updates: Record<string, unknown> = { boundaries };
+        if (name) updates.name = name;
+        if (city !== undefined) { updates.description = city; updates.city = city; }
+
+        const { error } = await supabase
+          .from('farms')
+          .update(updates)
+          .eq('id', farmId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        set((state) => ({
+          farms: state.farms.map((f) => f.id === farmId
+            ? { ...f, boundaries, ...(name ? { name } : {}), ...(city !== undefined ? { city, description: city } : {}) }
+            : f),
+        }));
       },
 
       // ── updateField: patch no Supabase com campos informados ─────────────────
