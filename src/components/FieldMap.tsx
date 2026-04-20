@@ -1,6 +1,5 @@
-// src/components/FieldMap.tsx — Versão 4.0
-// Painel de cenas Sentinel-1 e Sentinel-2 disponíveis por talhão
-// O usuário vê as datas disponíveis e escolhe qual carregar
+// src/components/FieldMap.tsx — Versão 5.0
+// Cadastro de talhões com campos agronômicos, arrastar para posicionar pontos e edição inline
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -13,11 +12,10 @@ import {
   TileLayer,
   Tooltip,
   useMap,
-  useMapEvents,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import useAppStore from '../store/useAppStore';
+import useAppStore, { type Location } from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
 import { API_URL } from '../services/api';
 
@@ -30,7 +28,7 @@ L.Icon.Default.mergeOptions({
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type DrawMode = 'none' | 'drawing';
+type DrawMode = 'none' | 'drawing' | 'drawing_block';
 type MapLayer = 'osm' | 'esri';
 
 interface SentinelScene {
@@ -58,10 +56,52 @@ interface OverlayState {
   bounds: L.LatLngBoundsExpression | null;
   loading: boolean;
   error: string | null;
-  sceneKey: string | null; // "field_id|source|scene_id"
+  sceneKey: string | null;
   cacheStatus: 'HIT' | 'MISS' | null;
   sceneDate: string | null;
 }
+
+// ── Opções dos selects ────────────────────────────────────────────────────────
+
+const OPCOES_IRRIGACAO = [
+  { value: '', label: 'Sem irrigação' },
+  { value: 'pivô central', label: 'Pivô Central' },
+  { value: 'gotejo', label: 'Gotejo' },
+  { value: 'aspersão', label: 'Aspersão' },
+  { value: 'superficial', label: 'Superficial / Inundação' },
+];
+
+const OPCOES_ADUBACAO = [
+  { value: '', label: 'Não realizada' },
+  { value: 'convencional', label: 'Convencional (NPK)' },
+  { value: 'orgânica', label: 'Orgânica' },
+  { value: 'integrada', label: 'Integrada (conv. + org.)' },
+  { value: 'foliar', label: 'Foliar' },
+  { value: 'bioestimulante', label: 'Bioestimulante' },
+];
+
+const OPCOES_TEXTURA = [
+  { value: '', label: 'Não informado' },
+  { value: 'muito argiloso', label: 'Muito Argiloso (>60% argila)' },
+  { value: 'argiloso', label: 'Argiloso (35–60%)' },
+  { value: 'franco-argiloso', label: 'Franco-Argiloso' },
+  { value: 'franco', label: 'Franco' },
+  { value: 'franco-arenoso', label: 'Franco-Arenoso' },
+  { value: 'arenoso', label: 'Arenoso (<15% argila)' },
+];
+
+const OPCOES_CULTURA_ANTERIOR = [
+  { value: '', label: 'Não informado' },
+  { value: 'soja', label: 'Soja' },
+  { value: 'milho', label: 'Milho' },
+  { value: 'trigo', label: 'Trigo' },
+  { value: 'sorgo', label: 'Sorgo' },
+  { value: 'feijão', label: 'Feijão' },
+  { value: 'algodão', label: 'Algodão' },
+  { value: 'cana', label: 'Cana-de-açúcar' },
+  { value: 'pastagem', label: 'Pastagem' },
+  { value: 'pousio', label: 'Pousio' },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,12 +143,13 @@ async function buildAuthHeaders(): Promise<HeadersInit> {
   return { Authorization: `Bearer ${session.access_token}` };
 }
 
-// ── Sub-componentes ───────────────────────────────────────────────────────────
+// ── Estilos compartilhados ────────────────────────────────────────────────────
 
-function MapClickHandler({ onMapClick }: { onMapClick: (ll: { lat: number; lng: number }) => void }) {
-  useMapEvents({ click: (e) => onMapClick(e.latlng) });
-  return null;
-}
+const inputCls = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40';
+const selectCls = 'w-full bg-[#0d0d0f] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500/40 appearance-none';
+const labelCls = 'text-[10px] text-slate-500 mb-1 block';
+
+// ── Sub-componentes ───────────────────────────────────────────────────────────
 
 function FlyController({ target }: { target: { lat: number; lng: number; zoom?: number } | null }) {
   const map = useMap();
@@ -146,20 +187,17 @@ function InitialCenterController() {
   const done = useRef(false);
   useEffect(() => {
     if (done.current) return;
-    // PRIORIDADE 1: Se há fields com boundaries, usar o primeiro com boundaries válidos
     const fieldWithBoundaries = fields.find((f) => f.boundaries && f.boundaries.length >= 3);
     if (fieldWithBoundaries && fieldWithBoundaries.boundaries) {
       map.flyToBounds(computeBoundsFromBoundaries(fieldWithBoundaries.boundaries) as L.LatLngBoundsExpression, { padding: [80, 80], duration: 0 });
       done.current = true;
       return;
     }
-    // PRIORIDADE 2: Se há qualquer field, usar a localização do primeiro
     if (fields.length > 0) {
       map.setView([fields[0].lat, fields[0].lng], 15);
       done.current = true;
       return;
     }
-    // PRIORIDADE 3: Se location é precise, usar
     if (locationStatus === 'precise' && currentLocation) {
       map.setView([currentLocation.lat, currentLocation.lng], 13);
       done.current = true;
@@ -185,7 +223,83 @@ function ZoomControls() {
   );
 }
 
-// ── Card de cena ──────────────────────────────────────────────────────────────
+// ── MapDrawHandler: arrastar para posicionar ponto ────────────────────────────
+
+function MapDrawHandler({
+  drawMode,
+  onPlacePoint,
+}: {
+  drawMode: DrawMode;
+  onPlacePoint: (ll: { lat: number; lng: number }) => void;
+}) {
+  const map = useMap();
+  const pressingRef = useRef(false);
+  const ghostRef = useRef<L.CircleMarker | null>(null);
+
+  useEffect(() => {
+    if (drawMode !== 'drawing') {
+      map.dragging.enable();
+      if (ghostRef.current) { map.removeLayer(ghostRef.current); ghostRef.current = null; }
+      return;
+    }
+
+    map.dragging.disable();
+
+    const ghost = L.circleMarker(map.getCenter(), {
+      radius: 6,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: '#ec5b13',
+      fillOpacity: 0,
+      opacity: 0,
+      interactive: false,
+      bubblingMouseEvents: false,
+    }).addTo(map);
+    ghostRef.current = ghost;
+
+    const onMove = (e: L.LeafletMouseEvent) => {
+      ghost.setLatLng(e.latlng);
+      ghost.setStyle({ opacity: 1, fillOpacity: pressingRef.current ? 1 : 0.6 });
+      if (!pressingRef.current) ghost.setRadius(6);
+    };
+
+    const onDown = (e: L.LeafletMouseEvent) => {
+      pressingRef.current = true;
+      ghost.setLatLng(e.latlng);
+      ghost.setStyle({ opacity: 1, fillOpacity: 1 });
+      ghost.setRadius(9);
+    };
+
+    const onUp = (e: L.LeafletMouseEvent) => {
+      if (!pressingRef.current) return;
+      pressingRef.current = false;
+      ghost.setStyle({ fillOpacity: 0.6 });
+      ghost.setRadius(6);
+      onPlacePoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+    };
+
+    const onLeave = () => ghost.setStyle({ opacity: 0, fillOpacity: 0 });
+
+    map.on('mousedown', onDown);
+    map.on('mousemove', onMove);
+    map.on('mouseup', onUp);
+    map.getContainer().addEventListener('mouseleave', onLeave);
+
+    return () => {
+      map.off('mousedown', onDown);
+      map.off('mousemove', onMove);
+      map.off('mouseup', onUp);
+      map.getContainer().removeEventListener('mouseleave', onLeave);
+      if (ghostRef.current) { map.removeLayer(ghostRef.current); ghostRef.current = null; }
+      map.dragging.enable();
+      pressingRef.current = false;
+    };
+  }, [drawMode, map, onPlacePoint]);
+
+  return null;
+}
+
+// ── SceneCard ─────────────────────────────────────────────────────────────────
 
 function SceneCard({
   scene,
@@ -216,32 +330,18 @@ function SceneCard({
         border: `1px solid ${isActive ? 'rgba(236,91,19,0.5)' : 'rgba(255,255,255,0.08)'}`,
       }}
     >
-      {/* Ícone */}
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: iconBg }}>
-        <span className="material-symbols-outlined text-sm" style={{ color: iconColor }}>
-          {iconName}
-        </span>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: iconBg }}>
+        <span className="material-symbols-outlined text-sm" style={{ color: iconColor }}>{iconName}</span>
       </div>
-
-      {/* Info */}
       <div className="flex-1 min-w-0">
         <p className="text-xs font-bold text-white leading-tight">{scene.date_br}</p>
         <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>
           {isS2
-            ? scene.cloud_coverage !== null
-              ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens`
-              : 'Cobertura N/D'
-            : isPlanet
-              ? 'PlanetScope · resolução aprox. 3m'
-              : scene.orbit
-                ? `Órbita ${scene.orbit}`
-                : 'SAR · Radar'
-          }
+            ? scene.cloud_coverage !== null ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens` : 'Cobertura N/D'
+            : isPlanet ? 'PlanetScope · resolução aprox. 3m'
+            : scene.orbit ? `Órbita ${scene.orbit}` : 'SAR · Radar'}
         </p>
       </div>
-
-      {/* Badge qualidade: nuvens no S2, resolução no Planet */}
       {isS2 && scene.cloud_coverage !== null && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
           style={{
@@ -253,29 +353,17 @@ function SceneCard({
       )}
       {isPlanet && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-          style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>
-          ≈3m
-        </span>
+          style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>≈3m</span>
       )}
-
-      {/* Loading spinner */}
-      {isLoading && (
-        <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
-      )}
+      {isLoading && <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />}
     </button>
   );
 }
 
-// ── Painel de cenas ───────────────────────────────────────────────────────────
+// ── ScenesPanel ───────────────────────────────────────────────────────────────
 
 function ScenesPanel({
-  fieldId,
-  fieldName,
-  scenes,
-  activeSceneKey,
-  overlayLoading,
-  onClose,
-  onSelectScene,
+  fieldId, fieldName, scenes, activeSceneKey, overlayLoading, onClose, onSelectScene,
 }: {
   fieldId: string;
   fieldName: string;
@@ -286,21 +374,11 @@ function ScenesPanel({
   onSelectScene: (scene: SentinelScene) => void;
 }) {
   const [tab, setTab] = useState<'s2' | 's1' | 'planet'>('s2');
-
   const currentScenes = tab === 's2' ? scenes.s2 : tab === 's1' ? scenes.s1 : scenes.planet;
 
   return (
-    <div
-      className="absolute top-4 right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
-      style={{
-        background: 'rgba(8,8,9,0.95)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255,255,255,0.09)',
-        width: 280,
-        maxHeight: 'calc(100vh - 100px)',
-      }}
-    >
-      {/* Header */}
+    <div className="absolute top-4 right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
+      style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 280, maxHeight: 'calc(100vh - 100px)' }}>
       <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         <div>
           <p className="text-xs font-bold text-white">Imagens Satelitais</p>
@@ -310,31 +388,20 @@ function ScenesPanel({
           <span className="material-symbols-outlined text-sm">close</span>
         </button>
       </div>
-
-      {/* Tabs */}
       <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
           { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
           { key: 'planet', label: 'Planet', icon: 'public', color: '#34d399', desc: 'Alta Res · 3m' },
         ] as const).map(({ key, label, icon, color, desc }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl transition-all"
-            style={{
-              background: tab === key ? `${color}18` : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}`,
-            }}
-          >
+          <button key={key} onClick={() => setTab(key)} className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl transition-all"
+            style={{ background: tab === key ? `${color}18` : 'rgba(255,255,255,0.03)', border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}` }}>
             <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>{icon}</span>
             <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>{label}</span>
             <span className="text-[9px]" style={{ color: '#475569' }}>{desc}</span>
           </button>
         ))}
       </div>
-
-      {/* Lista de cenas */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5" style={{ maxHeight: 340 }}>
         {scenes.loading ? (
           <div className="flex flex-col items-center gap-2 py-8">
@@ -353,31 +420,22 @@ function ScenesPanel({
               {tab === 's2' ? 'cloud_off' : tab === 's1' ? 'signal_disconnected' : 'public_off'}
             </span>
             <p className="text-[10px]" style={{ color: '#64748b' }}>
-              {tab === 's2' ? 'Nenhuma imagem Sentinel-2 nos últimos 90 dias.' : tab === 's1' ? 'Nenhuma imagem Sentinel-1 nos últimos 90 dias.' : 'Nenhuma imagem Planet nos últimos 90 dias.'}
+              {tab === 'planet' ? 'Nenhuma imagem Planet nos últimos 90 dias.' : `Nenhuma imagem ${tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.`}
             </p>
           </div>
         ) : (
           currentScenes.map((scene) => {
             const key = `${fieldId}|${scene.source}|${scene.scene_id}`;
             return (
-              <SceneCard
-                key={scene.scene_id}
-                scene={scene}
-                isActive={activeSceneKey === key}
-                isLoading={overlayLoading && activeSceneKey === key}
-                onClick={() => onSelectScene(scene)}
-              />
+              <SceneCard key={scene.scene_id} scene={scene} isActive={activeSceneKey === key}
+                isLoading={overlayLoading && activeSceneKey === key} onClick={() => onSelectScene(scene)} />
             );
           })
         )}
       </div>
-
-      {/* Footer info */}
       <div className="px-4 py-2.5 flex flex-col gap-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          {tab === 'planet'
-            ? 'Fonte: Planet Labs · Cena PlanetScope (footprint da cena)'
-            : 'Catálogo: Copernicus · Earth Search STAC (gratuito)'}
+          {tab === 'planet' ? 'Fonte: Planet Labs · Cena PlanetScope' : 'Catálogo: Copernicus · Earth Search STAC (gratuito)'}
         </p>
         {tab !== 'planet' && (
           <p className="text-[9px] text-center" style={{ color: '#1e3a5f' }}>
@@ -389,10 +447,73 @@ function ScenesPanel({
   );
 }
 
+// ── Painel de formulário (criação e edição) ───────────────────────────────────
+
+function CamposAgronomicos({
+  form,
+  onChange,
+}: {
+  form: {
+    irrigacaoTipo: string;
+    adubacaoTipo: string;
+    ultimaAdubacao: string;
+    texturaSolo: string;
+    culturaAnterior: string;
+    rotacaoCulturas: string;
+  };
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={labelCls}>Irrigação</label>
+          <select className={selectCls} value={form.irrigacaoTipo} onChange={(e) => onChange('irrigacaoTipo', e.target.value)}>
+            {OPCOES_IRRIGACAO.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Textura do Solo</label>
+          <select className={selectCls} value={form.texturaSolo} onChange={(e) => onChange('texturaSolo', e.target.value)}>
+            {OPCOES_TEXTURA.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={labelCls}>Tipo de Adubação</label>
+          <select className={selectCls} value={form.adubacaoTipo} onChange={(e) => onChange('adubacaoTipo', e.target.value)}>
+            {OPCOES_ADUBACAO.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>Cultura Anterior</label>
+          <select className={selectCls} value={form.culturaAnterior} onChange={(e) => onChange('culturaAnterior', e.target.value)}>
+            {OPCOES_CULTURA_ANTERIOR.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+      {form.adubacaoTipo && (
+        <div>
+          <label className={labelCls}>Última Adubação</label>
+          <input type="date" className={inputCls} value={form.ultimaAdubacao} onChange={(e) => onChange('ultimaAdubacao', e.target.value)} />
+        </div>
+      )}
+      <div>
+        <label className={labelCls}>Rotação de Culturas</label>
+        <input className={inputCls} placeholder="Ex: Soja → Milho → Trigo" value={form.rotacaoCulturas} onChange={(e) => onChange('rotacaoCulturas', e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function FieldMap() {
-  const { currentLocation, locationStatus, fields, createField, removeField, activeFarmId, activeFieldId, setActiveField, setCurrentSatelliteScene } = useAppStore();
+  const {
+    currentLocation, locationStatus, fields, createField, updateField,
+    removeField, activeFarmId, activeFieldId, setActiveField, setCurrentSatelliteScene,
+  } = useAppStore();
 
   const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
   const [searchQuery, setSearchQuery] = useState('');
@@ -401,28 +522,51 @@ export default function FieldMap() {
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
   const [tempMarker, setTempMarker] = useState<{ lat: number; lng: number } | null>(null);
 
+  // ── Estado do desenho ─────────────────────────────────────────────────────
   const [drawMode, setDrawMode] = useState<DrawMode>('none');
   const [drawPoints, setDrawPoints] = useState<[number, number][]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
+
   const [fieldName, setFieldName] = useState('');
   const [fieldCultura, setFieldCultura] = useState('');
   const [fieldDataPlantio, setFieldDataPlantio] = useState('');
   const [fieldVariedade, setFieldVariedade] = useState('');
+  const [fieldIrrigacao, setFieldIrrigacao] = useState('');
+  const [fieldAdubacao, setFieldAdubacao] = useState('');
+  const [fieldUltimaAdubacao, setFieldUltimaAdubacao] = useState('');
+  const [fieldTextura, setFieldTextura] = useState('');
+  const [fieldCulturaAnterior, setFieldCulturaAnterior] = useState('');
+  const [fieldRotacao, setFieldRotacao] = useState('');
 
-  // Painel de cenas
+  // ── Estado do bloco de pesquisa ───────────────────────────────────────────
+  const [blockParentId, setBlockParentId] = useState<string | null>(null);
+  const [blockName, setBlockName] = useState('');
+  const [blockTratamento, setBlockTratamento] = useState('');
+  const [blockNumero, setBlockNumero] = useState('');
+
+  // ── Estado da edição ──────────────────────────────────────────────────────
+  const [editingField, setEditingField] = useState<Location | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: '', cultura: '', variedade: '', dataPlantio: '',
+    irrigacaoTipo: '', adubacaoTipo: '', ultimaAdubacao: '',
+    texturaSolo: '', culturaAnterior: '', rotacaoCulturas: '',
+  });
+
+  // ── Cenas e overlay ───────────────────────────────────────────────────────
   const [showScenesPanel, setShowScenesPanel] = useState(false);
   const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], planet: [], loading: false, error: null, fieldId: null });
-
-  // Overlay
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
   const [planetActivating, setPlanetActivating] = useState(false);
+
   const planetRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevUrlRef = useRef<string | null>(null);
   const loadingScenesFieldRef = useRef<string | null>(null);
 
   const center: [number, number] = currentLocation ? [currentLocation.lat, currentLocation.lng] : [-18.9188, -48.2768];
 
-  // ── Buscar cenas quando painel abre ──────────────────────────────────────
+  // ── Buscar cenas ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!showScenesPanel || !activeFieldId) return;
     if (scenes.fieldId === activeFieldId && !scenes.loading) return;
@@ -438,43 +582,26 @@ export default function FieldMap() {
           fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
           fetch(`${API_URL}/api/planet/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
         ]);
-
         const sentinelData = sentinelResp.status === 'fulfilled' && sentinelResp.value.ok
-          ? await sentinelResp.value.json()
-          : { s2: [], s1: [] };
-
+          ? await sentinelResp.value.json() : { s2: [], s1: [] };
         const planetData = planetResp.status === 'fulfilled' && planetResp.value.ok
-          ? await planetResp.value.json()
-          : { scenes: [] };
-
-        setScenes({
-          s2: sentinelData.s2 || [],
-          s1: sentinelData.s1 || [],
-          planet: planetData.scenes || [],
-          loading: false,
-          error: null,
-          fieldId: activeFieldId,
-        });
+          ? await planetResp.value.json() : { scenes: [] };
+        setScenes({ s2: sentinelData.s2 || [], s1: sentinelData.s1 || [], planet: planetData.scenes || [], loading: false, error: null, fieldId: activeFieldId });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
         setScenes({ s2: [], s1: [], planet: [], loading: false, error: msg, fieldId: activeFieldId });
       } finally {
-        if (loadingScenesFieldRef.current === activeFieldId) {
-          loadingScenesFieldRef.current = null;
-        }
+        if (loadingScenesFieldRef.current === activeFieldId) loadingScenesFieldRef.current = null;
       }
     };
 
     void fetchScenes();
   }, [showScenesPanel, activeFieldId, scenes.fieldId, scenes.loading]);
 
-  // ── Carregar overlay de cena selecionada ──────────────────────────────────
+  // ── Carregar overlay ──────────────────────────────────────────────────────
   const handleSelectScene = async (scene: SentinelScene) => {
     if (!activeFieldId) return;
-    const source = scene.source;
-    const date = scene.date || '';
-    const sceneId = scene.scene_id;
-
+    const { source, date = '', scene_id: sceneId } = scene;
     const sceneKey = `${activeFieldId}|${source}|${sceneId}`;
     if (overlay.sceneKey === sceneKey && overlay.url) return;
 
@@ -482,7 +609,6 @@ export default function FieldMap() {
     if (!activeField?.boundaries || activeField.boundaries.length < 3) return;
 
     const bounds = computeBoundsFromBoundaries(activeField.boundaries);
-
     setOverlay({ url: null, bounds, loading: true, error: null, sceneKey, cacheStatus: null, sceneDate: null });
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
 
@@ -491,33 +617,21 @@ export default function FieldMap() {
 
       if (source === 'planet') {
         if (!sceneId) return;
-        // Cancela retry anterior se houver
         if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
         setPlanetActivating(false);
 
-        const resp = await fetch(
-          `${API_URL}/api/planet/overlay?field_id=${activeFieldId}&scene_id=${sceneId}`,
-          { headers },
-        );
+        const resp = await fetch(`${API_URL}/api/planet/overlay?field_id=${activeFieldId}&scene_id=${sceneId}`, { headers });
         if (!resp.ok) {
           let errorMsg = `Erro ${resp.status}`;
-          try {
-            const payload = await resp.json() as { detail?: string };
-            errorMsg = payload.detail || errorMsg;
-          } catch {
-            errorMsg = await resp.text().catch(() => errorMsg);
-          }
+          try { const payload = await resp.json() as { detail?: string }; errorMsg = payload.detail || errorMsg; } catch { errorMsg = await resp.text().catch(() => errorMsg); }
           throw new Error(errorMsg);
         }
 
-        // Bounds do talhão retornados pelo backend (sempre field bounds, não scene bounds)
         const boundsHeader = resp.headers.get('X-Scene-Bounds');
         let overlayBounds: L.LatLngBoundsExpression = bounds;
         if (boundsHeader) {
           const [s, w, n, e] = boundsHeader.split(',').map(Number);
-          if (!isNaN(s) && !isNaN(w) && !isNaN(n) && !isNaN(e)) {
-            overlayBounds = [[s, w], [n, e]];
-          }
+          if (!isNaN(s) && !isNaN(w) && !isNaN(n) && !isNaN(e)) overlayBounds = [[s, w], [n, e]];
         }
 
         const blob = await resp.blob();
@@ -525,7 +639,6 @@ export default function FieldMap() {
         prevUrlRef.current = objectUrl;
         setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey, cacheStatus: null, sceneDate: null });
 
-        // Se asset ainda está sendo ativado, agenda retry em 30s para buscar alta resolução
         const assetStatus = resp.headers.get('X-Asset-Status');
         if (assetStatus === 'activating') {
           setPlanetActivating(true);
@@ -539,18 +652,10 @@ export default function FieldMap() {
       }
 
       const cloud = typeof scene.cloud_coverage === 'number' ? scene.cloud_coverage : null;
-      const params = new URLSearchParams({
-        field_id: activeFieldId,
-        source,
-        scene_date: date,
-        scene_id: sceneId,
-      });
-      if (cloud !== null) {
-        params.set('cloud_coverage', String(cloud));
-      }
-      const url = `${API_URL}/api/sentinel/overlay?${params.toString()}`;
-      const resp = await fetch(url, { headers });
+      const params = new URLSearchParams({ field_id: activeFieldId, source, scene_date: date, scene_id: sceneId });
+      if (cloud !== null) params.set('cloud_coverage', String(cloud));
 
+      const resp = await fetch(`${API_URL}/api/sentinel/overlay?${params.toString()}`, { headers });
       if (!resp.ok) {
         let errorMsg = `Erro ${resp.status}`;
         try {
@@ -560,44 +665,22 @@ export default function FieldMap() {
             errorMsg = json.detail || errorMsg;
           } else {
             const text = await resp.text();
-            // tenta parsear JSON mesmo sem content-type correto
-            try {
-              const json = JSON.parse(text) as { detail?: string };
-              errorMsg = json.detail || text.slice(0, 200) || errorMsg;
-            } catch {
-              errorMsg = text.slice(0, 200) || errorMsg;
-            }
+            try { const json = JSON.parse(text) as { detail?: string }; errorMsg = json.detail || text.slice(0, 200) || errorMsg; }
+            catch { errorMsg = text.slice(0, 200) || errorMsg; }
           }
-        } catch { /* mantém errorMsg padrão */ }
+        } catch { /* mantém errorMsg */ }
         throw new Error(errorMsg);
       }
 
       const blob = await resp.blob();
       const objectUrl = URL.createObjectURL(blob);
       prevUrlRef.current = objectUrl;
-      const cacheHeader = resp.headers.get('X-Cache');
+      const cacheStatus = resp.headers.get('X-Cache') as 'HIT' | 'MISS' | null;
       const sceneDateHeader = resp.headers.get('X-Scene-Date');
-      const cacheStatus = cacheHeader === 'HIT' || cacheHeader === 'MISS' ? cacheHeader : null;
-      setOverlay({
-        url: objectUrl,
-        bounds,
-        loading: false,
-        error: null,
-        sceneKey,
-        cacheStatus,
-        sceneDate: sceneDateHeader,
-      });
+      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey, cacheStatus: cacheStatus ?? null, sceneDate: sceneDateHeader });
 
-      // Compartilha metadados da cena com o chat (para análise da IA)
       if (activeFieldId && (source === 's1' || source === 's2')) {
-        setCurrentSatelliteScene({
-          fieldId: activeFieldId,
-          source: source as 's1' | 's2',
-          sceneId: sceneId,
-          sceneDate: date || sceneDateHeader || null,
-          sceneDate_br: scene.date_br || null,
-          cloudCoverage: typeof scene.cloud_coverage === 'number' ? scene.cloud_coverage : null,
-        });
+        setCurrentSatelliteScene({ fieldId: activeFieldId, source: source as 's1' | 's2', sceneId, sceneDate: date || sceneDateHeader || null, sceneDate_br: scene.date_br || null, cloudCoverage: typeof scene.cloud_coverage === 'number' ? scene.cloud_coverage : null });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro ao carregar imagem.';
@@ -606,7 +689,6 @@ export default function FieldMap() {
     }
   };
 
-  // Fechar painel e limpar overlay ao trocar talhão
   useEffect(() => {
     if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
     setPlanetActivating(false);
@@ -650,15 +732,56 @@ export default function FieldMap() {
     }
   };
 
-  // ── Desenho ───────────────────────────────────────────────────────────────
-  const handleMapClick = useCallback((ll: { lat: number; lng: number }) => {
-    if (drawMode !== 'drawing') return;
+  // ── Lógica de desenho ─────────────────────────────────────────────────────
+  const handlePlacePoint = useCallback((ll: { lat: number; lng: number }) => {
     setDrawPoints((p) => [...p, [ll.lat, ll.lng]]);
-  }, [drawMode]);
+  }, []);
 
   const resetForm = () => {
     setDrawPoints([]); setFieldName(''); setFieldCultura('');
-    setFieldDataPlantio(''); setFieldVariedade(''); setDrawMode('none');
+    setFieldDataPlantio(''); setFieldVariedade('');
+    setFieldIrrigacao(''); setFieldAdubacao(''); setFieldUltimaAdubacao('');
+    setFieldTextura(''); setFieldCulturaAnterior(''); setFieldRotacao('');
+    setShowAdvancedFields(false);
+    setBlockParentId(null); setBlockName(''); setBlockTratamento(''); setBlockNumero('');
+    setDrawMode('none');
+  };
+
+  const startDrawingBlock = (parentId: string) => {
+    resetForm();
+    setBlockParentId(parentId);
+    const nextNum = fields.filter((f) => f.parent_field_id === parentId).length + 1;
+    const letter = String.fromCharCode(64 + nextNum);
+    setBlockName(`Bloco ${letter}`);
+    setBlockNumero(String(nextNum));
+    setDrawMode('drawing_block');
+  };
+
+  const finishBlock = async () => {
+    if (!blockParentId || !activeFarmId) { alert('Selecione um talhão principal primeiro.'); return; }
+    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
+    const areaHa = polygonAreaHa(drawPoints);
+    if (areaHa < 0.001) { alert('Área muito pequena. Mínimo 0.001 ha.'); return; }
+    const name = blockName.trim() || `Bloco ${fields.filter((f) => f.parent_field_id === blockParentId).length + 1}`;
+    const centroid: [number, number] = [
+      drawPoints.reduce((s, p) => s + p[0], 0) / drawPoints.length,
+      drawPoints.reduce((s, p) => s + p[1], 0) / drawPoints.length,
+    ];
+    try {
+      setIsSaving(true);
+      await createField(activeFarmId, {
+        lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, areaHa,
+        parent_field_id: blockParentId,
+        field_type: 'research_block',
+        treatment_label: blockTratamento || undefined,
+        block_number: blockNumero ? parseInt(blockNumero, 10) : undefined,
+      });
+      resetForm();
+    } catch (err: unknown) {
+      alert(`Erro ao salvar bloco: ${err instanceof Error ? err.message : 'desconhecido'}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const finishDrawing = async () => {
@@ -674,7 +797,19 @@ export default function FieldMap() {
     ];
     try {
       setIsSaving(true);
-      await createField(activeFarmId, { lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, cultura: fieldCultura || undefined, dataPlantio: fieldDataPlantio || undefined, variedade: fieldVariedade || undefined, areaHa });
+      await createField(activeFarmId, {
+        lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints,
+        cultura: fieldCultura || undefined,
+        dataPlantio: fieldDataPlantio || undefined,
+        variedade: fieldVariedade || undefined,
+        areaHa,
+        irrigacaoTipo: fieldIrrigacao || undefined,
+        adubacaoTipo: fieldAdubacao || undefined,
+        ultimaAdubacao: fieldUltimaAdubacao || undefined,
+        texturaSolo: fieldTextura || undefined,
+        culturaAnterior: fieldCulturaAnterior || undefined,
+        rotacaoCulturas: fieldRotacao || undefined,
+      });
       resetForm();
     } catch (err: unknown) {
       alert(`Erro ao salvar: ${err instanceof Error ? err.message : 'desconhecido'}`);
@@ -683,13 +818,68 @@ export default function FieldMap() {
     }
   };
 
-  const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
+  // ── Lógica de edição ──────────────────────────────────────────────────────
+  const startEditing = (field: Location) => {
+    resetForm();
+    setEditingField(field);
+    setEditForm({
+      name: field.name || '',
+      cultura: field.cultura || '',
+      variedade: field.variedade || '',
+      dataPlantio: field.dataPlantio || '',
+      irrigacaoTipo: field.irrigacaoTipo || '',
+      adubacaoTipo: field.adubacaoTipo || '',
+      ultimaAdubacao: field.ultimaAdubacao || '',
+      texturaSolo: field.texturaSolo || '',
+      culturaAnterior: field.culturaAnterior || '',
+      rotacaoCulturas: field.rotacaoCulturas || '',
+    });
+  };
 
+  const cancelEdit = () => setEditingField(null);
+
+  const saveEdit = async () => {
+    if (!editingField?.id) return;
+    setIsSavingEdit(true);
+    try {
+      await updateField(editingField.id, {
+        name: editForm.name || editingField.name,
+        cultura: editForm.cultura || undefined,
+        variedade: editForm.variedade || undefined,
+        dataPlantio: editForm.dataPlantio || undefined,
+        irrigacaoTipo: editForm.irrigacaoTipo || undefined,
+        adubacaoTipo: editForm.adubacaoTipo || undefined,
+        ultimaAdubacao: editForm.ultimaAdubacao || undefined,
+        texturaSolo: editForm.texturaSolo || undefined,
+        culturaAnterior: editForm.culturaAnterior || undefined,
+        rotacaoCulturas: editForm.rotacaoCulturas || undefined,
+      });
+      setEditingField(null);
+    } catch (err) {
+      alert(`Erro ao salvar: ${err instanceof Error ? err.message : 'desconhecido'}`);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleEditFormChange = (key: string, value: string) => {
+    setEditForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
   const activeField = fields.find((f) => f.id === activeFieldId);
+
+  const panelStyle: React.CSSProperties = {
+    background: 'rgba(8,8,9,0.97)',
+    backdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255,255,255,0.09)',
+    minWidth: 440,
+    maxHeight: 'calc(100vh - 120px)',
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-full overflow-hidden" style={{ cursor: drawMode === 'drawing' ? 'crosshair' : 'default' }}>
+    <div className="relative w-full h-full overflow-hidden" style={{ cursor: (drawMode === 'drawing' || drawMode === 'drawing_block') ? 'crosshair' : 'default' }}>
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', background: '#080809' }} zoomControl={false}>
         <InitialCenterController />
         <ActiveFieldFlyController />
@@ -703,12 +893,9 @@ export default function FieldMap() {
           </>
         )}
 
-        {/* Overlay da cena selecionada */}
-        {overlay.url && overlay.bounds && (
-          <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />
-        )}
+        {overlay.url && overlay.bounds && <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />}
 
-        <MapClickHandler onMapClick={handleMapClick} />
+        <MapDrawHandler drawMode={drawMode === 'drawing_block' ? 'drawing' : drawMode} onPlacePoint={handlePlacePoint} />
 
         {tempMarker && <Marker position={[tempMarker.lat, tempMarker.lng]}><Popup>📍 {searchQuery}</Popup></Marker>}
         {currentLocation && locationStatus === 'precise' && !fields.some((s) => s.lat === currentLocation.lat) && (
@@ -716,34 +903,64 @@ export default function FieldMap() {
         )}
 
         {fields.map((loc, idx) => {
-          const color = FIELD_COLORS[idx % FIELD_COLORS.length];
+          const isBlock = loc.field_type === 'research_block';
+          const color = isBlock
+            ? ['#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#60a5fa', '#fb923c'][idx % 6]
+            : FIELD_COLORS[idx % FIELD_COLORS.length];
           const isActive = loc.id === activeFieldId;
+
           return (
             <Polygon
               key={loc.id}
               positions={loc.boundaries ?? [[loc.lat - 0.001, loc.lng - 0.001], [loc.lat - 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng + 0.001], [loc.lat + 0.001, loc.lng - 0.001]]}
-              pathOptions={{ color, fillColor: color, fillOpacity: isActive ? 0.08 : 0.2, weight: isActive ? 3 : 2, dashArray: isActive ? undefined : '4 2' }}
+              pathOptions={{
+                color,
+                fillColor: color,
+                fillOpacity: isBlock ? (isActive ? 0.35 : 0.25) : (isActive ? 0.08 : 0.2),
+                weight: isBlock ? (isActive ? 2.5 : 1.5) : (isActive ? 3 : 2),
+                dashArray: isBlock ? '3 3' : (isActive ? undefined : '4 2'),
+              }}
               eventHandlers={{ click: () => { if (loc.id) setActiveField(loc.id); } }}
             >
               <Tooltip permanent direction="center" className="leaflet-field-label" offset={[0, 0]}>
-                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: isBlock ? 9 : 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
                   {loc.name}
                 </span>
               </Tooltip>
               <Popup>
-                <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 190 }}>
+                <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 200 }}>
+                  {isBlock && (
+                    <p style={{ fontSize: 9, fontWeight: 600, color: '#34d399', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
+                      Bloco de Pesquisa {loc.parent_field_id ? `· ${fields.find((f) => f.id === loc.parent_field_id)?.name ?? ''}` : ''}
+                    </p>
+                  )}
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
-                  {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}</p>}
-                  {loc.boundaries && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>📐 {polygonAreaHa(loc.boundaries).toFixed(2)} ha</p>}
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
-                      style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
-                    >🛰 Ver Imagens</button>
-                    <button
-                      onClick={() => { if (loc.id && activeFarmId && window.confirm(`Remover "${loc.name}"?`)) removeField(activeFarmId, loc.id); }}
-                      style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                    >🗑 Remover</button>
+                  {loc.treatment_label && <p style={{ fontSize: 11, color: '#34d399', marginBottom: 2 }}>🧪 {loc.treatment_label}</p>}
+                  {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}{loc.variedade ? ` · ${loc.variedade}` : ''}</p>}
+                  {loc.boundaries && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>📐 {polygonAreaHa(loc.boundaries).toFixed(4)} ha</p>}
+                  {!isBlock && loc.irrigacaoTipo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>💧 {loc.irrigacaoTipo}</p>}
+                  {!isBlock && loc.texturaSolo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌍 Solo {loc.texturaSolo}</p>}
+                  <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+                    {!isBlock && (
+                      <button onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
+                        style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
+                        🛰 Ver Imagens
+                      </button>
+                    )}
+                    <button onClick={() => startEditing(loc)}
+                      style={{ fontSize: 11, color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
+                      ✏ Editar
+                    </button>
+                    {!isBlock && loc.id && (
+                      <button onClick={() => startDrawingBlock(loc.id!)}
+                        style={{ fontSize: 11, color: '#34d399', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
+                        🔬 + Bloco
+                      </button>
+                    )}
+                    <button onClick={() => { if (loc.id && activeFarmId && window.confirm(`Remover "${loc.name}"?`)) removeField(activeFarmId, loc.id); }}
+                      style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      🗑 Remover
+                    </button>
                   </div>
                 </div>
               </Popup>
@@ -751,11 +968,18 @@ export default function FieldMap() {
           );
         })}
 
-        {drawMode === 'drawing' && drawPoints.length > 0 && (
+        {(drawMode === 'drawing' || drawMode === 'drawing_block') && drawPoints.length > 0 && (
           <>
-            {drawPoints.length > 1 && <Polyline positions={[...drawPoints, drawPoints[0]]} pathOptions={{ color: '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }} />}
+            {drawPoints.length > 1 && (
+              <Polyline positions={[...drawPoints, drawPoints[0]]}
+                pathOptions={{ color: drawMode === 'drawing_block' ? '#34d399' : '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }} />
+            )}
             {drawPoints.map((pt, i) => (
-              <Marker key={i} position={pt} icon={L.divIcon({ className: '', html: '<div style="width:10px;height:10px;background:#ec5b13;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>', iconAnchor: [5, 5] })} />
+              <Marker key={i} position={pt} icon={L.divIcon({
+                className: '',
+                html: `<div style="width:10px;height:10px;background:${drawMode === 'drawing_block' ? '#34d399' : '#ec5b13'};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
+                iconAnchor: [5, 5],
+              })} />
             ))}
           </>
         )}
@@ -763,7 +987,6 @@ export default function FieldMap() {
         <ZoomControls />
       </MapContainer>
 
-      {/* CSS tooltip transparente */}
       <style>{`
         .leaflet-field-label { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
         .leaflet-field-label::before { display: none !important; }
@@ -771,76 +994,75 @@ export default function FieldMap() {
 
       {/* Painel de cenas Sentinel */}
       {showScenesPanel && activeFieldId && activeField && (
-        <ScenesPanel
-          fieldId={activeFieldId}
-          fieldName={activeField.name || 'Talhão'}
-          scenes={scenes}
-          activeSceneKey={overlay.sceneKey}
-          overlayLoading={overlay.loading}
-          onClose={() => setShowScenesPanel(false)}
-          onSelectScene={handleSelectScene}
-        />
+        <ScenesPanel fieldId={activeFieldId} fieldName={activeField.name || 'Talhão'} scenes={scenes}
+          activeSceneKey={overlay.sceneKey} overlayLoading={overlay.loading}
+          onClose={() => setShowScenesPanel(false)} onSelectScene={handleSelectScene} />
       )}
 
-      {/* Badge de loading/erro do overlay */}
+      {/* Badge loading/erro do overlay */}
       {(overlay.loading || overlay.error || planetActivating) && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           {overlay.loading && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white"
+              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
               <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin" />
               Carregando imagem...
             </div>
           )}
           {planetActivating && !overlay.loading && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(234,179,8,0.4)', color: '#fbbf24' }}>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
+              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(234,179,8,0.4)', color: '#fbbf24' }}>
               <div className="w-3 h-3 border-2 border-yellow-500/40 border-t-yellow-400 rounded-full animate-spin" />
               Processando imagem de alta resolução... (30s)
             </div>
           )}
           {!overlay.loading && !planetActivating && overlay.error && (
-            <div className="px-3 py-2.5 rounded-xl text-[10px] font-medium flex flex-col gap-1" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 320 }}>
-              <span className="font-bold flex items-center gap-1.5">
-                <span>⚠</span>
-                <span>Imagem satelital indisponível</span>
-              </span>
+            <div className="px-3 py-2.5 rounded-xl text-[10px] font-medium flex flex-col gap-1"
+              style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 320 }}>
+              <span className="font-bold flex items-center gap-1.5"><span>⚠</span><span>Imagem satelital indisponível</span></span>
               <span style={{ color: '#94a3b8' }}>{overlay.error}</span>
             </div>
           )}
         </div>
       )}
 
-      {/* Badge de overlay ativo */}
+      {/* Badge overlay ativo */}
       {overlay.url && !overlay.loading && overlay.sceneKey && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold" style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · True Color'}
-            {overlay.cacheStatus === 'HIT' && ' · Cache HIT'}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold"
+            style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
+            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · Cor Natural'}
+            {overlay.cacheStatus === 'HIT' && ' · Cache'}
             {overlay.cacheStatus === 'MISS' && ' · Gerado agora'}
-            {!overlay.cacheStatus && ' · Cache local'}
           </div>
         </div>
       )}
 
       {/* Barra de busca */}
-      {drawMode === 'none' && (
+      {drawMode === 'none' && !editingField && (
         <form onSubmit={handleSearch} className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto" style={{ minWidth: 300 }}>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1" style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(16px)', border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
+            style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(16px)', border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
-            <input className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none" placeholder="Buscar cidade ou coordenadas..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
+            <input className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none"
+              placeholder="Buscar cidade ou coordenadas..." value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
             {searchLoading && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />}
           </div>
-          <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13', flexShrink: 0 }}>Ir</button>
+          <button type="submit" disabled={searchLoading || !searchQuery.trim()} className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+            style={{ background: '#ec5b13', flexShrink: 0 }}>Ir</button>
         </form>
       )}
 
-      {searchError && drawMode === 'none' && (
-        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none" style={{ top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+      {searchError && drawMode === 'none' && !editingField && (
+        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none"
+          style={{ top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
           {searchError}
         </div>
       )}
 
       {/* Seletor de camadas */}
-      {drawMode === 'none' && (
+      {drawMode === 'none' && !editingField && (
         <div className="absolute top-4 left-4 z-[500] flex gap-1.5 pointer-events-auto">
           {([{ key: 'osm', label: 'OpenStreetMap' }, { key: 'esri', label: 'Satélite HD' }] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setMapLayer(key)} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
@@ -851,36 +1073,191 @@ export default function FieldMap() {
         </div>
       )}
 
-      {/* Botão Desenhar */}
-      {drawMode === 'none' && (
-        <button onClick={() => setDrawMode('drawing')} className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto" style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
+      {/* Botão Desenhar Talhão */}
+      {drawMode === 'none' && !editingField && (
+        <button onClick={() => { setEditingField(null); setDrawMode('drawing'); }}
+          className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto"
+          style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
           <span className="material-symbols-outlined text-base">add_location_alt</span>
           Desenhar Talhão
         </button>
       )}
 
-      {/* Controles de desenho */}
+      {/* Instrução de desenho */}
+      {(drawMode === 'drawing' || drawMode === 'drawing_block') && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none"
+          style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: `1px solid ${drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : 'rgba(236,91,19,0.3)'}` }}>
+          <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_block' ? '#34d399' : '#ec5b13' }}>draw</span>
+          {drawMode === 'drawing_block' ? '🔬 Bloco de Pesquisa — ' : ''}Pressione e arraste para posicionar cada vértice · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+        </div>
+      )}
+
+      {/* Painel de criação de talhão */}
       {drawMode === 'drawing' && (
-        <>
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none" style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(236,91,19,0.3)' }}>
-            <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>draw</span>
-            Clique para marcar vértices · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
+            {drawPoints.length} pontos · Novo Talhão
+          </p>
+
+          {/* Identificação */}
+          <input className={inputCls} placeholder="Nome do talhão" value={fieldName} onChange={(e) => setFieldName(e.target.value)} />
+          <div className="grid grid-cols-2 gap-2">
+            <input className={inputCls} placeholder="Cultura (ex: Soja)" value={fieldCultura} onChange={(e) => setFieldCultura(e.target.value)} />
+            <input className={inputCls} placeholder="Variedade" value={fieldVariedade} onChange={(e) => setFieldVariedade(e.target.value)} />
           </div>
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto" style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 420 }}>
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>{drawPoints.length} pontos · Novo Talhão</p>
-            <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Nome do talhão" value={fieldName} onChange={(e) => setFieldName(e.target.value)} />
-            <div className="grid grid-cols-2 gap-2">
-              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Cultura (ex: Soja)" value={fieldCultura} onChange={(e) => setFieldCultura(e.target.value)} />
-              <input className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40" placeholder="Variedade" value={fieldVariedade} onChange={(e) => setFieldVariedade(e.target.value)} />
+          <div>
+            <label className={labelCls}>Data de Plantio</label>
+            <input type="date" className={inputCls} value={fieldDataPlantio} onChange={(e) => setFieldDataPlantio(e.target.value)} />
+          </div>
+
+          {/* Toggle detalhes agronômicos */}
+          <button onClick={() => setShowAdvancedFields(!showAdvancedFields)}
+            className="flex items-center gap-2 text-[10px] font-semibold py-2 px-3 rounded-lg transition-all"
+            style={{ background: showAdvancedFields ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: showAdvancedFields ? '#60a5fa' : '#64748b' }}>
+            <span className="material-symbols-outlined text-sm">{showAdvancedFields ? 'expand_less' : 'expand_more'}</span>
+            Detalhes Agronômicos
+          </button>
+
+          {showAdvancedFields && (
+            <CamposAgronomicos
+              form={{ irrigacaoTipo: fieldIrrigacao, adubacaoTipo: fieldAdubacao, ultimaAdubacao: fieldUltimaAdubacao, texturaSolo: fieldTextura, culturaAnterior: fieldCulturaAnterior, rotacaoCulturas: fieldRotacao }}
+              onChange={(key, value) => {
+                if (key === 'irrigacaoTipo') setFieldIrrigacao(value);
+                else if (key === 'adubacaoTipo') setFieldAdubacao(value);
+                else if (key === 'ultimaAdubacao') setFieldUltimaAdubacao(value);
+                else if (key === 'texturaSolo') setFieldTextura(value);
+                else if (key === 'culturaAnterior') setFieldCulturaAnterior(value);
+                else if (key === 'rotacaoCulturas') setFieldRotacao(value);
+              }}
+            />
+          )}
+
+          {drawPoints.length >= 3 && (
+            <p className="text-[10px] text-slate-400 text-center">
+              Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span>
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>
+              {isSaving ? 'Salvando...' : 'Salvar Talhão'}
+            </button>
+            <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Painel de criação de bloco de pesquisa */}
+      {drawMode === 'drawing_block' && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(52,211,153,0.15)' }}>
+              <span className="text-sm">🔬</span>
             </div>
-            <input type="date" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 focus:outline-none focus:border-orange-500/40" value={fieldDataPlantio} onChange={(e) => setFieldDataPlantio(e.target.value)} />
-            {drawPoints.length >= 3 && <p className="text-[10px] text-slate-400 text-center">Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(2)} ha</span></p>}
-            <div className="flex gap-2">
-              <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>{isSaving ? 'Salvando...' : 'Salvar Talhão'}</button>
-              <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>Cancelar</button>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#34d399' }}>Bloco de Pesquisa</p>
+              {blockParentId && (
+                <p className="text-[10px]" style={{ color: '#64748b' }}>
+                  Talhão pai: {fields.find((f) => f.id === blockParentId)?.name}
+                </p>
+              )}
             </div>
           </div>
-        </>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelCls}>Nome do Bloco</label>
+              <input className={inputCls} placeholder="Ex: Bloco A" value={blockName} onChange={(e) => setBlockName(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Nº do Bloco</label>
+              <input type="number" min="1" className={inputCls} placeholder="1" value={blockNumero} onChange={(e) => setBlockNumero(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Material / Tratamento</label>
+            <input className={inputCls} placeholder="Ex: Variedade NK 7059 + 200 kg/ha NPK" value={blockTratamento} onChange={(e) => setBlockTratamento(e.target.value)} />
+          </div>
+
+          {drawPoints.length >= 3 && (
+            <p className="text-[10px] text-center" style={{ color: '#64748b' }}>
+              Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(4)} ha</span>
+              {' '}· {drawPoints.length} pontos
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={finishBlock} disabled={isSaving || drawPoints.length < 3}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+              style={{ background: '#34d399', color: '#051a12' }}>
+              {isSaving ? 'Salvando...' : 'Salvar Bloco'}
+            </button>
+            <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+              Cancelar
+            </button>
+          </div>
+
+          <p className="text-[9px] text-center" style={{ color: '#334155' }}>
+            Após salvar, adicione quantos blocos precisar no mesmo talhão
+          </p>
+        </div>
+      )}
+
+      {/* Painel de edição de talhão */}
+      {editingField && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#60a5fa' }}>Editar Talhão</p>
+              <p className="text-[11px] text-white font-semibold mt-0.5">{editingField.name}</p>
+            </div>
+            <button onClick={cancelEdit} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" style={{ color: '#64748b' }}>
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+
+          {/* Identificação */}
+          <div>
+            <label className={labelCls}>Nome do Talhão</label>
+            <input className={inputCls} value={editForm.name} onChange={(e) => handleEditFormChange('name', e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelCls}>Cultura</label>
+              <input className={inputCls} placeholder="Ex: Soja" value={editForm.cultura} onChange={(e) => handleEditFormChange('cultura', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Variedade</label>
+              <input className={inputCls} placeholder="Ex: NK 7059" value={editForm.variedade} onChange={(e) => handleEditFormChange('variedade', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Data de Plantio</label>
+            <input type="date" className={inputCls} value={editForm.dataPlantio} onChange={(e) => handleEditFormChange('dataPlantio', e.target.value)} />
+          </div>
+
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
+            <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#64748b' }}>Detalhes Agronômicos</p>
+            <CamposAgronomicos form={editForm} onChange={handleEditFormChange} />
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={saveEdit} disabled={isSavingEdit}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#60a5fa' }}>
+              {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
+            <button onClick={cancelEdit} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

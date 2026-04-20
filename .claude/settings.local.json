@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(npx tsc *)",
+      "Bash(gh pr create --title 'feat\\(talhões\\): campos agronômicos, arrastar pontos e edição inline' --body ' *)",
+      "Bash(npm run *)"
+    ]
+  }
+}
