@@ -28,6 +28,11 @@ export interface Location {
   texturaSolo?: string;
   culturaAnterior?: string;
   rotacaoCulturas?: string;
+  // Micro-áreas / blocos de pesquisa
+  parent_field_id?: string;
+  field_type?: 'standard' | 'research_block';
+  treatment_label?: string;
+  block_number?: number;
 }
 
 export interface Farm {
@@ -126,6 +131,10 @@ function mapDbToField(row: any): Location {
     texturaSolo: row.soil_texture ?? undefined,
     culturaAnterior: row.previous_crop ?? undefined,
     rotacaoCulturas: row.crop_rotation ?? undefined,
+    parent_field_id: row.parent_field_id ?? undefined,
+    field_type: (row.field_type ?? 'standard') as 'standard' | 'research_block',
+    treatment_label: row.treatment_label ?? undefined,
+    block_number: row.block_number ?? undefined,
   };
 }
 
@@ -147,6 +156,10 @@ function mapFieldToDb(field: Omit<Location, 'id'> & { farm_id: string; user_id: 
     soil_texture: field.texturaSolo ?? null,
     previous_crop: field.culturaAnterior ?? null,
     crop_rotation: field.rotacaoCulturas ?? null,
+    parent_field_id: (field as Location).parent_field_id ?? null,
+    field_type: (field as Location).field_type ?? 'standard',
+    treatment_label: (field as Location).treatment_label ?? null,
+    block_number: (field as Location).block_number ?? null,
   };
 }
 
@@ -382,7 +395,9 @@ export const useAppStore = create<AppState>()(
         if ('ultimaAdubacao' in updates)  dbUpdates.last_fertilization_date = updates.ultimaAdubacao ?? null;
         if ('texturaSolo' in updates)     dbUpdates.soil_texture          = updates.texturaSolo ?? null;
         if ('culturaAnterior' in updates) dbUpdates.previous_crop         = updates.culturaAnterior ?? null;
-        if ('rotacaoCulturas' in updates) dbUpdates.crop_rotation         = updates.rotacaoCulturas ?? null;
+        if ('rotacaoCulturas' in updates)   dbUpdates.crop_rotation          = updates.rotacaoCulturas ?? null;
+        if ('treatment_label' in updates)   dbUpdates.treatment_label        = updates.treatment_label ?? null;
+        if ('block_number' in updates)      dbUpdates.block_number           = updates.block_number ?? null;
 
         const { error } = await supabase
           .from('fields')

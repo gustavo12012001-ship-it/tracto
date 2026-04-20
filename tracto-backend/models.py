@@ -143,6 +143,10 @@ class FieldBase(BaseModel):
     soil_texture: str | None = Field(default=None, validation_alias=AliasChoices("soil_texture", "texturaSolo"))
     previous_crop: str | None = Field(default=None, validation_alias=AliasChoices("previous_crop", "culturaAnterior"))
     crop_rotation: str | None = Field(default=None, validation_alias=AliasChoices("crop_rotation", "rotacaoCulturas"))
+    parent_field_id: str | None = None
+    field_type: str | None = Field(default="standard")
+    treatment_label: str | None = Field(default=None, validation_alias=AliasChoices("treatment_label", "tratamento"))
+    block_number: int | None = Field(default=None, validation_alias=AliasChoices("block_number", "blocoNumero"))
 
 
 class FieldCreate(FieldBase):
