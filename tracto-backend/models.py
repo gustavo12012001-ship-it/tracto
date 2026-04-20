@@ -137,6 +137,12 @@ class FieldBase(BaseModel):
     boundaries: Any | None = None
     latitude: float = Field(validation_alias=AliasChoices("latitude", "lat"))
     longitude: float = Field(validation_alias=AliasChoices("longitude", "lng"))
+    irrigation_type: str | None = Field(default=None, validation_alias=AliasChoices("irrigation_type", "irrigacaoTipo"))
+    fertilization_type: str | None = Field(default=None, validation_alias=AliasChoices("fertilization_type", "adubacaoTipo"))
+    last_fertilization_date: str | None = Field(default=None, validation_alias=AliasChoices("last_fertilization_date", "ultimaAdubacao"))
+    soil_texture: str | None = Field(default=None, validation_alias=AliasChoices("soil_texture", "texturaSolo"))
+    previous_crop: str | None = Field(default=None, validation_alias=AliasChoices("previous_crop", "culturaAnterior"))
+    crop_rotation: str | None = Field(default=None, validation_alias=AliasChoices("crop_rotation", "rotacaoCulturas"))
 
 
 class FieldCreate(FieldBase):
@@ -182,6 +188,12 @@ class FieldIntelligenceSnapshot(BaseModel):
     planting_date: str | None = None
     variety: str | None = None
     area_ha: float | None = None
+    irrigation_type: str | None = None
+    fertilization_type: str | None = None
+    last_fertilization_date: str | None = None
+    soil_texture: str | None = None
+    previous_crop: str | None = None
+    crop_rotation: str | None = None
     weather: dict[str, Any]
     satellite: dict[str, Any]
     analysis: dict[str, Any]

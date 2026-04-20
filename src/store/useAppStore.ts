@@ -22,6 +22,12 @@ export interface Location {
   variedade?: string;
   areaHa?: number;
   farm_id?: string;
+  irrigacaoTipo?: string;
+  adubacaoTipo?: string;
+  ultimaAdubacao?: string;
+  texturaSolo?: string;
+  culturaAnterior?: string;
+  rotacaoCulturas?: string;
 }
 
 export interface Farm {
@@ -114,6 +120,12 @@ function mapDbToField(row: any): Location {
     boundaries: Array.isArray(row.boundaries)
       ? row.boundaries.map((p: [number, number]) => [Number(p[0]), Number(p[1])] as [number, number])
       : undefined,
+    irrigacaoTipo: row.irrigation_type ?? undefined,
+    adubacaoTipo: row.fertilization_type ?? undefined,
+    ultimaAdubacao: row.last_fertilization_date ?? undefined,
+    texturaSolo: row.soil_texture ?? undefined,
+    culturaAnterior: row.previous_crop ?? undefined,
+    rotacaoCulturas: row.crop_rotation ?? undefined,
   };
 }
 
@@ -129,6 +141,12 @@ function mapFieldToDb(field: Omit<Location, 'id'> & { farm_id: string; user_id: 
     planting_date: field.dataPlantio ?? null,
     area_ha: field.areaHa ?? null,
     boundaries: field.boundaries ?? null,
+    irrigation_type: field.irrigacaoTipo ?? null,
+    fertilization_type: field.adubacaoTipo ?? null,
+    last_fertilization_date: field.ultimaAdubacao ?? null,
+    soil_texture: field.texturaSolo ?? null,
+    previous_crop: field.culturaAnterior ?? null,
+    crop_rotation: field.rotacaoCulturas ?? null,
   };
 }
 
@@ -176,6 +194,7 @@ interface AppState {
   addFarm: (farm: Farm) => void;
   syncFields: () => Promise<void>;
   createField: (farmId: string, field: Omit<Location, 'id'>) => Promise<void>;
+  updateField: (fieldId: string, updates: Partial<Location>) => Promise<void>;
   removeField: (farmId: string, fieldId: string) => Promise<void>;
   addMessage: (role: 'user' | 'model', text: string) => void;
   clearChat: () => void;
@@ -344,6 +363,41 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ fields: [...state.fields, mapped] }));
         // Seleciona imediatamente o talhão criado e sincroniza fazenda ativa.
         get().setActiveField(mapped.id ?? null);
+      },
+
+      // ── updateField: patch no Supabase com campos informados ─────────────────
+      updateField: async (fieldId, updates) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuário não autenticado.');
+
+        const dbUpdates: Record<string, unknown> = {};
+        if ('name' in updates)           dbUpdates.name                  = updates.name ?? null;
+        if ('cultura' in updates)         dbUpdates.crop_type             = updates.cultura ?? null;
+        if ('variedade' in updates)       dbUpdates.variety               = updates.variedade ?? null;
+        if ('dataPlantio' in updates)     dbUpdates.planting_date         = updates.dataPlantio ?? null;
+        if ('areaHa' in updates)          dbUpdates.area_ha               = updates.areaHa ?? null;
+        if ('boundaries' in updates)      dbUpdates.boundaries            = updates.boundaries ?? null;
+        if ('irrigacaoTipo' in updates)   dbUpdates.irrigation_type       = updates.irrigacaoTipo ?? null;
+        if ('adubacaoTipo' in updates)    dbUpdates.fertilization_type    = updates.adubacaoTipo ?? null;
+        if ('ultimaAdubacao' in updates)  dbUpdates.last_fertilization_date = updates.ultimaAdubacao ?? null;
+        if ('texturaSolo' in updates)     dbUpdates.soil_texture          = updates.texturaSolo ?? null;
+        if ('culturaAnterior' in updates) dbUpdates.previous_crop         = updates.culturaAnterior ?? null;
+        if ('rotacaoCulturas' in updates) dbUpdates.crop_rotation         = updates.rotacaoCulturas ?? null;
+
+        const { error } = await supabase
+          .from('fields')
+          .update(dbUpdates)
+          .eq('id', fieldId)
+          .eq('user_id', user.id);
+
+        if (error) {
+          console.error('[Store] Erro ao atualizar talhão:', error);
+          throw error;
+        }
+
+        set((state) => ({
+          fields: state.fields.map((f) => f.id === fieldId ? { ...f, ...updates } : f),
+        }));
       },
 
       // ── removeField: delete no Supabase + garantia de consistência ───────────
