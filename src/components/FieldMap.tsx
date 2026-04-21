@@ -15,7 +15,7 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import useAppStore, { type Location } from '../store/useAppStore';
+import useAppStore, { type Location, type Farm } from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
 import { API_URL } from '../services/api';
 
@@ -28,7 +28,7 @@ L.Icon.Default.mergeOptions({
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type DrawMode = 'none' | 'drawing' | 'drawing_block';
+type DrawMode = 'none' | 'drawing' | 'drawing_block' | 'drawing_farm';
 type MapLayer = 'osm' | 'esri';
 
 interface SentinelScene {
@@ -511,9 +511,11 @@ function CamposAgronomicos({
 
 export default function FieldMap() {
   const {
-    currentLocation, locationStatus, fields, createField, updateField,
-    removeField, activeFarmId, activeFieldId, setActiveField, setCurrentSatelliteScene,
+    currentLocation, locationStatus, fields, farms, createField, updateField, createFarm, updateFarmBoundaries,
+    removeField, activeFarmId, activeFieldId, setActiveField, setActiveFarm, setCurrentSatelliteScene,
   } = useAppStore();
+
+  const activeFarm: Farm | undefined = farms.find((f) => f.id === activeFarmId);
 
   const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
   const [searchQuery, setSearchQuery] = useState('');
@@ -544,6 +546,12 @@ export default function FieldMap() {
   const [blockName, setBlockName] = useState('');
   const [blockTratamento, setBlockTratamento] = useState('');
   const [blockNumero, setBlockNumero] = useState('');
+
+  // ── Estado do cadastro de fazenda ─────────────────────────────────────────
+  const [farmDrawName, setFarmDrawName] = useState('');
+  const [farmDrawCity, setFarmDrawCity] = useState('');
+  const [farmDrawTarget, setFarmDrawTarget] = useState<'new' | string>('new'); // 'new' ou farmId
+  const [isSavingFarm, setIsSavingFarm] = useState(false);
 
   // ── Estado da edição ──────────────────────────────────────────────────────
   const [editingField, setEditingField] = useState<Location | null>(null);
@@ -744,7 +752,42 @@ export default function FieldMap() {
     setFieldTextura(''); setFieldCulturaAnterior(''); setFieldRotacao('');
     setShowAdvancedFields(false);
     setBlockParentId(null); setBlockName(''); setBlockTratamento(''); setBlockNumero('');
+    setFarmDrawName(''); setFarmDrawCity(''); setFarmDrawTarget('new');
     setDrawMode('none');
+  };
+
+  const startDrawingFarm = (farm?: Farm) => {
+    resetForm();
+    if (farm) {
+      setFarmDrawTarget(farm.id);
+      setFarmDrawName(farm.name);
+      setFarmDrawCity(farm.city ?? farm.description ?? '');
+    } else {
+      setFarmDrawTarget('new');
+      setFarmDrawName('');
+      setFarmDrawCity('');
+    }
+    setDrawMode('drawing_farm');
+  };
+
+  const finishFarmDraw = async () => {
+    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos para definir a área da fazenda.'); return; }
+    const name = farmDrawName.trim();
+    if (!name) { alert('Informe o nome da fazenda.'); return; }
+    setIsSavingFarm(true);
+    try {
+      if (farmDrawTarget === 'new') {
+        const farm = await createFarm(name, farmDrawCity, drawPoints);
+        setActiveFarm(farm.id);
+      } else {
+        await updateFarmBoundaries(farmDrawTarget, drawPoints, name, farmDrawCity);
+      }
+      resetForm();
+    } catch (err) {
+      alert(`Erro ao salvar fazenda: ${err instanceof Error ? err.message : 'desconhecido'}`);
+    } finally {
+      setIsSavingFarm(false);
+    }
   };
 
   const startDrawingBlock = (parentId: string) => {
@@ -879,7 +922,7 @@ export default function FieldMap() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-full overflow-hidden" style={{ cursor: (drawMode === 'drawing' || drawMode === 'drawing_block') ? 'crosshair' : 'default' }}>
+    <div className="relative w-full h-full overflow-hidden" style={{ cursor: drawMode !== 'none' ? 'crosshair' : 'default' }}>
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', background: '#080809' }} zoomControl={false}>
         <InitialCenterController />
         <ActiveFieldFlyController />
@@ -895,7 +938,20 @@ export default function FieldMap() {
 
         {overlay.url && overlay.bounds && <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />}
 
-        <MapDrawHandler drawMode={drawMode === 'drawing_block' ? 'drawing' : drawMode} onPlacePoint={handlePlacePoint} />
+        <MapDrawHandler drawMode={drawMode !== 'none' ? 'drawing' : 'none'} onPlacePoint={handlePlacePoint} />
+
+        {/* Polígonos das fazendas — camada de fundo */}
+        {farms.map((farm) => farm.boundaries && farm.boundaries.length >= 3 ? (
+          <Polygon
+            key={`farm-${farm.id}`}
+            positions={farm.boundaries}
+            pathOptions={{ color: farm.id === activeFarmId ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)', fillColor: 'rgba(255,255,255,0.03)', fillOpacity: 1, weight: 2, dashArray: '8 5' }}
+          >
+            <Tooltip sticky direction="top">
+              <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700 }}>🏡 {farm.name}</span>
+            </Tooltip>
+          </Polygon>
+        ) : null)}
 
         {tempMarker && <Marker position={[tempMarker.lat, tempMarker.lng]}><Popup>📍 {searchQuery}</Popup></Marker>}
         {currentLocation && locationStatus === 'precise' && !fields.some((s) => s.lat === currentLocation.lat) && (
@@ -1073,28 +1129,59 @@ export default function FieldMap() {
         </div>
       )}
 
-      {/* Botão Desenhar Talhão */}
+      {/* Botões de ação no mapa */}
       {drawMode === 'none' && !editingField && (
-        <button onClick={() => { setEditingField(null); setDrawMode('drawing'); }}
-          className="absolute top-4 right-4 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 pointer-events-auto"
-          style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
-          <span className="material-symbols-outlined text-base">add_location_alt</span>
-          Desenhar Talhão
-        </button>
+        <div className="absolute top-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
+          <button onClick={() => { setEditingField(null); setDrawMode('drawing'); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90"
+            style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
+            <span className="material-symbols-outlined text-base">add_location_alt</span>
+            Desenhar Talhão
+          </button>
+          {activeFarm ? (
+            <button onClick={() => startDrawingFarm(activeFarm)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
+              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
+              <span className="material-symbols-outlined text-base">fence</span>
+              {activeFarm.boundaries ? 'Redefinir Área' : 'Definir Área da Fazenda'}
+            </button>
+          ) : (
+            <button onClick={() => startDrawingFarm()}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
+              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
+              <span className="material-symbols-outlined text-base">add_home</span>
+              Nova Fazenda
+            </button>
+          )}
+        </div>
       )}
 
       {/* Instrução de desenho */}
-      {(drawMode === 'drawing' || drawMode === 'drawing_block') && (
+      {drawMode !== 'none' && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none"
-          style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: `1px solid ${drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : 'rgba(236,91,19,0.3)'}` }}>
-          <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_block' ? '#34d399' : '#ec5b13' }}>draw</span>
-          {drawMode === 'drawing_block' ? '🔬 Bloco de Pesquisa — ' : ''}Pressione e arraste para posicionar cada vértice · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+          style={{
+            background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)',
+            border: `1px solid ${drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : drawMode === 'drawing_farm' ? 'rgba(255,255,255,0.3)' : 'rgba(236,91,19,0.3)'}`,
+          }}>
+          <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#fff' : '#ec5b13' }}>draw</span>
+          {drawMode === 'drawing_block' ? '🔬 Bloco — ' : drawMode === 'drawing_farm' ? '🏡 Fazenda — ' : ''}
+          Pressione e arraste para posicionar cada vértice · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
         </div>
       )}
 
       {/* Painel de criação de talhão */}
       {drawMode === 'drawing' && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+          {activeFarm && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}>
+              <span className="text-sm">🏡</span>
+              <p className="text-[11px] font-semibold text-white">{activeFarm.name}</p>
+              {(activeFarm.city ?? activeFarm.description) && (
+                <p className="text-[10px] ml-1" style={{ color: '#64748b' }}>{activeFarm.city ?? activeFarm.description}</p>
+              )}
+            </div>
+          )}
+
           <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
             {drawPoints.length} pontos · Novo Talhão
           </p>
@@ -1142,6 +1229,50 @@ export default function FieldMap() {
             <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3}
               className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>
               {isSaving ? 'Salvando...' : 'Salvar Talhão'}
+            </button>
+            <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Painel de cadastro / edição de fazenda */}
+      {drawMode === 'drawing_farm' && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto" style={panelStyle}>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <span className="text-sm">🏡</span>
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white">
+              {farmDrawTarget === 'new' ? 'Nova Fazenda' : 'Editar Área da Fazenda'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelCls}>Nome da Fazenda *</label>
+              <input className={inputCls} placeholder="Ex: Fazenda Santa Rosa" value={farmDrawName} onChange={(e) => setFarmDrawName(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Município / UF</label>
+              <input className={inputCls} placeholder="Ex: Uberlândia - MG" value={farmDrawCity} onChange={(e) => setFarmDrawCity(e.target.value)} />
+            </div>
+          </div>
+
+          {drawPoints.length >= 3 && (
+            <p className="text-[10px] text-center" style={{ color: '#64748b' }}>
+              Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(1)} ha</span>
+              {' '}· {drawPoints.length} pontos
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={() => void finishFarmDraw()} disabled={isSavingFarm || drawPoints.length < 3 || !farmDrawName.trim()}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)' }}>
+              {isSavingFarm ? 'Salvando...' : farmDrawTarget === 'new' ? 'Criar Fazenda' : 'Salvar Área'}
             </button>
             <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>

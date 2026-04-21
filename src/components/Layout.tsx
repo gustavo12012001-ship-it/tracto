@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
@@ -237,6 +237,8 @@ export default function Layout() {
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
 
   // Apply theme on mount + whenever it changes
   useEffect(() => { applyTheme(theme); }, [theme]);
@@ -246,16 +248,30 @@ export default function Layout() {
   const {
     farms,
     fields,
+    alerts,
     activeFarmId,
     activeFieldId,
     setActiveFarm,
     setActiveField,
     focusActiveField,
+    dismissAlert,
     currentLocation,
     resetStore,
     weatherCache,
     syncFromBackend,
   } = useAppStore();
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    if (!showNotifications) return;
+    const handler = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showNotifications]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -577,10 +593,78 @@ export default function Layout() {
               </div>
 
               {/* Notifications */}
-              <button className="relative p-2 rounded-lg transition-all" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>notifications</span>
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2" style={{ background: '#ef4444', borderColor: 'var(--bg)' }} />
-              </button>
+              <div className="relative" ref={bellRef}>
+                <button
+                  onClick={() => setShowNotifications((v) => !v)}
+                  className="relative p-2 rounded-lg transition-all hover:bg-white/5"
+                  style={{ background: showNotifications ? 'rgba(236,91,19,0.12)' : 'var(--surface)', border: `1px solid ${showNotifications ? 'rgba(236,91,19,0.3)' : 'var(--border)'}` }}
+                >
+                  <span className="material-symbols-outlined text-base" style={{ color: showNotifications ? '#ec5b13' : 'var(--muted)' }}>notifications</span>
+                  {alerts.filter((a) => !a.dismissed).length > 0 && (
+                    <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
+                      style={{ background: '#ef4444', color: '#fff', border: '2px solid var(--bg)' }}>
+                      {alerts.filter((a) => !a.dismissed).length > 9 ? '9+' : alerts.filter((a) => !a.dismissed).length}
+                    </span>
+                  )}
+                </button>
+
+                {/* Dropdown de notificações */}
+                {showNotifications && (
+                  <div className="absolute right-0 top-full mt-2 z-[600] rounded-2xl overflow-hidden flex flex-col"
+                    style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 320, maxHeight: 420 }}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                      <p className="text-xs font-bold text-white">Notificações</p>
+                      {alerts.filter((a) => !a.dismissed).length > 0 && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+                          {alerts.filter((a) => !a.dismissed).length} nova{alerts.filter((a) => !a.dismissed).length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Lista */}
+                    <div className="overflow-y-auto flex-1" style={{ maxHeight: 300 }}>
+                      {alerts.filter((a) => !a.dismissed).length === 0 ? (
+                        <div className="flex flex-col items-center gap-2 py-10">
+                          <span className="material-symbols-outlined text-3xl" style={{ color: '#1e3a2e' }}>check_circle</span>
+                          <p className="text-xs font-semibold" style={{ color: '#4ade80' }}>Tudo em ordem</p>
+                          <p className="text-[10px] text-center px-6" style={{ color: '#475569' }}>Sem alertas ativos nos seus talhões.</p>
+                        </div>
+                      ) : (
+                        alerts.filter((a) => !a.dismissed).slice(0, 8).map((alert) => (
+                          <div key={alert.id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/3 transition-all"
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <span className="text-base flex-shrink-0 mt-0.5">
+                              {alert.type === 'critical' ? '🔴' : alert.type === 'warning' ? '🟡' : 'ℹ️'}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-white leading-tight">{alert.title}</p>
+                              <p className="text-[10px] mt-0.5 line-clamp-2" style={{ color: '#64748b' }}>{alert.message}</p>
+                              {alert.field && <p className="text-[9px] mt-1" style={{ color: '#475569' }}>📍 {alert.field}</p>}
+                            </div>
+                            <button onClick={() => dismissAlert(alert.id)}
+                              className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-white/10 transition-all"
+                              style={{ color: '#475569' }}>
+                              <span className="material-symbols-outlined text-xs">close</span>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-4 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <button
+                        onClick={() => { navigate('/app/alerts'); setShowNotifications(false); }}
+                        className="w-full py-2 rounded-xl text-xs font-semibold text-white transition-all hover:opacity-80"
+                        style={{ background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.25)', color: '#ec5b13' }}>
+                        Ver todos os alertas
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </header>
 
