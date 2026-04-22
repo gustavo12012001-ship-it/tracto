@@ -382,44 +382,23 @@ export const useAppStore = create<AppState>()(
         get().setActiveField(mapped.id ?? null);
       },
 
-      // ── createFarm: cria fazenda nova direto no Supabase ─────────────────────
+      // ── createFarm: cria fazenda via API ─────────────────────────────────────
       createFarm: async (name, city, boundaries) => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Usuário não autenticado.');
-
-        const insertPayload: Record<string, unknown> = { name, description: city ?? null, user_id: user.id, is_default: false };
-        if (boundaries && boundaries.length > 0) insertPayload.boundaries = boundaries;
-
-        const { data, error } = await supabase
-          .from('farms')
-          .insert(insertPayload)
-          .select()
-          .single();
-
-        if (error) throw new Error(error.message ?? JSON.stringify(error));
-
-        const newFarm: Farm = { id: data.id, name: data.name, description: data.description, city: data.description ?? undefined, boundaries: data.boundaries ?? undefined, fields: [] };
+        const { farmService } = await import('../services/farm_service');
+        const payload: Partial<Farm> = { name, description: city ?? undefined };
+        if (boundaries && boundaries.length > 0) payload.boundaries = boundaries;
+        const newFarm = await farmService.saveFarm(payload);
         set((state) => ({ farms: [...state.farms, newFarm], activeFarmId: state.activeFarmId ?? newFarm.id }));
         return newFarm;
       },
 
-      // ── updateFarmBoundaries: atualiza polígono e nome da fazenda ─────────────
+      // ── updateFarmBoundaries: atualiza polígono via API ───────────────────────
       updateFarmBoundaries: async (farmId, boundaries, name, city) => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Usuário não autenticado.');
-
-        const updates: Record<string, unknown> = { boundaries };
-        if (name) updates.name = name;
-        if (city !== undefined) { updates.description = city; }
-
-        const { error } = await supabase
-          .from('farms')
-          .update(updates)
-          .eq('id', farmId)
-          .eq('user_id', user.id);
-
-        if (error) throw new Error(error.message ?? JSON.stringify(error));
-
+        const { farmService } = await import('../services/farm_service');
+        const payload: Partial<Farm> = { id: farmId, boundaries };
+        if (name) payload.name = name;
+        if (city !== undefined) payload.description = city;
+        await farmService.saveFarm(payload);
         set((state) => ({
           farms: state.farms.map((f) => f.id === farmId
             ? { ...f, boundaries, ...(name ? { name } : {}), ...(city !== undefined ? { city, description: city } : {}) }
