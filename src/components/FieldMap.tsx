@@ -538,6 +538,9 @@ export default function FieldMap() {
   const [farmDrawTarget, setFarmDrawTarget] = useState<'new' | string>('new'); // 'new' ou farmId
   const [isSavingFarm, setIsSavingFarm] = useState(false);
 
+  // ── Menu de ações do mapa ─────────────────────────────────────────────────
+  const [actionsOpen, setActionsOpen] = useState(false);
+
   // ── Modal de nova fazenda ─────────────────────────────────────────────────
   const [showNewFarmModal, setShowNewFarmModal] = useState(false);
   const [newFarmName, setNewFarmName] = useState('');
@@ -1163,29 +1166,50 @@ export default function FieldMap() {
         </div>
       )}
 
-      {/* Botões de ação no mapa */}
+      {/* Botões de ação no mapa — dropdown colapsável */}
       {drawMode === 'none' && !editingField && (
-        <div className="absolute top-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
-          <button onClick={() => { setEditingField(null); setDrawFarmId(activeFarmId); setDrawMode('drawing'); }}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90"
+        <div className="absolute top-4 right-4 z-[500] flex flex-col items-end gap-1 pointer-events-auto">
+          {/* Botão principal / toggle */}
+          <button
+            onClick={() => setActionsOpen((v) => !v)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-all"
             style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
-            <span className="material-symbols-outlined text-base">add_location_alt</span>
-            Desenhar Talhão
+            <span className="material-symbols-outlined text-base">
+              {actionsOpen ? 'close' : 'add'}
+            </span>
+            {actionsOpen ? 'Fechar' : 'Ações'}
+            <span
+              className="material-symbols-outlined text-base transition-transform duration-200"
+              style={{ transform: actionsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              expand_more
+            </span>
           </button>
-          {activeFarm && (
-            <button onClick={() => startDrawingFarm(activeFarm)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
-              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
-              <span className="material-symbols-outlined text-base">fence</span>
-              {activeFarm.boundaries ? 'Redefinir Área' : 'Definir Área da Fazenda'}
-            </button>
+
+          {/* Opções expansíveis */}
+          {actionsOpen && (
+            <div className="flex flex-col gap-1 mt-0.5">
+              <button onClick={() => { setActionsOpen(false); setEditingField(null); setDrawFarmId(activeFarmId); setDrawMode('drawing'); }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.35)', color: '#ec5b13' }}>
+                <span className="material-symbols-outlined text-base">add_location_alt</span>
+                Desenhar Talhão
+              </button>
+              {activeFarm && (
+                <button onClick={() => { setActionsOpen(false); startDrawingFarm(activeFarm); }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                  style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', color: '#94a3b8' }}>
+                  <span className="material-symbols-outlined text-base">fence</span>
+                  {activeFarm.boundaries ? 'Redefinir Área' : 'Definir Área da Fazenda'}
+                </button>
+              )}
+              <button onClick={() => { setActionsOpen(false); setShowNewFarmModal(true); }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', color: '#94a3b8' }}>
+                <span className="material-symbols-outlined text-base">add_home</span>
+                Nova Fazenda
+              </button>
+            </div>
           )}
-          <button onClick={() => setShowNewFarmModal(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
-            style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
-            <span className="material-symbols-outlined text-base">add_home</span>
-            Nova Fazenda
-          </button>
         </div>
       )}
 
