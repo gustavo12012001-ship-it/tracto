@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { farmService } from '../services/farm_service';
 import { useAppStore } from '../store/useAppStore';
 
 type Tab = 'perfil' | 'fazenda' | 'seguranca' | 'privacidade' | 'notificacoes';
@@ -206,32 +205,67 @@ function PerfilTab() {
 // TAB: FAZENDA
 // ═══════════════════════════════════════════════════════════════════════════════
 function FazendaTab() {
-  const { farms, syncFromBackend } = useAppStore();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editCity, setEditCity] = useState('');
+  const { farms, fields, updateFarmInfo, deleteFarm, updateField, removeField } = useAppStore();
+  const [editingFarmId, setEditingFarmId] = useState<string | null>(null);
+  const [editFarmName, setEditFarmName] = useState('');
+  const [editFarmCity, setEditFarmCity] = useState('');
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editFieldName, setEditFieldName] = useState('');
+  const [editFieldCultura, setEditFieldCultura] = useState('');
+  const [editFieldVariedade, setEditFieldVariedade] = useState('');
+  const [editFieldPlantio, setEditFieldPlantio] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
 
-  const startEdit = (farm: { id: string; name: string; description?: string }) => {
-    setEditingId(farm.id);
-    setEditName(farm.name);
-    // Use description as fallback for city (since there's no dedicated city field in the model)
-    setEditCity(farm.description ?? '');
-    setToast(null);
-  };
-
-  const save = async () => {
-    if (!editingId) return;
+  const saveFarm = async () => {
+    if (!editingFarmId) return;
     setLoading(true);
     setToast(null);
     try {
-      await farmService.saveFarm({ id: editingId, name: editName.trim(), description: editCity.trim() });
-      await syncFromBackend();
-      setEditingId(null);
-      setToast({ msg: 'Fazenda atualizada com sucesso!', type: 'ok' });
+      await updateFarmInfo(editingFarmId, editFarmName.trim(), editFarmCity.trim());
+      setEditingFarmId(null);
+      setToast({ msg: 'Fazenda atualizada!', type: 'ok' });
     } catch {
-      setToast({ msg: 'Erro ao salvar fazenda. Tente novamente.', type: 'err' });
+      setToast({ msg: 'Erro ao salvar fazenda.', type: 'err' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteFarm = async (farmId: string, farmName: string) => {
+    if (!window.confirm(`Excluir a fazenda "${farmName}" e todos os seus talhões?`)) return;
+    setLoading(true);
+    try {
+      await deleteFarm(farmId);
+      setToast({ msg: 'Fazenda excluída.', type: 'ok' });
+    } catch {
+      setToast({ msg: 'Erro ao excluir fazenda.', type: 'err' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveField = async (fieldId: string, data: { name: string; cultura?: string; variedade?: string; dataPlantio?: string }) => {
+    setLoading(true);
+    try {
+      await updateField(fieldId, data);
+      setEditingFieldId(null);
+      setToast({ msg: 'Talhão atualizado!', type: 'ok' });
+    } catch {
+      setToast({ msg: 'Erro ao salvar talhão.', type: 'err' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteField = async (farmId: string, fieldId: string, fieldName: string) => {
+    if (!window.confirm(`Excluir o talhão "${fieldName}"?`)) return;
+    setLoading(true);
+    try {
+      await removeField(farmId, fieldId);
+      setToast({ msg: 'Talhão excluído.', type: 'ok' });
+    } catch {
+      setToast({ msg: 'Erro ao excluir talhão.', type: 'err' });
     } finally {
       setLoading(false);
     }
@@ -246,72 +280,148 @@ function FazendaTab() {
           </p>
         )}
 
-        <div className="flex flex-col gap-3">
-          {farms.map((farm) => (
-            <div
-              key={farm.id}
-              className="rounded-xl border p-4 flex flex-col gap-3"
-              style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.02)' }}
-            >
-              {editingId === farm.id ? (
-                <>
-                  <Field label="Nome da Propriedade">
-                    <input
-                      className={inputCls}
-                      style={inputStyle}
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      placeholder="Nome da fazenda"
-                    />
-                  </Field>
-                  <Field label="Município / Cidade">
-                    <input
-                      className={inputCls}
-                      style={inputStyle}
-                      value={editCity}
-                      onChange={(e) => setEditCity(e.target.value)}
-                      placeholder="Ex: Uberlândia - MG"
-                    />
-                  </Field>
-                  <div className="flex gap-2">
+        <div className="flex flex-col gap-4">
+          {farms.map((farm) => {
+            const farmFields = fields.filter((f) => f.farm_id === farm.id);
+            return (
+              <div
+                key={farm.id}
+                className="rounded-xl border flex flex-col overflow-hidden"
+                style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.02)' }}
+              >
+                {/* Farm header */}
+                {editingFarmId === farm.id ? (
+                  <div className="p-4 flex flex-col gap-3" style={{ background: 'rgba(236,91,19,0.05)', borderBottom: '1px solid var(--border)' }}>
+                    <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--primary)' }}>Editar Fazenda</p>
+                    <Field label="Nome da Propriedade">
+                      <input className={inputCls} style={inputStyle} value={editFarmName} onChange={(e) => setEditFarmName(e.target.value)} placeholder="Nome da fazenda" />
+                    </Field>
+                    <Field label="Município / Estado">
+                      <input className={inputCls} style={inputStyle} value={editFarmCity} onChange={(e) => setEditFarmCity(e.target.value)} placeholder="Ex: Uberlândia - MG" />
+                    </Field>
+                    <div className="flex gap-2">
+                      <button onClick={() => void saveFarm()} disabled={loading} className={btnPrimary} style={{ background: 'var(--primary)', color: '#fff' }}>
+                        {loading && <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>}
+                        Salvar
+                      </button>
+                      <button onClick={() => setEditingFarmId(null)} className={btnPrimary} style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid var(--border)' }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 p-4" style={{ borderBottom: farmFields.length > 0 ? '1px solid var(--border)' : undefined }}>
+                    <span className="material-symbols-outlined" style={{ color: 'var(--primary)' }}>home_work</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white">{farm.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                        {(farm as unknown as { description?: string }).description || 'Município não informado'} · {farmFields.length} talhão(ões)
+                      </p>
+                    </div>
                     <button
-                      onClick={() => void save()}
+                      onClick={() => { setEditingFarmId(farm.id); setEditFarmName(farm.name); setEditFarmCity((farm as unknown as { description?: string }).description ?? ''); setEditingFieldId(null); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-white/5"
+                      style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+                      title="Editar fazenda"
+                    >
+                      <span className="material-symbols-outlined text-sm">edit</span>
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteFarm(farm.id, farm.name)}
                       disabled={loading}
-                      className={btnPrimary}
-                      style={{ background: 'var(--primary)', color: '#fff' }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-red-500/10 disabled:opacity-50"
+                      style={{ color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                      title="Excluir fazenda"
                     >
-                      {loading && <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>}
-                      Salvar
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className={btnPrimary}
-                      style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid var(--border)' }}
-                    >
-                      Cancelar
+                      <span className="material-symbols-outlined text-sm">delete</span>
                     </button>
                   </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-bold text-white">{farm.name}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-                      {(farm as unknown as { description?: string }).description || 'Município não informado'} · {farm.fields?.length ?? 0} talhão(ões)
-                    </p>
+                )}
+
+                {/* Talhões list */}
+                {farmFields.length > 0 && (
+                  <div className="flex flex-col">
+                    {farmFields.map((field, idx) => (
+                      <div key={field.id} style={{ borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.04)' : undefined, background: 'rgba(255,255,255,0.01)' }}>
+                        {editingFieldId === field.id ? (
+                          <div className="p-4 flex flex-col gap-3" style={{ background: 'rgba(96,165,250,0.04)' }}>
+                            <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#60a5fa' }}>Editar Talhão</p>
+                            <Field label="Nome">
+                              <input className={inputCls} style={inputStyle} value={editFieldName} onChange={(e) => setEditFieldName(e.target.value)} placeholder="Nome do talhão" />
+                            </Field>
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Cultura">
+                                <input className={inputCls} style={inputStyle} value={editFieldCultura} onChange={(e) => setEditFieldCultura(e.target.value)} placeholder="Ex: Soja" />
+                              </Field>
+                              <Field label="Variedade">
+                                <input className={inputCls} style={inputStyle} value={editFieldVariedade} onChange={(e) => setEditFieldVariedade(e.target.value)} placeholder="Ex: TMG 7062" />
+                              </Field>
+                            </div>
+                            <Field label="Data de Plantio">
+                              <input type="date" className={inputCls} style={inputStyle} value={editFieldPlantio} onChange={(e) => setEditFieldPlantio(e.target.value)} />
+                            </Field>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => field.id && void saveField(field.id, { name: editFieldName || field.name, cultura: editFieldCultura || undefined, variedade: editFieldVariedade || undefined, dataPlantio: editFieldPlantio || undefined })}
+                                disabled={loading}
+                                className={btnPrimary}
+                                style={{ background: '#60a5fa', color: '#fff' }}
+                              >
+                                {loading && <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>}
+                                Salvar
+                              </button>
+                              <button onClick={() => setEditingFieldId(null)} className={btnPrimary} style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8', border: '1px solid var(--border)' }}>
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3 px-4 py-3">
+                            <span className="material-symbols-outlined text-sm flex-shrink-0" style={{ color: '#1e3a5f' }}>polyline</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-white">{field.name}</p>
+                              <div className="flex flex-wrap gap-2 mt-0.5">
+                                {field.areaHa && <span className="text-[11px]" style={{ color: 'var(--muted)' }}>{field.areaHa.toFixed(1)} ha</span>}
+                                {field.cultura && <span className="text-[11px]" style={{ color: 'var(--muted)' }}>{field.cultura}</span>}
+                                {field.variedade && <span className="text-[11px]" style={{ color: 'var(--muted)' }}>{field.variedade}</span>}
+                                {field.dataPlantio && <span className="text-[11px]" style={{ color: 'var(--muted)' }}>Plantio: {field.dataPlantio}</span>}
+                              </div>
+                            </div>
+                            <a
+                              href={`https://www.google.com/maps?q=${field.lat},${field.lng}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="flex items-center px-2 py-1.5 rounded-lg text-xs transition-all hover:bg-white/5"
+                              style={{ color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}
+                              title="Ver no Google Maps"
+                            >
+                              <span className="material-symbols-outlined text-sm">pin_drop</span>
+                            </a>
+                            <button
+                              onClick={() => { setEditingFieldId(field.id ?? null); setEditFieldName(field.name ?? ''); setEditFieldCultura(field.cultura ?? ''); setEditFieldVariedade(field.variedade ?? ''); setEditFieldPlantio(field.dataPlantio ?? ''); setEditingFarmId(null); }}
+                              className="flex items-center px-2 py-1.5 rounded-lg text-xs transition-all hover:bg-white/5"
+                              style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+                              title="Editar talhão"
+                            >
+                              <span className="material-symbols-outlined text-sm">edit</span>
+                            </button>
+                            <button
+                              onClick={() => field.id && void handleDeleteField(farm.id, field.id, field.name ?? '')}
+                              disabled={loading}
+                              className="flex items-center px-2 py-1.5 rounded-lg text-xs transition-all hover:bg-red-500/10 disabled:opacity-50"
+                              style={{ color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                              title="Excluir talhão"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <button
-                    onClick={() => startEdit(farm as unknown as { id: string; name: string; description?: string })}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-white/5"
-                    style={{ color: '#94a3b8', border: '1px solid var(--border)' }}
-                  >
-                    <span className="material-symbols-outlined text-sm">edit</span>
-                    Editar
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {toast && <Toast {...toast} />}
