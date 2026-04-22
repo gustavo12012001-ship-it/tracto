@@ -387,13 +387,16 @@ export const useAppStore = create<AppState>()(
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Usuário não autenticado.');
 
+        const insertPayload: Record<string, unknown> = { name, description: city, city, user_id: user.id, is_default: false };
+        if (boundaries && boundaries.length > 0) insertPayload.boundaries = boundaries;
+
         const { data, error } = await supabase
           .from('farms')
-          .insert({ name, description: city, city, user_id: user.id, boundaries: boundaries ?? null, is_default: false })
+          .insert(insertPayload)
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) throw new Error(error.message ?? JSON.stringify(error));
 
         const newFarm: Farm = { id: data.id, name: data.name, description: data.description, city: data.city, boundaries: data.boundaries ?? undefined, fields: [] };
         set((state) => ({ farms: [...state.farms, newFarm], activeFarmId: state.activeFarmId ?? newFarm.id }));
@@ -415,7 +418,7 @@ export const useAppStore = create<AppState>()(
           .eq('id', farmId)
           .eq('user_id', user.id);
 
-        if (error) throw error;
+        if (error) throw new Error(error.message ?? JSON.stringify(error));
 
         set((state) => ({
           farms: state.farms.map((f) => f.id === farmId
