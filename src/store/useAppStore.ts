@@ -387,7 +387,7 @@ export const useAppStore = create<AppState>()(
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Usuário não autenticado.');
 
-        const insertPayload: Record<string, unknown> = { name, description: city, city, user_id: user.id, is_default: false };
+        const insertPayload: Record<string, unknown> = { name, description: city ?? null, user_id: user.id, is_default: false };
         if (boundaries && boundaries.length > 0) insertPayload.boundaries = boundaries;
 
         const { data, error } = await supabase
@@ -398,7 +398,7 @@ export const useAppStore = create<AppState>()(
 
         if (error) throw new Error(error.message ?? JSON.stringify(error));
 
-        const newFarm: Farm = { id: data.id, name: data.name, description: data.description, city: data.city, boundaries: data.boundaries ?? undefined, fields: [] };
+        const newFarm: Farm = { id: data.id, name: data.name, description: data.description, city: data.description ?? undefined, boundaries: data.boundaries ?? undefined, fields: [] };
         set((state) => ({ farms: [...state.farms, newFarm], activeFarmId: state.activeFarmId ?? newFarm.id }));
         return newFarm;
       },
@@ -410,7 +410,7 @@ export const useAppStore = create<AppState>()(
 
         const updates: Record<string, unknown> = { boundaries };
         if (name) updates.name = name;
-        if (city !== undefined) { updates.description = city; updates.city = city; }
+        if (city !== undefined) { updates.description = city; }
 
         const { error } = await supabase
           .from('farms')
