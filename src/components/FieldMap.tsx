@@ -223,7 +223,7 @@ function ZoomControls() {
   );
 }
 
-// ── MapDrawHandler: arrastar para posicionar ponto ────────────────────────────
+// ── MapDrawHandler: clicar para posicionar ponto (mapa permanece navegável) ───
 
 function MapDrawHandler({
   drawMode,
@@ -233,23 +233,21 @@ function MapDrawHandler({
   onPlacePoint: (ll: { lat: number; lng: number }) => void;
 }) {
   const map = useMap();
-  const pressingRef = useRef(false);
   const ghostRef = useRef<L.CircleMarker | null>(null);
 
   useEffect(() => {
-    if (drawMode !== 'drawing') {
-      map.dragging.enable();
+    if (drawMode === 'none') {
       if (ghostRef.current) { map.removeLayer(ghostRef.current); ghostRef.current = null; }
       return;
     }
 
-    map.dragging.disable();
+    const fillColor = drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13';
 
     const ghost = L.circleMarker(map.getCenter(), {
-      radius: 6,
+      radius: 7,
       color: '#ffffff',
       weight: 2,
-      fillColor: '#ec5b13',
+      fillColor,
       fillOpacity: 0,
       opacity: 0,
       interactive: false,
@@ -259,40 +257,27 @@ function MapDrawHandler({
 
     const onMove = (e: L.LeafletMouseEvent) => {
       ghost.setLatLng(e.latlng);
-      ghost.setStyle({ opacity: 1, fillOpacity: pressingRef.current ? 1 : 0.6 });
-      if (!pressingRef.current) ghost.setRadius(6);
+      ghost.setStyle({ opacity: 1, fillOpacity: 0.75 });
     };
 
-    const onDown = (e: L.LeafletMouseEvent) => {
-      pressingRef.current = true;
-      ghost.setLatLng(e.latlng);
-      ghost.setStyle({ opacity: 1, fillOpacity: 1 });
-      ghost.setRadius(9);
-    };
-
-    const onUp = (e: L.LeafletMouseEvent) => {
-      if (!pressingRef.current) return;
-      pressingRef.current = false;
-      ghost.setStyle({ fillOpacity: 0.6 });
-      ghost.setRadius(6);
+    const onClick = (e: L.LeafletMouseEvent) => {
+      ghost.setStyle({ fillOpacity: 1 });
+      ghost.setRadius(10);
+      setTimeout(() => { ghost.setRadius(7); ghost.setStyle({ fillOpacity: 0.75 }); }, 120);
       onPlacePoint({ lat: e.latlng.lat, lng: e.latlng.lng });
     };
 
     const onLeave = () => ghost.setStyle({ opacity: 0, fillOpacity: 0 });
 
-    map.on('mousedown', onDown);
+    map.on('click', onClick);
     map.on('mousemove', onMove);
-    map.on('mouseup', onUp);
     map.getContainer().addEventListener('mouseleave', onLeave);
 
     return () => {
-      map.off('mousedown', onDown);
+      map.off('click', onClick);
       map.off('mousemove', onMove);
-      map.off('mouseup', onUp);
       map.getContainer().removeEventListener('mouseleave', onLeave);
       if (ghostRef.current) { map.removeLayer(ghostRef.current); ghostRef.current = null; }
-      map.dragging.enable();
-      pressingRef.current = false;
     };
   }, [drawMode, map, onPlacePoint]);
 
@@ -938,7 +923,7 @@ export default function FieldMap() {
 
         {overlay.url && overlay.bounds && <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />}
 
-        <MapDrawHandler drawMode={drawMode !== 'none' ? 'drawing' : 'none'} onPlacePoint={handlePlacePoint} />
+        <MapDrawHandler drawMode={drawMode} onPlacePoint={handlePlacePoint} />
 
         {/* Polígonos das fazendas — camada de fundo */}
         {farms.map((farm) => farm.boundaries && farm.boundaries.length >= 3 ? (
@@ -1024,16 +1009,19 @@ export default function FieldMap() {
           );
         })}
 
-        {(drawMode === 'drawing' || drawMode === 'drawing_block') && drawPoints.length > 0 && (
+        {drawMode !== 'none' && drawPoints.length > 0 && (
           <>
             {drawPoints.length > 1 && (
               <Polyline positions={[...drawPoints, drawPoints[0]]}
-                pathOptions={{ color: drawMode === 'drawing_block' ? '#34d399' : '#ec5b13', weight: 2, dashArray: '6 4', opacity: 0.85 }} />
+                pathOptions={{
+                  color: drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13',
+                  weight: 2, dashArray: '6 4', opacity: 0.85,
+                }} />
             )}
             {drawPoints.map((pt, i) => (
               <Marker key={i} position={pt} icon={L.divIcon({
                 className: '',
-                html: `<div style="width:10px;height:10px;background:${drawMode === 'drawing_block' ? '#34d399' : '#ec5b13'};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
+                html: `<div style="width:10px;height:10px;background:${drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13'};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
                 iconAnchor: [5, 5],
               })} />
             ))}
@@ -1138,21 +1126,20 @@ export default function FieldMap() {
             <span className="material-symbols-outlined text-base">add_location_alt</span>
             Desenhar Talhão
           </button>
-          {activeFarm ? (
+          {activeFarm && (
             <button onClick={() => startDrawingFarm(activeFarm)}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
               style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
               <span className="material-symbols-outlined text-base">fence</span>
               {activeFarm.boundaries ? 'Redefinir Área' : 'Definir Área da Fazenda'}
             </button>
-          ) : (
-            <button onClick={() => startDrawingFarm()}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
-              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
-              <span className="material-symbols-outlined text-base">add_home</span>
-              Nova Fazenda
-            </button>
           )}
+          <button onClick={() => startDrawingFarm()}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
+            style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
+            <span className="material-symbols-outlined text-base">add_home</span>
+            Nova Fazenda
+          </button>
         </div>
       )}
 
@@ -1165,7 +1152,7 @@ export default function FieldMap() {
           }}>
           <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#fff' : '#ec5b13' }}>draw</span>
           {drawMode === 'drawing_block' ? '🔬 Bloco — ' : drawMode === 'drawing_farm' ? '🏡 Fazenda — ' : ''}
-          Pressione e arraste para posicionar cada vértice · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
+          Clique para adicionar vértices · arraste para navegar · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
         </div>
       )}
 
