@@ -242,6 +242,17 @@ export default function Layout() {
   const bellRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
 
+  // ── Estado de edição inline ───────────────────────────────────────────────
+  const [editingFarmId, setEditingFarmId] = useState<string | null>(null);
+  const [editFarmName, setEditFarmName] = useState('');
+  const [editFarmCity, setEditFarmCity] = useState('');
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editFieldName, setEditFieldName] = useState('');
+  const [editFieldCultura, setEditFieldCultura] = useState('');
+  const [editFieldVariedade, setEditFieldVariedade] = useState('');
+  const [editFieldPlantio, setEditFieldPlantio] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
   // Apply theme on mount + whenever it changes
   useEffect(() => { applyTheme(theme); }, [theme]);
 
@@ -261,6 +272,10 @@ export default function Layout() {
     resetStore,
     weatherCache,
     syncFromBackend,
+    updateFarmInfo,
+    deleteFarm,
+    updateField,
+    removeField,
   } = useAppStore();
 
   // Fechar dropdowns ao clicar fora
@@ -566,48 +581,195 @@ export default function Layout() {
                 </button>
 
                 {selectorOpen && (
-                  <div className="absolute top-full left-0 mt-1.5 z-[600] rounded-xl overflow-hidden flex flex-col"
-                    style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 260, maxHeight: 360, overflowY: 'auto' }}>
+                  <div className="absolute top-full left-0 mt-1.5 z-[600] rounded-xl flex flex-col"
+                    style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 300, maxHeight: 480, overflowY: 'auto' }}>
+
                     {farms.length === 0 ? (
-                      <p className="px-4 py-3 text-[11px] text-slate-500">Nenhuma fazenda cadastrada</p>
+                      <p className="px-4 py-4 text-[11px]" style={{ color: '#475569' }}>Nenhuma fazenda cadastrada.</p>
                     ) : farms.map((farm) => {
                       const farmFields = fields.filter((f) => f.farm_id === farm.id);
+                      const isEditingThisFarm = editingFarmId === farm.id;
+
                       return (
-                        <div key={farm.id}>
-                          {/* Header da fazenda */}
-                          <button
-                            onClick={() => { setActiveFarm(farm.id); setActiveField(null); setSelectorOpen(false); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-all"
-                            style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                            <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>home_work</span>
-                            <span className="flex-1 text-[11px] font-bold text-white truncate">{farm.name}</span>
-                            {(farm.city ?? farm.description) && (
-                              <span className="text-[10px] shrink-0" style={{ color: '#475569' }}>{farm.city ?? farm.description}</span>
-                            )}
-                          </button>
-                          {/* Talhões da fazenda */}
-                          {farmFields.length === 0 ? (
-                            <p className="pl-8 pr-3 py-1.5 text-[10px]" style={{ color: '#334155' }}>Sem talhões</p>
-                          ) : farmFields.map((field) => (
-                            <div key={field.id} className="flex items-center hover:bg-white/5 transition-all"
-                              style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                              <button
-                                onClick={() => { setActiveField(field.id ?? null); focusActiveField(); navigate('/app/dashboard'); setSelectorOpen(false); }}
-                                className="flex-1 flex items-center gap-2 pl-8 pr-2 py-1.5 text-left">
-                                <span className="material-symbols-outlined text-xs" style={{ color: activeFieldId === field.id ? 'var(--primary)' : '#334155' }}>polyline</span>
-                                <span className="text-[11px] font-semibold truncate" style={{ color: activeFieldId === field.id ? '#fff' : '#94a3b8' }}>{field.name}</span>
-                                {field.areaHa && <span className="text-[9px] ml-auto shrink-0" style={{ color: '#334155' }}>{field.areaHa.toFixed(1)} ha</span>}
-                              </button>
-                              {/* Ícone de localização */}
-                              <a href={`https://www.google.com/maps?q=${field.lat},${field.lng}`}
-                                target="_blank" rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="p-1.5 mr-2 rounded-lg hover:bg-white/10 transition-all flex-shrink-0"
-                                title="Ver no Google Maps">
-                                <span className="material-symbols-outlined text-sm" style={{ color: '#4ade80' }}>pin_drop</span>
-                              </a>
+                        <div key={farm.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+
+                          {/* ── Linha da fazenda ── */}
+                          {isEditingThisFarm ? (
+                            <div className="px-3 py-2.5 flex flex-col gap-2" style={{ background: 'rgba(236,91,19,0.05)' }}>
+                              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>Editar Fazenda</p>
+                              <input
+                                className="w-full px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
+                                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                placeholder="Nome da fazenda"
+                                value={editFarmName}
+                                onChange={(e) => setEditFarmName(e.target.value)}
+                              />
+                              <input
+                                className="w-full px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
+                                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                placeholder="Município / Estado"
+                                value={editFarmCity}
+                                onChange={(e) => setEditFarmCity(e.target.value)}
+                              />
+                              <div className="flex gap-1.5">
+                                <button
+                                  disabled={isSavingEdit}
+                                  onClick={async () => {
+                                    if (!editFarmName.trim()) return;
+                                    setIsSavingEdit(true);
+                                    try { await updateFarmInfo(farm.id, editFarmName.trim(), editFarmCity.trim()); setEditingFarmId(null); }
+                                    catch { /* silently fail */ }
+                                    finally { setIsSavingEdit(false); }
+                                  }}
+                                  className="flex-1 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-40"
+                                  style={{ background: '#ec5b13' }}>
+                                  {isSavingEdit ? 'Salvando...' : 'Salvar'}
+                                </button>
+                                <button onClick={() => setEditingFarmId(null)}
+                                  className="px-3 py-1.5 rounded-lg text-[10px] font-semibold hover:bg-white/10"
+                                  style={{ color: '#64748b', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                  Cancelar
+                                </button>
+                              </div>
                             </div>
-                          ))}
+                          ) : (
+                            <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-white/4 transition-all group">
+                              <button
+                                onClick={() => { setActiveFarm(farm.id); setActiveField(null); navigate('/app/dashboard'); setSelectorOpen(false); }}
+                                className="flex-1 flex items-center gap-2 text-left min-w-0">
+                                <span className="material-symbols-outlined text-sm flex-shrink-0" style={{ color: 'var(--primary)' }}>home_work</span>
+                                <span className="text-[11px] font-bold text-white truncate">{farm.name}</span>
+                                {(farm.city ?? farm.description) && (
+                                  <span className="text-[10px] shrink-0 ml-1" style={{ color: '#334155' }}>{farm.city ?? farm.description}</span>
+                                )}
+                              </button>
+                              {/* Editar fazenda */}
+                              <button
+                                onClick={() => { setEditingFarmId(farm.id); setEditFarmName(farm.name); setEditFarmCity(farm.city ?? farm.description ?? ''); setEditingFieldId(null); }}
+                                className="p-1 rounded hover:bg-white/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
+                                title="Editar fazenda">
+                                <span className="material-symbols-outlined text-sm" style={{ color: '#60a5fa' }}>edit</span>
+                              </button>
+                              {/* Excluir fazenda */}
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`Excluir a fazenda "${farm.name}" e todos os seus talhões?`)) return;
+                                  try { await deleteFarm(farm.id); } catch { /* silently fail */ }
+                                }}
+                                className="p-1 rounded hover:bg-red-500/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
+                                title="Excluir fazenda">
+                                <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>delete</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* ── Talhões da fazenda ── */}
+                          {farmFields.length === 0 ? (
+                            <p className="pl-9 pr-3 py-1 text-[10px]" style={{ color: '#1e293b' }}>Sem talhões</p>
+                          ) : farmFields.map((field) => {
+                            const isEditingThisField = editingFieldId === field.id;
+                            return (
+                              <div key={field.id} style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+                                {isEditingThisField ? (
+                                  <div className="pl-9 pr-3 py-2.5 flex flex-col gap-2" style={{ background: 'rgba(96,165,250,0.04)' }}>
+                                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#60a5fa' }}>Editar Talhão</p>
+                                    <input
+                                      className="w-full px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
+                                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                      placeholder="Nome do talhão"
+                                      value={editFieldName}
+                                      onChange={(e) => setEditFieldName(e.target.value)}
+                                    />
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      <input
+                                        className="px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
+                                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                        placeholder="Cultura"
+                                        value={editFieldCultura}
+                                        onChange={(e) => setEditFieldCultura(e.target.value)}
+                                      />
+                                      <input
+                                        className="px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
+                                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                        placeholder="Variedade"
+                                        value={editFieldVariedade}
+                                        onChange={(e) => setEditFieldVariedade(e.target.value)}
+                                      />
+                                    </div>
+                                    <input
+                                      type="date"
+                                      className="w-full px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
+                                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                      value={editFieldPlantio}
+                                      onChange={(e) => setEditFieldPlantio(e.target.value)}
+                                    />
+                                    <div className="flex gap-1.5">
+                                      <button
+                                        disabled={isSavingEdit}
+                                        onClick={async () => {
+                                          if (!field.id) return;
+                                          setIsSavingEdit(true);
+                                          try {
+                                            await updateField(field.id, {
+                                              name: editFieldName || field.name,
+                                              cultura: editFieldCultura || undefined,
+                                              variedade: editFieldVariedade || undefined,
+                                              dataPlantio: editFieldPlantio || undefined,
+                                            });
+                                            setEditingFieldId(null);
+                                          } catch { /* silently fail */ }
+                                          finally { setIsSavingEdit(false); }
+                                        }}
+                                        className="flex-1 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-40"
+                                        style={{ background: '#60a5fa' }}>
+                                        {isSavingEdit ? 'Salvando...' : 'Salvar'}
+                                      </button>
+                                      <button onClick={() => setEditingFieldId(null)}
+                                        className="px-3 py-1.5 rounded-lg text-[10px] font-semibold hover:bg-white/10"
+                                        style={{ color: '#64748b', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1 pl-9 pr-2 py-1 hover:bg-white/4 transition-all group">
+                                    <button
+                                      onClick={() => { setActiveField(field.id ?? null); focusActiveField(); navigate('/app/dashboard'); setSelectorOpen(false); }}
+                                      className="flex-1 flex items-center gap-1.5 text-left min-w-0">
+                                      <span className="material-symbols-outlined text-xs flex-shrink-0" style={{ color: activeFieldId === field.id ? 'var(--primary)' : '#1e3a5f' }}>polyline</span>
+                                      <span className="text-[11px] font-medium truncate" style={{ color: activeFieldId === field.id ? '#fff' : '#64748b' }}>{field.name}</span>
+                                      {field.areaHa && <span className="text-[9px] ml-1 shrink-0" style={{ color: '#1e293b' }}>{field.areaHa.toFixed(1)} ha</span>}
+                                    </button>
+                                    {/* 📍 Localização */}
+                                    <a href={`https://www.google.com/maps?q=${field.lat},${field.lng}`}
+                                      target="_blank" rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="p-1 rounded hover:bg-white/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
+                                      title="Ver no Google Maps">
+                                      <span className="material-symbols-outlined text-sm" style={{ color: '#4ade80' }}>pin_drop</span>
+                                    </a>
+                                    {/* ✏ Editar */}
+                                    <button
+                                      onClick={() => { setEditingFieldId(field.id ?? null); setEditFarmName(''); setEditFieldName(field.name ?? ''); setEditFieldCultura(field.cultura ?? ''); setEditFieldVariedade(field.variedade ?? ''); setEditFieldPlantio(field.dataPlantio ?? ''); setEditingFarmId(null); }}
+                                      className="p-1 rounded hover:bg-white/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
+                                      title="Editar talhão">
+                                      <span className="material-symbols-outlined text-sm" style={{ color: '#60a5fa' }}>edit</span>
+                                    </button>
+                                    {/* 🗑 Excluir */}
+                                    <button
+                                      onClick={async () => {
+                                        if (!field.id || !window.confirm(`Excluir o talhão "${field.name}"?`)) return;
+                                        try { await removeField(farm.id, field.id); } catch { /* silently fail */ }
+                                      }}
+                                      className="p-1 rounded hover:bg-red-500/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
+                                      title="Excluir talhão">
+                                      <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>delete</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })}

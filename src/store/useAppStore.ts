@@ -209,6 +209,8 @@ interface AppState {
   addFarm: (farm: Farm) => void;
   syncFields: () => Promise<void>;
   createFarm: (name: string, city: string, boundaries?: [number, number][]) => Promise<Farm>;
+  updateFarmInfo: (farmId: string, name: string, city: string) => Promise<void>;
+  deleteFarm: (farmId: string) => Promise<void>;
   updateFarmBoundaries: (farmId: string, boundaries: [number, number][], name?: string, city?: string) => Promise<void>;
   createField: (farmId: string, field: Omit<Location, 'id'>) => Promise<void>;
   updateField: (fieldId: string, updates: Partial<Location>) => Promise<void>;
@@ -393,6 +395,28 @@ export const useAppStore = create<AppState>()(
       },
 
       // ── updateFarmBoundaries: atualiza polígono via API ───────────────────────
+      updateFarmInfo: async (farmId, name, city) => {
+        const { farmService } = await import('../services/farm_service');
+        await farmService.saveFarm({ id: farmId, name, description: city });
+        set((state) => ({
+          farms: state.farms.map((f) => f.id === farmId ? { ...f, name, description: city, city } : f),
+        }));
+      },
+
+      deleteFarm: async (farmId) => {
+        const { farmService } = await import('../services/farm_service');
+        await farmService.deleteFarm(farmId);
+        set((state) => {
+          const remaining = state.farms.filter((f) => f.id !== farmId);
+          return {
+            farms: remaining,
+            fields: state.fields.filter((f) => f.farm_id !== farmId),
+            activeFarmId: state.activeFarmId === farmId ? (remaining[0]?.id ?? null) : state.activeFarmId,
+            activeFieldId: state.fields.find((f) => f.farm_id === farmId && f.id === state.activeFieldId) ? null : state.activeFieldId,
+          };
+        });
+      },
+
       updateFarmBoundaries: async (farmId, boundaries, name, city) => {
         const { farmService } = await import('../services/farm_service');
         const payload: Partial<Farm> = { id: farmId, boundaries };

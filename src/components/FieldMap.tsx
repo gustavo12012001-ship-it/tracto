@@ -1174,7 +1174,7 @@ export default function FieldMap() {
           {/* Opções expansíveis */}
           {actionsOpen && (
             <div className="flex flex-col gap-1 mt-0.5">
-              <button onClick={() => { setActionsOpen(false); setEditingField(null); setDrawFarmId(activeFarmId ?? farms[0]?.id ?? null); setDrawMode('drawing'); }}
+              <button onClick={() => { setActionsOpen(false); setEditingField(null); setDrawFarmId(null); setDrawMode('drawing'); }}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
                 style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.35)', color: '#ec5b13' }}>
                 <span className="material-symbols-outlined text-base">add_location_alt</span>
@@ -1208,25 +1208,26 @@ export default function FieldMap() {
       {drawMode === 'drawing' && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
           {/* Seletor de fazenda */}
-          {farms.length > 0 && (
-            <div>
-              <label className={labelCls}>Fazenda</label>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: '#ec5b13' }}>home_work</span>
-                <select
-                  className="w-full appearance-none pl-8 pr-8 py-2 rounded-lg text-xs font-semibold text-white focus:outline-none"
-                  style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}
-                  value={drawFarmId ?? ''}
-                  onChange={(e) => setDrawFarmId(e.target.value || null)}
-                >
-                  {farms.map((f) => (
-                    <option key={f.id} value={f.id} style={{ background: '#0c0c0e' }}>{f.name}{(f.city ?? f.description) ? ` — ${f.city ?? f.description}` : ''}</option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: '#64748b' }}>expand_more</span>
-              </div>
-            </div>
-          )}
+          <div>
+            <label className={labelCls}>Fazenda *</label>
+            <select
+              className="w-full appearance-none px-3 py-2 rounded-lg text-xs font-semibold focus:outline-none"
+              style={{
+                background: drawFarmId ? 'rgba(236,91,19,0.08)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${drawFarmId ? 'rgba(236,91,19,0.35)' : 'rgba(255,255,255,0.12)'}`,
+                color: drawFarmId ? '#fff' : '#64748b',
+              }}
+              value={drawFarmId ?? ''}
+              onChange={(e) => setDrawFarmId(e.target.value || null)}
+            >
+              <option value="" disabled style={{ background: '#0c0c0e' }}>Selecione a fazenda...</option>
+              {farms.map((f) => (
+                <option key={f.id} value={f.id} style={{ background: '#0c0c0e', color: '#fff' }}>
+                  {f.name}{(f.city ?? f.description) ? ` — ${f.city ?? f.description}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>
             {drawPoints.length} pontos · Novo Talhão
@@ -1272,9 +1273,9 @@ export default function FieldMap() {
           )}
 
           <div className="flex gap-2">
-            <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3}
+            <button onClick={finishDrawing} disabled={isSaving || drawPoints.length < 3 || !drawFarmId}
               className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40" style={{ background: '#ec5b13' }}>
-              {isSaving ? 'Salvando...' : 'Salvar Talhão'}
+              {isSaving ? 'Salvando...' : !drawFarmId ? 'Selecione a fazenda' : 'Salvar Talhão'}
             </button>
             <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
