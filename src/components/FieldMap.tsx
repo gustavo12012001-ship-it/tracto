@@ -538,6 +538,15 @@ export default function FieldMap() {
   const [farmDrawTarget, setFarmDrawTarget] = useState<'new' | string>('new'); // 'new' ou farmId
   const [isSavingFarm, setIsSavingFarm] = useState(false);
 
+  // ── Modal de nova fazenda ─────────────────────────────────────────────────
+  const [showNewFarmModal, setShowNewFarmModal] = useState(false);
+  const [newFarmName, setNewFarmName] = useState('');
+  const [newFarmCity, setNewFarmCity] = useState('');
+  const [isCreatingFarm, setIsCreatingFarm] = useState(false);
+
+  // ── Fazenda alvo ao desenhar talhão ───────────────────────────────────────
+  const [drawFarmId, setDrawFarmId] = useState<string | null>(null);
+
   // ── Estado da edição ──────────────────────────────────────────────────────
   const [editingField, setEditingField] = useState<Location | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -812,8 +821,40 @@ export default function FieldMap() {
     }
   };
 
+  // ── Criar fazenda via modal (nome+cidade → geocode → voa no mapa) ──────────
+  const createNewFarm = async () => {
+    const name = newFarmName.trim();
+    if (!name) { alert('Informe o nome da fazenda.'); return; }
+    setIsCreatingFarm(true);
+    try {
+      let geocoded: { lat: number; lng: number } | null = null;
+      if (newFarmCity.trim()) {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(newFarmCity)}&format=json&limit=1&countrycodes=br`,
+            { headers: { 'Accept-Language': 'pt-BR' } },
+          );
+          const data = await res.json() as Array<{ lat: string; lon: string }>;
+          if (data?.length) geocoded = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        } catch { /* geocoding falhou, continua sem centralizar */ }
+      }
+      const farm = await createFarm(name, newFarmCity.trim());
+      setActiveFarm(farm.id);
+      if (geocoded) setFlyTarget({ ...geocoded, zoom: 13 });
+      setShowNewFarmModal(false);
+      setNewFarmName('');
+      setNewFarmCity('');
+      startDrawingFarm(farm);
+    } catch (err) {
+      alert(`Erro ao criar fazenda: ${err instanceof Error ? err.message : 'desconhecido'}`);
+    } finally {
+      setIsCreatingFarm(false);
+    }
+  };
+
   const finishDrawing = async () => {
-    if (!activeFarmId) { alert('Selecione uma fazenda antes de desenhar.'); return; }
+    const targetFarmId = drawFarmId ?? activeFarmId;
+    if (!targetFarmId) { alert('Selecione uma fazenda antes de desenhar.'); return; }
     if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
     const areaHa = polygonAreaHa(drawPoints);
     if (areaHa < 0.05) { alert('Área muito pequena. Mínimo 0.05 ha.'); return; }
@@ -825,7 +866,7 @@ export default function FieldMap() {
     ];
     try {
       setIsSaving(true);
-      await createField(activeFarmId, {
+      await createField(targetFarmId, {
         lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints,
         cultura: fieldCultura || undefined,
         dataPlantio: fieldDataPlantio || undefined,
@@ -1120,7 +1161,7 @@ export default function FieldMap() {
       {/* Botões de ação no mapa */}
       {drawMode === 'none' && !editingField && (
         <div className="absolute top-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
-          <button onClick={() => { setEditingField(null); setDrawMode('drawing'); }}
+          <button onClick={() => { setEditingField(null); setDrawFarmId(activeFarmId); setDrawMode('drawing'); }}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90"
             style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
             <span className="material-symbols-outlined text-base">add_location_alt</span>
@@ -1134,7 +1175,7 @@ export default function FieldMap() {
               {activeFarm.boundaries ? 'Redefinir Área' : 'Definir Área da Fazenda'}
             </button>
           )}
-          <button onClick={() => startDrawingFarm()}
+          <button onClick={() => setShowNewFarmModal(true)}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90"
             style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
             <span className="material-symbols-outlined text-base">add_home</span>
@@ -1159,13 +1200,24 @@ export default function FieldMap() {
       {/* Painel de criação de talhão */}
       {drawMode === 'drawing' && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
-          {activeFarm && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}>
-              <span className="text-sm">🏡</span>
-              <p className="text-[11px] font-semibold text-white">{activeFarm.name}</p>
-              {(activeFarm.city ?? activeFarm.description) && (
-                <p className="text-[10px] ml-1" style={{ color: '#64748b' }}>{activeFarm.city ?? activeFarm.description}</p>
-              )}
+          {/* Seletor de fazenda */}
+          {farms.length > 0 && (
+            <div>
+              <label className={labelCls}>Fazenda</label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: '#ec5b13' }}>home_work</span>
+                <select
+                  className="w-full appearance-none pl-8 pr-8 py-2 rounded-lg text-xs font-semibold text-white focus:outline-none"
+                  style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}
+                  value={drawFarmId ?? ''}
+                  onChange={(e) => setDrawFarmId(e.target.value || null)}
+                >
+                  {farms.map((f) => (
+                    <option key={f.id} value={f.id} style={{ background: '#0c0c0e' }}>{f.name}{f.city ? ` — ${f.city}` : ''}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: '#64748b' }}>expand_more</span>
+              </div>
             </div>
           )}
 
@@ -1374,6 +1426,88 @@ export default function FieldMap() {
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Nova Fazenda ──────────────────────────────────────────────── */}
+      {showNewFarmModal && (
+        <div className="absolute inset-0 z-[600] flex items-center justify-center pointer-events-auto"
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowNewFarmModal(false); setNewFarmName(''); setNewFarmCity(''); } }}>
+          <div className="flex flex-col gap-4 rounded-2xl px-6 py-5 w-full max-w-md mx-4"
+            style={{ background: 'rgba(8,8,9,0.98)', border: '1px solid rgba(255,255,255,0.10)', backdropFilter: 'blur(20px)' }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                  <span className="material-symbols-outlined text-base text-white">add_home</span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">Nova Fazenda</p>
+                  <p className="text-[10px]" style={{ color: '#64748b' }}>Passo 1 de 2 · Identificação</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowNewFarmModal(false); setNewFarmName(''); setNewFarmCity(''); }}
+                className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" style={{ color: '#64748b' }}>
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+
+            {/* Campos */}
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className={labelCls}>Nome da Fazenda *</label>
+                <input
+                  className={inputCls}
+                  placeholder="Ex: Fazenda Santa Rosa"
+                  value={newFarmName}
+                  onChange={(e) => setNewFarmName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newFarmName.trim()) void createNewFarm(); }}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Município / Estado</label>
+                <input
+                  className={inputCls}
+                  placeholder="Ex: Uberlândia - MG"
+                  value={newFarmCity}
+                  onChange={(e) => setNewFarmCity(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newFarmName.trim()) void createNewFarm(); }}
+                />
+                <p className="text-[10px] mt-1.5" style={{ color: '#475569' }}>
+                  O mapa será centralizado automaticamente na cidade informada.
+                </p>
+              </div>
+            </div>
+
+            {/* Próximo passo info */}
+            <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: 'rgba(236,91,19,0.06)', border: '1px solid rgba(236,91,19,0.15)' }}>
+              <span className="material-symbols-outlined text-sm flex-shrink-0 mt-0.5" style={{ color: '#ec5b13' }}>info</span>
+              <p className="text-[10px] leading-relaxed" style={{ color: '#94a3b8' }}>
+                Após criar a fazenda você será direcionado para <strong className="text-white">desenhar a área</strong> no mapa — passo 2.
+              </p>
+            </div>
+
+            {/* Ações */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => void createNewFarm()}
+                disabled={isCreatingFarm || !newFarmName.trim()}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+                style={{ background: '#ec5b13' }}>
+                {isCreatingFarm
+                  ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Criando...</>
+                  : <><span className="material-symbols-outlined text-sm">arrow_forward</span>Criar e Definir Área</>}
+              </button>
+              <button onClick={() => { setShowNewFarmModal(false); setNewFarmName(''); setNewFarmCity(''); }}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
