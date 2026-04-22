@@ -1194,14 +1194,6 @@ export default function FieldMap() {
                 <span className="material-symbols-outlined text-base">add_location_alt</span>
                 Desenhar Talhão
               </button>
-              {activeFarm && (
-                <button onClick={() => { setActionsOpen(false); startDrawingFarm(activeFarm); }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
-                  style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', color: '#94a3b8' }}>
-                  <span className="material-symbols-outlined text-base">fence</span>
-                  {activeFarm.boundaries ? 'Redefinir Área' : 'Definir Área da Fazenda'}
-                </button>
-              )}
               <button onClick={() => { setActionsOpen(false); setShowNewFarmModal(true); }}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
                 style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', color: '#94a3b8' }}>

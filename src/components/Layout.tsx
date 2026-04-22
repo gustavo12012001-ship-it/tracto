@@ -238,7 +238,9 @@ export default function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+  const selectorRef = useRef<HTMLDivElement>(null);
 
   // Apply theme on mount + whenever it changes
   useEffect(() => { applyTheme(theme); }, [theme]);
@@ -261,17 +263,16 @@ export default function Layout() {
     syncFromBackend,
   } = useAppStore();
 
-  // Fechar dropdown ao clicar fora
+  // Fechar dropdowns ao clicar fora
   useEffect(() => {
-    if (!showNotifications) return;
+    if (!showNotifications && !selectorOpen) return;
     const handler = (e: MouseEvent) => {
-      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
-        setShowNotifications(false);
-      }
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setShowNotifications(false);
+      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) setSelectorOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showNotifications]);
+  }, [showNotifications, selectorOpen]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -551,45 +552,67 @@ export default function Layout() {
                 </span>
               </div>
 
-              {/* Seletor unificado: Fazenda → Talhão */}
-              <div className="relative hidden md:flex items-center rounded-lg overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                <span className="material-symbols-outlined text-sm pl-3 pointer-events-none" style={{ color: 'var(--primary)' }}>agriculture</span>
-                <select
-                  className="appearance-none bg-transparent border-none text-white text-[10px] font-bold py-2 pl-2 pr-8 focus:outline-none cursor-pointer"
-                  value={activeFieldId || activeFarmId || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const isField = fields.some((f) => f.id === val);
-                    if (isField) {
-                      setActiveField(val);
-                      focusActiveField();
-                      // Navegar para o mapa ao selecionar talhão
-                      navigate('/app/dashboard');
-                    } else {
-                      setActiveFarm(val);
-                      setActiveField(null);
-                    }
-                  }}
-                >
-                  {farms.length === 0 ? (
-                    <option value="" disabled>NENHUMA FAZENDA</option>
-                  ) : (
-                    farms.map((farm) => (
-                      <optgroup key={farm.id} label={farm.name.toUpperCase()} style={{ background: '#0c0c0e' }}>
-                        {fields.filter((field) => field.farm_id === farm.id).length === 0 ? (
-                          <option value={farm.id} style={{ background: '#0c0c0e' }}>Sem talhões cadastrados</option>
-                        ) : (
-                          fields.filter((field) => field.farm_id === farm.id).map((field) => (
-                            <option key={field.id} value={field.id} style={{ background: '#0c0c0e' }}>
-                              {field.name?.toUpperCase()}
-                            </option>
-                          ))
-                        )}
-                      </optgroup>
-                    ))
-                  )}
-                </select>
-                <span className="material-symbols-outlined absolute right-2 pointer-events-none text-base" style={{ color: 'var(--muted)' }}>expand_more</span>
+              {/* Seletor unificado: Fazenda → Talhão (dropdown customizado) */}
+              <div className="relative hidden md:flex" ref={selectorRef}>
+                <button
+                  onClick={() => setSelectorOpen((v) => !v)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold text-white transition-all"
+                  style={{ background: 'var(--surface)', border: `1px solid ${selectorOpen ? 'rgba(236,91,19,0.4)' : 'var(--border)'}` }}>
+                  <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>agriculture</span>
+                  <span className="max-w-[160px] truncate">
+                    {activeField ? `${activeFarm?.name ?? ''} · ${activeField.name}` : activeFarm ? activeFarm.name : 'Selecionar'}
+                  </span>
+                  <span className="material-symbols-outlined text-sm transition-transform duration-200" style={{ color: 'var(--muted)', transform: selectorOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>expand_more</span>
+                </button>
+
+                {selectorOpen && (
+                  <div className="absolute top-full left-0 mt-1.5 z-[600] rounded-xl overflow-hidden flex flex-col"
+                    style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 260, maxHeight: 360, overflowY: 'auto' }}>
+                    {farms.length === 0 ? (
+                      <p className="px-4 py-3 text-[11px] text-slate-500">Nenhuma fazenda cadastrada</p>
+                    ) : farms.map((farm) => {
+                      const farmFields = fields.filter((f) => f.farm_id === farm.id);
+                      return (
+                        <div key={farm.id}>
+                          {/* Header da fazenda */}
+                          <button
+                            onClick={() => { setActiveFarm(farm.id); setActiveField(null); setSelectorOpen(false); }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-all"
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>home_work</span>
+                            <span className="flex-1 text-[11px] font-bold text-white truncate">{farm.name}</span>
+                            {(farm.city ?? farm.description) && (
+                              <span className="text-[10px] shrink-0" style={{ color: '#475569' }}>{farm.city ?? farm.description}</span>
+                            )}
+                          </button>
+                          {/* Talhões da fazenda */}
+                          {farmFields.length === 0 ? (
+                            <p className="pl-8 pr-3 py-1.5 text-[10px]" style={{ color: '#334155' }}>Sem talhões</p>
+                          ) : farmFields.map((field) => (
+                            <div key={field.id} className="flex items-center hover:bg-white/5 transition-all"
+                              style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                              <button
+                                onClick={() => { setActiveField(field.id); focusActiveField(); navigate('/app/dashboard'); setSelectorOpen(false); }}
+                                className="flex-1 flex items-center gap-2 pl-8 pr-2 py-1.5 text-left">
+                                <span className="material-symbols-outlined text-xs" style={{ color: activeFieldId === field.id ? 'var(--primary)' : '#334155' }}>polyline</span>
+                                <span className="text-[11px] font-semibold truncate" style={{ color: activeFieldId === field.id ? '#fff' : '#94a3b8' }}>{field.name}</span>
+                                {field.areaHa && <span className="text-[9px] ml-auto shrink-0" style={{ color: '#334155' }}>{field.areaHa.toFixed(1)} ha</span>}
+                              </button>
+                              {/* Ícone de localização */}
+                              <a href={`https://www.google.com/maps?q=${field.lat},${field.lng}`}
+                                target="_blank" rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1.5 mr-2 rounded-lg hover:bg-white/10 transition-all flex-shrink-0"
+                                title="Ver no Google Maps">
+                                <span className="material-symbols-outlined text-sm" style={{ color: '#4ade80' }}>pin_drop</span>
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Notifications */}
