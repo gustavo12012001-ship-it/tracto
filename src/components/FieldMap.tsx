@@ -844,7 +844,6 @@ export default function FieldMap() {
       setShowNewFarmModal(false);
       setNewFarmName('');
       setNewFarmCity('');
-      startDrawingFarm(farm);
     } catch (err) {
       alert(`Erro ao criar fazenda: ${err instanceof Error ? err.message : 'desconhecido'}`);
     } finally {
@@ -1039,6 +1038,12 @@ export default function FieldMap() {
                         🔬 + Bloco
                       </button>
                     )}
+                    <a
+                      href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 6, padding: '3px 8px', textDecoration: 'none' }}>
+                      📍 Ver no Maps
+                    </a>
                     <button onClick={() => { if (loc.id && activeFarmId && window.confirm(`Remover "${loc.name}"?`)) removeField(activeFarmId, loc.id); }}
                       style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                       🗑 Remover
@@ -1446,7 +1451,7 @@ export default function FieldMap() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-white">Nova Fazenda</p>
-                  <p className="text-[10px]" style={{ color: '#64748b' }}>Passo 1 de 2 · Identificação</p>
+                  <p className="text-[10px]" style={{ color: '#64748b' }}>Identificação da propriedade</p>
                 </div>
               </div>
               <button onClick={() => { setShowNewFarmModal(false); setNewFarmName(''); setNewFarmCity(''); }}
@@ -1483,11 +1488,10 @@ export default function FieldMap() {
               </div>
             </div>
 
-            {/* Próximo passo info */}
-            <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: 'rgba(236,91,19,0.06)', border: '1px solid rgba(236,91,19,0.15)' }}>
-              <span className="material-symbols-outlined text-sm flex-shrink-0 mt-0.5" style={{ color: '#ec5b13' }}>info</span>
-              <p className="text-[10px] leading-relaxed" style={{ color: '#94a3b8' }}>
-                Após criar a fazenda você será direcionado para <strong className="text-white">desenhar a área</strong> no mapa — passo 2.
+            <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <span className="material-symbols-outlined text-sm flex-shrink-0 mt-0.5" style={{ color: '#64748b' }}>info</span>
+              <p className="text-[10px] leading-relaxed" style={{ color: '#64748b' }}>
+                A área da fazenda é opcional e pode ser definida depois pelo botão <strong className="text-slate-300">"Definir Área"</strong> no mapa.
               </p>
             </div>
 
@@ -1500,7 +1504,7 @@ export default function FieldMap() {
                 style={{ background: '#ec5b13' }}>
                 {isCreatingFarm
                   ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Criando...</>
-                  : <><span className="material-symbols-outlined text-sm">arrow_forward</span>Criar e Definir Área</>}
+                  : <><span className="material-symbols-outlined text-sm">check</span>Salvar Fazenda</>}
               </button>
               <button onClick={() => { setShowNewFarmModal(false); setNewFarmName(''); setNewFarmCity(''); }}
                 className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
