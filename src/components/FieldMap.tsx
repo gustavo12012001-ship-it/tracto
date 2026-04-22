@@ -1188,7 +1188,7 @@ export default function FieldMap() {
           {/* Opções expansíveis */}
           {actionsOpen && (
             <div className="flex flex-col gap-1 mt-0.5">
-              <button onClick={() => { setActionsOpen(false); setEditingField(null); setDrawFarmId(activeFarmId); setDrawMode('drawing'); }}
+              <button onClick={() => { setActionsOpen(false); setEditingField(null); setDrawFarmId(activeFarmId ?? farms[0]?.id ?? null); setDrawMode('drawing'); }}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
                 style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.35)', color: '#ec5b13' }}>
                 <span className="material-symbols-outlined text-base">add_location_alt</span>
@@ -1242,7 +1242,7 @@ export default function FieldMap() {
                   onChange={(e) => setDrawFarmId(e.target.value || null)}
                 >
                   {farms.map((f) => (
-                    <option key={f.id} value={f.id} style={{ background: '#0c0c0e' }}>{f.name}{f.city ? ` — ${f.city}` : ''}</option>
+                    <option key={f.id} value={f.id} style={{ background: '#0c0c0e' }}>{f.name}{(f.city ?? f.description) ? ` — ${f.city ?? f.description}` : ''}</option>
                   ))}
                 </select>
                 <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: '#64748b' }}>expand_more</span>
