@@ -15,7 +15,7 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import useAppStore, { type Location, type Farm } from '../store/useAppStore';
+import useAppStore, { type Location } from '../store/useAppStore';
 import { polygonAreaHa } from '../utils/geo';
 import { API_URL } from '../services/api';
 
@@ -500,7 +500,6 @@ export default function FieldMap() {
     removeField, activeFarmId, activeFieldId, setActiveField, setActiveFarm, setCurrentSatelliteScene,
   } = useAppStore();
 
-  const activeFarm: Farm | undefined = farms.find((f) => f.id === activeFarmId);
 
   const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
   const [searchQuery, setSearchQuery] = useState('');
@@ -753,19 +752,6 @@ export default function FieldMap() {
     setDrawMode('none');
   };
 
-  const startDrawingFarm = (farm?: Farm) => {
-    resetForm();
-    if (farm) {
-      setFarmDrawTarget(farm.id);
-      setFarmDrawName(farm.name);
-      setFarmDrawCity(farm.city ?? farm.description ?? '');
-    } else {
-      setFarmDrawTarget('new');
-      setFarmDrawName('');
-      setFarmDrawCity('');
-    }
-    setDrawMode('drawing_farm');
-  };
 
   const finishFarmDraw = async () => {
     if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos para definir a área da fazenda.'); return; }

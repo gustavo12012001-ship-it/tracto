@@ -592,7 +592,7 @@ export default function Layout() {
                             <div key={field.id} className="flex items-center hover:bg-white/5 transition-all"
                               style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                               <button
-                                onClick={() => { setActiveField(field.id); focusActiveField(); navigate('/app/dashboard'); setSelectorOpen(false); }}
+                                onClick={() => { setActiveField(field.id ?? null); focusActiveField(); navigate('/app/dashboard'); setSelectorOpen(false); }}
                                 className="flex-1 flex items-center gap-2 pl-8 pr-2 py-1.5 text-left">
                                 <span className="material-symbols-outlined text-xs" style={{ color: activeFieldId === field.id ? 'var(--primary)' : '#334155' }}>polyline</span>
                                 <span className="text-[11px] font-semibold truncate" style={{ color: activeFieldId === field.id ? '#fff' : '#94a3b8' }}>{field.name}</span>
