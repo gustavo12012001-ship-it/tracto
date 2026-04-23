@@ -326,13 +326,6 @@ export default function Layout() {
   const temp = weatherCache ? `${Math.round(weatherCache.temperature)}°C` : '–';
   const humidity = weatherCache ? `${weatherCache.humidity}%` : '–';
   const activeFarm = farms.find((farm) => farm.id === activeFarmId) ?? null;
-  const activeField = fields.find((field) => field.id === activeFieldId) ?? null;
-  const activeContextTitle = activeField ? 'Talhão ativo' : 'Fazenda ativa';
-  const activeContextLabel = activeField
-    ? `${activeFarm?.name ?? 'Fazenda'} · ${activeField.name ?? 'Talhão'}`
-    : activeFarm
-      ? activeFarm.name
-      : 'Nenhuma fazenda selecionada';
 
 
   return (
@@ -507,76 +500,25 @@ export default function Layout() {
                 <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>menu</span>
               </button>
 
-              <button
-                type="button"
-                disabled={!activeField}
-                onClick={() => {
-                  if (!activeField?.id) return;
-                  setActiveField(activeField.id);
-                  focusActiveField();
-                  navigate('/app/dashboard');
-                }}
-                title={activeField ? 'Ir para o talhão ativo no mapa' : 'Selecione um talhão para focar no mapa'}
-                className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl transition-all"
-                style={{
-                  background: activeField ? 'rgba(236,91,19,0.12)' : 'rgba(255,255,255,0.02)',
-                  border: activeField ? '1px solid rgba(236,91,19,0.28)' : '1px solid var(--border)',
-                  cursor: activeField ? 'pointer' : 'default',
-                  opacity: activeField ? 1 : 0.8,
-                }}
-              >
-                <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>pin_drop</span>
-                <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: activeField ? '#f97316' : 'var(--muted)' }}>{activeContextTitle}</p>
-                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[260px]">
-                    {activeContextLabel}
-                  </p>
-                </div>
-              </button>
-
-              <div className="hidden lg:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>home_work</span>
-                <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Fazenda ativa</p>
-                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">{activeFarm?.name ?? 'Sem fazenda ativa'}</p>
-                </div>
-              </div>
-
-              <div className="hidden xl:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>location_on</span>
-                <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
-                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
-                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Section: Actions & Weather */}
-            <div className="flex items-center gap-3 md:gap-4">
-              {/* Weather Info â€" hidden on mobile */}
-              <div className="hidden lg:flex items-center gap-4 text-xs font-semibold">
-                <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
-                  <span className="material-symbols-outlined text-base" style={{ color: '#f97316' }}>wb_sunny</span>
-                  {temp}
-                </span>
-                <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
-                  <span className="material-symbols-outlined text-base text-blue-400">humidity_percentage</span>
-                  <span style={{ color: 'var(--muted)' }}>{humidity}</span>
-                </span>
-              </div>
-
-              {/* Seletor unificado: Fazenda → Talhão (dropdown customizado) */}
-              <div className="relative hidden md:flex" ref={selectorRef}>
+              {/* FAZENDA ATIVA — clickable dropdown */}
+              <div className="relative" ref={selectorRef}>
                 <button
+                  type="button"
                   onClick={() => setSelectorOpen((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold text-white transition-all"
-                  style={{ background: 'var(--surface)', border: `1px solid ${selectorOpen ? 'rgba(236,91,19,0.4)' : 'var(--border)'}` }}>
-                  <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>agriculture</span>
-                  <span className="max-w-[160px] truncate">
-                    {activeField ? `${activeFarm?.name ?? ''} · ${activeField.name}` : activeFarm ? activeFarm.name : 'Selecionar'}
-                  </span>
+                  className="hidden md:flex items-center gap-2 p-1.5 px-3 rounded-xl transition-all"
+                  style={{
+                    background: selectorOpen ? 'rgba(236,91,19,0.12)' : 'rgba(255,255,255,0.02)',
+                    border: selectorOpen ? '1px solid rgba(236,91,19,0.28)' : '1px solid var(--border)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>home_work</span>
+                  <div>
+                    <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Fazenda ativa</p>
+                    <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
+                      {activeFarm?.name ?? 'Nenhuma fazenda'}
+                    </p>
+                  </div>
                   <span className="material-symbols-outlined text-sm transition-transform duration-200" style={{ color: 'var(--muted)', transform: selectorOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>expand_more</span>
                 </button>
 
@@ -643,14 +585,12 @@ export default function Layout() {
                                   <span className="text-[10px] shrink-0 ml-1" style={{ color: '#334155' }}>{farm.city ?? farm.description}</span>
                                 )}
                               </button>
-                              {/* Editar fazenda */}
                               <button
                                 onClick={() => { setEditingFarmId(farm.id); setEditFarmName(farm.name); setEditFarmCity(farm.city ?? farm.description ?? ''); setEditingFieldId(null); }}
                                 className="p-1 rounded hover:bg-white/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
                                 title="Editar fazenda">
                                 <span className="material-symbols-outlined text-sm" style={{ color: '#60a5fa' }}>edit</span>
                               </button>
-                              {/* Excluir fazenda */}
                               <button
                                 onClick={async () => {
                                   if (!window.confirm(`Excluir a fazenda "${farm.name}" e todos os seus talhões?`)) return;
@@ -740,7 +680,6 @@ export default function Layout() {
                                       <span className="text-[11px] font-medium truncate" style={{ color: activeFieldId === field.id ? '#fff' : '#64748b' }}>{field.name}</span>
                                       {field.areaHa && <span className="text-[9px] ml-1 shrink-0" style={{ color: '#1e293b' }}>{field.areaHa.toFixed(1)} ha</span>}
                                     </button>
-                                    {/* 📍 Localização */}
                                     <a href={`https://www.google.com/maps?q=${field.lat},${field.lng}`}
                                       target="_blank" rel="noopener noreferrer"
                                       onClick={(e) => e.stopPropagation()}
@@ -748,14 +687,12 @@ export default function Layout() {
                                       title="Ver no Google Maps">
                                       <span className="material-symbols-outlined text-sm" style={{ color: '#4ade80' }}>pin_drop</span>
                                     </a>
-                                    {/* ✏ Editar */}
                                     <button
                                       onClick={() => { setEditingFieldId(field.id ?? null); setEditFarmName(''); setEditFieldName(field.name ?? ''); setEditFieldCultura(field.cultura ?? ''); setEditFieldVariedade(field.variedade ?? ''); setEditFieldPlantio(field.dataPlantio ?? ''); setEditingFarmId(null); }}
                                       className="p-1 rounded hover:bg-white/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
                                       title="Editar talhão">
                                       <span className="material-symbols-outlined text-sm" style={{ color: '#60a5fa' }}>edit</span>
                                     </button>
-                                    {/* 🗑 Excluir */}
                                     <button
                                       onClick={async () => {
                                         if (!field.id || !window.confirm(`Excluir o talhão "${field.name}"?`)) return;
@@ -775,6 +712,31 @@ export default function Layout() {
                     })}
                   </div>
                 )}
+              </div>
+
+              <div className="hidden xl:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>location_on</span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
+                  <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
+                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Section: Actions & Weather */}
+            <div className="flex items-center gap-3 md:gap-4">
+              {/* Weather Info â€" hidden on mobile */}
+              <div className="hidden lg:flex items-center gap-4 text-xs font-semibold">
+                <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
+                  <span className="material-symbols-outlined text-base" style={{ color: '#f97316' }}>wb_sunny</span>
+                  {temp}
+                </span>
+                <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
+                  <span className="material-symbols-outlined text-base text-blue-400">humidity_percentage</span>
+                  <span style={{ color: 'var(--muted)' }}>{humidity}</span>
+                </span>
               </div>
 
               {/* Notifications */}
