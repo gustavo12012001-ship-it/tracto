@@ -362,7 +362,7 @@ function FazendaTab() {
                             </Field>
                             <div className="flex gap-2">
                               <button
-                                onClick={() => field.id && void saveField(field.id, { name: editFieldName || field.name, cultura: editFieldCultura || undefined, variedade: editFieldVariedade || undefined, dataPlantio: editFieldPlantio || undefined })}
+                                onClick={() => field.id && void saveField(field.id, { name: editFieldName || field.name || '', cultura: editFieldCultura || undefined, variedade: editFieldVariedade || undefined, dataPlantio: editFieldPlantio || undefined })}
                                 disabled={loading}
                                 className={btnPrimary}
                                 style={{ background: '#60a5fa', color: '#fff' }}
