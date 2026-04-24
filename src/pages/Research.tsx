@@ -549,10 +549,13 @@ export default function Research() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'todos' | 'crescendo' | 'floresceu' | 'previsto'>('todos');
   const [gddCache, setGddCache] = useState<Record<string, GDDData>>({});
-  const [, setGddLoading] = useState<Record<string, boolean>>({});
+  const [gddLoadingMap, setGddLoading] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
+  const [gddLastUpdate, setGddLastUpdate] = useState<string | null>(null);
 
-  // Load GDD data for fields that have planting dates
+  const isGddLoading = Object.values(gddLoadingMap).some(Boolean);
+
+  // Auto-load GDD/temperature data for all fields with planting dates
   useEffect(() => {
     const fieldsNeedingGDD = fields.filter(f => f.dataPlantio && f.id && !gddCache[f.id]);
     if (fieldsNeedingGDD.length === 0) return;
@@ -563,6 +566,7 @@ export default function Research() {
       try {
         const data = await fetchTemperatureHistory(f.lat, f.lng, f.dataPlantio);
         setGddCache(prev => ({ ...prev, [f.id!]: data }));
+        setGddLastUpdate(new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
       } catch { /* silently skip */ }
       finally {
         setGddLoading(prev => ({ ...prev, [f.id!]: false }));
@@ -674,6 +678,25 @@ export default function Research() {
             </button>
           </div>
         </div>
+
+        {/* Auto-analysis status banner */}
+        {isGddLoading ? (
+          <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}>
+            <span className="material-symbols-outlined shrink-0 animate-spin text-lg" style={{ color: '#ec5b13' }}>progress_activity</span>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#ec5b13' }}>Carregando soma térmica automática...</p>
+              <p className="text-xs" style={{ color: '#94a3b8' }}>Buscando histórico de temperatura (Open-Meteo) para calcular GDD e prever florescimento.</p>
+            </div>
+          </div>
+        ) : gddLastUpdate ? (
+          <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)' }}>
+            <span className="material-symbols-outlined shrink-0 text-lg" style={{ color: '#4ade80' }}>thermostat</span>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#4ade80' }}>Soma térmica (GDD) atualizada automaticamente</p>
+              <p className="text-xs" style={{ color: '#94a3b8' }}>Dados meteorológicos carregados · Previsão de florescimento calculada · {gddLastUpdate}</p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Stats bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
