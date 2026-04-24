@@ -13,6 +13,7 @@ import ResetPassword from './pages/ResetPassword';
 import Pricing from './pages/Pricing';
 import Settings from './pages/Settings';
 import Maps from './pages/Maps';
+import Research from './pages/Research';
 import Services from './pages/Services';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -48,6 +49,7 @@ function App() {
           <Route path="market" element={<Market />} />
           <Route path="billing" element={<Pricing />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="research" element={<Research />} />
         </Route>
       </Routes>
     </BrowserRouter>
