@@ -525,6 +525,8 @@ export default function FieldMap() {
   const [fieldCulturaAnterior, setFieldCulturaAnterior] = useState('');
   const [fieldRotacao, setFieldRotacao] = useState('');
 
+  const [showBlockPicker, setShowBlockPicker] = useState(false);
+
   // ── Estado do bloco de pesquisa ───────────────────────────────────────────
   const [blockParentId, setBlockParentId] = useState<string | null>(null);
   const [blockName, setBlockName] = useState('');
@@ -748,6 +750,7 @@ export default function FieldMap() {
     setFieldTextura(''); setFieldCulturaAnterior(''); setFieldRotacao('');
     setShowAdvancedFields(false);
     setBlockParentId(null); setBlockName(''); setBlockTratamento(''); setBlockNumero('');
+    setShowBlockPicker(false);
     setFarmDrawName(''); setFarmDrawCity(''); setFarmDrawTarget('new');
     setDrawMode('none');
   };
@@ -784,7 +787,10 @@ export default function FieldMap() {
   };
 
   const finishBlock = async () => {
-    if (!blockParentId || !activeFarmId) { alert('Selecione um talhão principal primeiro.'); return; }
+    if (!blockParentId) { alert('Selecione um talhão principal primeiro.'); return; }
+    const parentField = fields.find((f) => f.id === blockParentId);
+    const farmId = parentField?.farm_id ?? activeFarmId;
+    if (!farmId) { alert('Fazenda não encontrada. Selecione uma fazenda ativa.'); return; }
     if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
     const areaHa = polygonAreaHa(drawPoints);
     if (areaHa < 0.001) { alert('Área muito pequena. Mínimo 0.001 ha.'); return; }
@@ -795,7 +801,7 @@ export default function FieldMap() {
     ];
     try {
       setIsSaving(true);
-      await createField(activeFarmId, {
+      await createField(farmId, {
         lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, areaHa,
         parent_field_id: blockParentId,
         field_type: 'research_block',
@@ -1180,6 +1186,23 @@ export default function FieldMap() {
                 <span className="material-symbols-outlined text-base">add_location_alt</span>
                 Desenhar Talhão
               </button>
+              <button onClick={() => {
+                setActionsOpen(false);
+                const standardFields = fields.filter((f) => f.field_type !== 'research_block');
+                const activeStandard = activeFieldId ? fields.find((f) => f.id === activeFieldId && f.field_type !== 'research_block') : null;
+                if (activeStandard?.id) {
+                  startDrawingBlock(activeStandard.id);
+                } else if (standardFields.length === 1 && standardFields[0].id) {
+                  startDrawingBlock(standardFields[0].id);
+                } else {
+                  setShowBlockPicker(true);
+                }
+              }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(52,211,153,0.35)', color: '#34d399' }}>
+                <span className="material-symbols-outlined text-base">biotech</span>
+                Bloco de Pesquisa
+              </button>
               <button onClick={() => { setActionsOpen(false); setShowNewFarmModal(true); }}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
                 style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', color: '#94a3b8' }}>
@@ -1188,6 +1211,31 @@ export default function FieldMap() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Seletor de talhão pai para bloco de pesquisa */}
+      {showBlockPicker && (
+        <div className="absolute top-20 right-4 z-[500] flex flex-col gap-2 px-4 py-3 rounded-2xl pointer-events-auto"
+          style={{ background: 'rgba(8,8,9,0.97)', backdropFilter: 'blur(20px)', border: '1px solid rgba(52,211,153,0.3)', minWidth: 220, maxHeight: 320, overflowY: 'auto' }}>
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#34d399' }}>
+            <span className="material-symbols-outlined text-xs align-middle mr-1">biotech</span>
+            Selecione o talhão principal
+          </p>
+          {fields.filter((f) => f.field_type !== 'research_block').length === 0 ? (
+            <p className="text-xs py-2" style={{ color: '#64748b' }}>Nenhum talhão disponível. Crie um talhão primeiro.</p>
+          ) : (
+            fields.filter((f) => f.field_type !== 'research_block').map((f) => (
+              <button key={f.id} onClick={() => { setShowBlockPicker(false); if (f.id) startDrawingBlock(f.id); }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-left hover:bg-white/10 transition-all"
+                style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0' }}>
+                <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>polyline</span>
+                {f.name}
+                {f.areaHa && <span className="ml-auto text-[9px]" style={{ color: '#475569' }}>{f.areaHa.toFixed(1)} ha</span>}
+              </button>
+            ))
+          )}
+          <button onClick={() => setShowBlockPicker(false)} className="text-[10px] text-center py-1 hover:text-white transition-colors" style={{ color: '#475569' }}>Cancelar</button>
         </div>
       )}
 

@@ -281,8 +281,8 @@ export default function Services() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
-
   const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const doSearch = useCallback(
     async (q: string) => {
@@ -316,6 +316,7 @@ export default function Services() {
           lng = geo.lng;
         }
 
+        setSearchedLocation({ lat, lng });
         const res = await searchNominatim(q, lat, lng);
         const sorted = res.sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
         setResults(sorted);
@@ -455,6 +456,34 @@ export default function Services() {
               </p>
             )}
           </form>
+
+          {/* ── Google Maps direct link ─────────────────────────────────────── */}
+          {searched && searchedLocation && (
+            <div className="mb-6 flex flex-col gap-3">
+              <a
+                href={`https://www.google.com/maps/search/${encodeURIComponent(query)}/@${searchedLocation.lat},${searchedLocation.lng},14z`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+                style={{ background: '#1a73e8', color: '#fff' }}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
+                </svg>
+                Buscar "{query}" no Google Maps
+              </a>
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', height: 320 }}>
+                <iframe
+                  title="Google Maps"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(query + ' ' + (searchedLocation.lat.toFixed(4)) + ',' + (searchedLocation.lng.toFixed(4)))}&output=embed&hl=pt-BR&z=13`}
+                  width="100%"
+                  height="320"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          )}
 
           {/* ── Quick chips ──────────────────────────────────────────────────── */}
           {!searched && (

@@ -383,6 +383,23 @@ export default function Layout() {
         }
         /* Texto claro → escuro no modo claro */
         [data-theme="light"] .text-white { color: #0f172a !important; }
+        /* Dark floating panels keep white text even in light mode */
+        [data-theme="light"] .always-dark * { color: inherit; }
+        [data-theme="light"] .always-dark .text-white { color: #ffffff !important; }
+        [data-theme="light"] .always-dark .text-slate-50,
+        [data-theme="light"] .always-dark .text-slate-100,
+        [data-theme="light"] .always-dark .text-slate-200 { color: #f1f5f9 !important; }
+        [data-theme="light"] .always-dark .text-slate-300 { color: #cbd5e1 !important; }
+        [data-theme="light"] .always-dark .text-slate-400,
+        [data-theme="light"] .always-dark .text-slate-500,
+        [data-theme="light"] .always-dark .text-slate-600 { color: #94a3b8 !important; }
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.0"],
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.1"] { background: rgba(255,255,255,0.06) !important; }
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.07)"],
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.08)"],
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.09)"],
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.10)"],
+        [data-theme="light"] .always-dark [style*="rgba(255,255,255,0.12)"] { border-color: rgba(255,255,255,0.1) !important; }
         [data-theme="light"] .text-slate-50,
         [data-theme="light"] .text-slate-100,
         [data-theme="light"] .text-slate-200 { color: #1e293b !important; }
@@ -426,6 +443,8 @@ export default function Layout() {
         /* Scrollbar */
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+        /* Light mode: map/research panels stay dark always */
+        [data-theme="light"] .leaflet-container { filter: none; }
 
         /* ── Ícone da marca: badge branco arredondado em todos os temas ── */
         .tracto-brand-icon { background: #fff; border-radius: 7px; padding: 2px; }
@@ -492,11 +511,11 @@ export default function Layout() {
         </div>
 
         {/* â"€â"€ Main Content â"€â"€ */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0">
 
           {/* TopBar */}
           <header
-            className="header-glass flex items-center justify-between px-4 md:px-6 h-16 border-b flex-shrink-0 z-30"
+            className="header-glass relative flex items-center justify-between px-4 md:px-6 h-16 border-b flex-shrink-0 z-[1001]"
             style={{ borderColor: 'var(--border)' }}
           >
             {/* Left Section: Operational Context */}
@@ -534,7 +553,7 @@ export default function Layout() {
                 </button>
 
                 {selectorOpen && (
-                  <div className="absolute top-full left-0 mt-1.5 z-[600] rounded-xl flex flex-col"
+                  <div className="always-dark absolute top-full left-0 mt-1.5 z-[600] rounded-xl flex flex-col"
                     style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 300, maxHeight: 480, overflowY: 'auto' }}>
 
                     {farms.length === 0 ? (
@@ -768,7 +787,7 @@ export default function Layout() {
 
                 {/* Dropdown de notificações */}
                 {showNotifications && (
-                  <div className="absolute right-0 top-full mt-2 z-[600] rounded-2xl overflow-hidden flex flex-col"
+                  <div className="always-dark absolute right-0 top-full mt-2 z-[600] rounded-2xl overflow-hidden flex flex-col"
                     style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 320, maxHeight: 420 }}>
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
