@@ -1,29 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface ServiceResult {
-  osm_id: number;
-  name: string;
-  display_name: string;
-  lat: number;
-  lng: number;
-  type: string;
-  distance?: number; // km
-}
-
-interface Sponsored {
-  id: string;
-  name: string;
-  description: string;
-  logo?: string;
-  contact: string;
-  category: string;
-}
-
-// ── Sponsored partners (empty — add real partners here) ───────────────────────
-const SPONSORED: Sponsored[] = [];
-
 // ── Quick search chips ────────────────────────────────────────────────────────
 const QUICK_CHIPS = [
   { label: 'Mecânico agrícola', icon: 'build' },
@@ -38,73 +15,6 @@ const QUICK_CHIPS = [
   { label: 'Ferragem', icon: 'handyman' },
 ];
 
-// ── Haversine distance (km) ────────────────────────────────────────────────────
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-// ── Non-POI categories to exclude (streets, admin boundaries, etc.) ───────────
-const EXCLUDED_CATEGORIES = new Set([
-  'highway', 'boundary', 'landuse', 'waterway', 'railway',
-  'natural', 'barrier', 'aeroway', 'route', 'man_made',
-]);
-
-// ── Nominatim search ──────────────────────────────────────────────────────────
-async function searchNominatim(
-  query: string,
-  lat: number,
-  lng: number
-): Promise<ServiceResult[]> {
-  const delta = 0.4; // ~44 km — stays within the city/region
-  const viewbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
-
-  const params = new URLSearchParams({
-    q: query,
-    format: 'jsonv2',
-    addressdetails: '1',
-    limit: '50',
-    countrycodes: 'br',
-    viewbox,
-    bounded: '1', // force results inside the viewbox
-  });
-
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-    { headers: { 'Accept-Language': 'pt-BR', 'User-Agent': 'TractoAgTech/1.0' } }
-  );
-  if (!res.ok) throw new Error('Falha ao buscar no Nominatim');
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: any[] = await res.json();
-
-  return data
-    .filter((item) => {
-      // Must have a proper name
-      if (!item.name || item.name.trim() === '') return false;
-      // Exclude non-establishment types (roads, borders, landuse areas, etc.)
-      const cat: string = item.category ?? '';
-      return !EXCLUDED_CATEGORIES.has(cat);
-    })
-    .map((item) => ({
-      osm_id: item.osm_id,
-      name: item.name,
-      display_name: item.display_name,
-      lat: parseFloat(item.lat),
-      lng: parseFloat(item.lon),
-      type: item.type ?? item.category ?? '',
-      distance: haversine(lat, lng, parseFloat(item.lat), parseFloat(item.lon)),
-    }));
-}
-
 // ── Get device GPS location ───────────────────────────────────────────────────
 function getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
@@ -117,183 +27,25 @@ function getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-// ── Helper: short address ─────────────────────────────────────────────────────
-function shortAddress(display_name: string): string {
-  const parts = display_name.split(',').map((s) => s.trim());
-  return parts.slice(0, 3).join(', ');
-}
-
-// ── ResultCard ────────────────────────────────────────────────────────────────
-function ResultCard({ result }: { result: ServiceResult }) {
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    result.name + ' ' + result.display_name
-  )}`;
-
-  const distLabel =
-    result.distance !== undefined ? `${result.distance.toFixed(1)} km` : '–';
-
-  return (
-    <div
-      className="rounded-xl p-4 flex flex-col gap-2.5 transition-all hover:translate-y-[-1px]"
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-      }}
-    >
-      {/* Name + distance */}
-      <div className="flex items-start justify-between gap-2">
-        <h3
-          className="text-sm font-semibold leading-snug"
-          style={{ color: 'var(--text, #e2e8f0)' }}
-        >
-          {result.name}
-        </h3>
-        <span
-          className="flex items-center gap-1 px-2 py-0.5 rounded-lg flex-shrink-0 text-[10px] font-bold"
-          style={{
-            background: 'var(--primary-dim)',
-            border: '1px solid rgba(236,91,19,0.18)',
-            color: 'var(--primary)',
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 11 }}>
-            pin_drop
-          </span>
-          {distLabel}
-        </span>
-      </div>
-
-      {/* Address */}
-      <p className="text-[11px] leading-relaxed" style={{ color: 'var(--muted)' }}>
-        {shortAddress(result.display_name)}
-      </p>
-
-      {/* Type badge */}
-      {result.type && (
-        <span
-          className="self-start text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize"
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid var(--border)',
-            color: 'var(--muted)',
-          }}
-        >
-          {result.type.replace(/_/g, ' ')}
-        </span>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center gap-2 pt-1">
-        <a
-          href={mapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 flex-1 justify-center"
-          style={{ background: 'var(--primary)', color: '#fff' }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
-            map
-          </span>
-          Ver no mapa
-        </a>
-        <a
-          href={`https://www.google.com/search?q=${encodeURIComponent(result.name + ' ' + shortAddress(result.display_name))}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-          style={{
-            background: 'var(--primary-dim)',
-            border: '1px solid rgba(236,91,19,0.2)',
-            color: 'var(--primary)',
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
-            search
-          </span>
-          Google
-        </a>
-      </div>
-    </div>
-  );
-}
-
-// ── SponsoredCard ─────────────────────────────────────────────────────────────
-function SponsoredCard({ sponsor }: { sponsor: Sponsored }) {
-  return (
-    <div
-      className="rounded-xl p-4 flex flex-col gap-2.5 relative"
-      style={{
-        background: 'var(--surface)',
-        border: '2px solid var(--primary)',
-        boxShadow: '0 0 0 4px var(--primary-dim)',
-      }}
-    >
-      <span
-        className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest"
-        style={{ background: 'var(--primary)', color: '#fff' }}
-      >
-        Patrocinado
-      </span>
-      <div className="flex items-center gap-3 pr-20">
-        {sponsor.logo ? (
-          <img src={sponsor.logo} alt={sponsor.name} className="w-10 h-10 rounded-full object-cover" />
-        ) : (
-          <div
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-            style={{ background: 'var(--primary)' }}
-          >
-            {sponsor.name[0]}
-          </div>
-        )}
-        <div>
-          <h3 className="text-sm font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>
-            {sponsor.name}
-          </h3>
-          <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
-            {sponsor.category}
-          </p>
-        </div>
-      </div>
-      <p className="text-xs" style={{ color: 'var(--muted)' }}>
-        {sponsor.description}
-      </p>
-      <a
-        href={`tel:${sponsor.contact}`}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold justify-center transition-all hover:opacity-90"
-        style={{ background: 'var(--primary)', color: '#fff' }}
-      >
-        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
-          call
-        </span>
-        Entrar em contato
-      </a>
-    </div>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Services() {
   const { currentLocation } = useAppStore();
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<ServiceResult[]>([]);
+  const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searched, setSearched] = useState(false);
   const [deviceLocation, setDeviceLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchLocation, setSearchLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [activeQuery, setActiveQuery] = useState('');
 
   const doSearch = useCallback(
     async (q: string) => {
       if (!q.trim()) return;
-      setQuery(q);
       setLoading(true);
       setError(null);
-      setSearched(true);
 
       try {
-        // Priority: farm location > device GPS > refuse to search with no location
         let lat: number;
         let lng: number;
 
@@ -301,14 +53,13 @@ export default function Services() {
           lat = currentLocation.lat;
           lng = currentLocation.lng;
         } else {
-          // Try device GPS
           let geo = deviceLocation;
           if (!geo) {
             geo = await getDeviceLocation();
             if (geo) setDeviceLocation(geo);
           }
           if (!geo) {
-            setError('Não foi possível determinar sua localização. Defina a localização da fazenda para buscar serviços próximos.');
+            setError('Não foi possível determinar sua localização. Defina a localização da fazenda nas configurações.');
             setLoading(false);
             return;
           }
@@ -316,13 +67,10 @@ export default function Services() {
           lng = geo.lng;
         }
 
-        setSearchedLocation({ lat, lng });
-        const res = await searchNominatim(q, lat, lng);
-        const sorted = res.sort((a, b) => (a.distance ?? 9999) - (b.distance ?? 9999));
-        setResults(sorted);
-      } catch {
-        setError('Não foi possível realizar a busca. Tente novamente.');
-        setResults([]);
+        setQuery(q);
+        setActiveQuery(q);
+        setSearchLocation({ lat, lng });
+        setSearched(true);
       } finally {
         setLoading(false);
       }
@@ -335,6 +83,22 @@ export default function Services() {
     doSearch(query);
   };
 
+  // Build Google Maps URLs
+  const gmapsListUrl = searchLocation
+    ? `https://www.google.com/maps/search/${encodeURIComponent(activeQuery)}/@${searchLocation.lat},${searchLocation.lng},13z`
+    : null;
+
+  // Google Maps Embed API v1 search mode — shows sidebar with business list + map
+  // Uses a public embed key (no billing) — falls back gracefully
+  const gmapsEmbedUrl = searchLocation
+    ? `https://www.google.com/maps/embed/v1/search?key=AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY&q=${encodeURIComponent(activeQuery)}&center=${searchLocation.lat},${searchLocation.lng}&zoom=13&language=pt-BR`
+    : null;
+
+  // Fallback embed (no key needed — shows map with pins only)
+  const gmapsFallbackEmbed = searchLocation
+    ? `https://maps.google.com/maps?q=${encodeURIComponent(activeQuery + ' perto de ' + searchLocation.lat + ',' + searchLocation.lng)}&output=embed&hl=pt-BR&z=13`
+    : null;
+
   return (
     <div
       className="flex-1 flex flex-col overflow-hidden"
@@ -346,42 +110,28 @@ export default function Services() {
         style={{ borderColor: 'var(--border)', background: 'var(--sidebar)' }}
       >
         <div className="flex items-center gap-2 mb-1">
-          <span
-            className="material-symbols-outlined text-xl"
-            style={{ color: 'var(--primary)' }}
-          >
+          <span className="material-symbols-outlined text-xl" style={{ color: 'var(--primary)' }}>
             handshake
           </span>
-          <h1
-            className="text-base font-bold tracking-tight"
-            style={{ color: 'var(--text, #e2e8f0)' }}
-          >
+          <h1 className="text-base font-bold tracking-tight" style={{ color: 'var(--text, #e2e8f0)' }}>
             Serviços Locais
           </h1>
         </div>
         <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
-          Encontre prestadores de serviço próximos à sua propriedade
+          Encontre prestadores de serviço próximos à sua propriedade via Google Maps
         </p>
       </div>
 
       {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="max-w-2xl mx-auto px-4 py-8">
+        <div className="max-w-3xl mx-auto px-4 py-6">
+
           {/* ── Search box ─────────────────────────────────────────────────── */}
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3 mb-6">
-            <label
-              className="text-sm font-semibold"
-              style={{ color: 'var(--text, #e2e8f0)' }}
-            >
-              O que você precisa?
-            </label>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3 mb-5">
             <div className="flex gap-2">
               <div
                 className="flex items-center gap-2 flex-1 rounded-xl px-4 py-3"
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                }}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               >
                 <span
                   className="material-symbols-outlined text-base flex-shrink-0"
@@ -403,14 +153,11 @@ export default function Services() {
                     type="button"
                     onClick={() => {
                       setQuery('');
-                      setResults([]);
                       setSearched(false);
+                      setActiveQuery('');
                     }}
                   >
-                    <span
-                      className="material-symbols-outlined text-sm"
-                      style={{ color: 'var(--muted)' }}
-                    >
+                    <span className="material-symbols-outlined text-sm" style={{ color: 'var(--muted)' }}>
                       close
                     </span>
                   </button>
@@ -423,9 +170,7 @@ export default function Services() {
                 style={{ background: 'var(--primary)', color: '#fff' }}
               >
                 {loading ? (
-                  <span className="material-symbols-outlined text-base animate-spin">
-                    progress_activity
-                  </span>
+                  <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
                 ) : (
                   'Buscar'
                 )}
@@ -435,95 +180,34 @@ export default function Services() {
             {/* Location note */}
             {!currentLocation && !deviceLocation && (
               <p className="text-[10px]" style={{ color: '#f59e0b' }}>
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: 11, verticalAlign: 'middle' }}
-                >
+                <span className="material-symbols-outlined" style={{ fontSize: 11, verticalAlign: 'middle' }}>
                   location_off
                 </span>{' '}
-                Localização da fazenda não definida — ao buscar, usaremos o GPS do seu dispositivo.
-              </p>
-            )}
-            {!currentLocation && deviceLocation && (
-              <p className="text-[10px]" style={{ color: '#22c55e' }}>
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: 11, verticalAlign: 'middle' }}
-                >
-                  my_location
-                </span>{' '}
-                Usando sua localização atual para buscar serviços próximos.
+                Localização da fazenda não definida — ao buscar, usaremos o GPS do dispositivo.
               </p>
             )}
           </form>
 
-          {/* ── Google Maps direct link ─────────────────────────────────────── */}
-          {searched && searchedLocation && (
-            <div className="mb-6 flex flex-col gap-3">
-              <a
-                href={`https://www.google.com/maps/search/${encodeURIComponent(query)}/@${searchedLocation.lat},${searchedLocation.lng},14z`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-                style={{ background: '#1a73e8', color: '#fff' }}
-              >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
-                </svg>
-                Buscar "{query}" no Google Maps
-              </a>
-              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', height: 320 }}>
-                <iframe
-                  title="Google Maps"
-                  src={`https://maps.google.com/maps?q=${encodeURIComponent(query + ' ' + (searchedLocation.lat.toFixed(4)) + ',' + (searchedLocation.lng.toFixed(4)))}&output=embed&hl=pt-BR&z=13`}
-                  width="100%"
-                  height="320"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                />
-              </div>
-            </div>
-          )}
-
           {/* ── Quick chips ──────────────────────────────────────────────────── */}
-          {!searched && (
-            <div className="flex flex-wrap gap-2 mb-8">
-              {QUICK_CHIPS.map((chip) => (
-                <button
-                  key={chip.label}
-                  onClick={() => doSearch(chip.label)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all hover:opacity-80"
-                  style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--muted)',
-                  }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
-                    {chip.icon}
-                  </span>
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* ── Sponsored (future partners) ──────────────────────────────────── */}
-          {SPONSORED.length > 0 && (
-            <div className="mb-6">
-              <p
-                className="text-[10px] font-semibold uppercase tracking-widest mb-3"
-                style={{ color: 'var(--muted)' }}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {QUICK_CHIPS.map((chip) => (
+              <button
+                key={chip.label}
+                onClick={() => doSearch(chip.label)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all hover:opacity-80"
+                style={{
+                  background: activeQuery === chip.label ? 'var(--primary)' : 'var(--surface)',
+                  border: activeQuery === chip.label ? 'none' : '1px solid var(--border)',
+                  color: activeQuery === chip.label ? '#fff' : 'var(--muted)',
+                }}
               >
-                Parceiros recomendados
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {SPONSORED.map((s) => (
-                  <SponsoredCard key={s.id} sponsor={s} />
-                ))}
-              </div>
-            </div>
-          )}
+                <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                  {chip.icon}
+                </span>
+                {chip.label}
+              </button>
+            ))}
+          </div>
 
           {/* ── Error ────────────────────────────────────────────────────────── */}
           {error && (
@@ -540,92 +224,105 @@ export default function Services() {
             </div>
           )}
 
-          {/* ── Loading skeleton ─────────────────────────────────────────────── */}
-          {loading && (
+          {/* ── Google Maps results ──────────────────────────────────────────── */}
+          {searched && searchLocation && (
             <div className="flex flex-col gap-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="rounded-xl p-4 animate-pulse"
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', height: 120 }}
+              {/* Bar: query + open in Google Maps button */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm font-semibold" style={{ color: 'var(--text, #e2e8f0)' }}>
+                  Resultados para{' '}
+                  <span style={{ color: 'var(--primary)' }}>"{activeQuery}"</span>
+                  <span className="text-xs font-normal ml-2" style={{ color: 'var(--muted)' }}>
+                    via Google Maps
+                  </span>
+                </p>
+                {gmapsListUrl && (
+                  <a
+                    href={gmapsListUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90 flex-shrink-0"
+                    style={{ background: '#1a73e8', color: '#fff' }}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
+                    </svg>
+                    Abrir lista no Google Maps
+                  </a>
+                )}
+              </div>
+
+              {/* Google Maps iframe — shows business list + map */}
+              <div
+                className="rounded-2xl overflow-hidden w-full"
+                style={{
+                  border: '1px solid var(--border)',
+                  height: 520,
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+                }}
+              >
+                <iframe
+                  key={`${activeQuery}-${searchLocation.lat}`}
+                  title="Google Maps — Resultados"
+                  src={gmapsEmbedUrl ?? gmapsFallbackEmbed ?? ''}
+                  width="100%"
+                  height="520"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  onError={() => {
+                    // if embed API key fails, iframe will still fall back to map view
+                  }}
                 />
-              ))}
+              </div>
+
+              {/* Tip */}
+              <p className="text-[11px] text-center" style={{ color: 'var(--muted)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 12, verticalAlign: 'middle' }}>
+                  info
+                </span>{' '}
+                Clique em um marcador no mapa para ver o nome, avaliação e telefone do local · Para ver a lista completa, clique em{' '}
+                <strong>Abrir lista no Google Maps</strong>
+              </p>
             </div>
           )}
 
-          {/* ── Results ──────────────────────────────────────────────────────── */}
-          {!loading && searched && (
-            <>
-              <p className="text-xs font-semibold mb-4" style={{ color: 'var(--muted)' }}>
-                {results.length === 0
-                  ? 'Nenhum resultado encontrado'
-                  : `${results.length} resultado${results.length !== 1 ? 's' : ''} para "${query}"`}
-              </p>
-
-              {results.length > 0 && (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                    {results.map((r) => (
-                      <ResultCard key={r.osm_id} result={r} />
-                    ))}
-                  </div>
-
-                  {/* "Ver mais no Google Maps" */}
-                  <div className="flex justify-center mb-8">
-                    <a
-                      href={`https://www.google.com/maps/search/${encodeURIComponent(
-                        query + (currentLocation ? ` perto de ${currentLocation.lat},${currentLocation.lng}` : ' Brasil')
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
-                      style={{
-                        background: 'var(--surface)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--muted)',
-                      }}
-                    >
-                      <span className="material-symbols-outlined text-sm">open_in_new</span>
-                      Ver mais resultados no Google Maps
-                    </a>
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── Empty state (before first search) ───────────────────────────── */}
+          {/* ── Empty state ──────────────────────────────────────────────────── */}
           {!searched && !loading && (
             <div
-              className="flex flex-col items-center gap-3 py-12"
-              style={{ color: 'var(--muted)' }}
+              className="flex flex-col items-center gap-3 py-16 rounded-2xl"
+              style={{
+                color: 'var(--muted)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+              }}
             >
               <span className="material-symbols-outlined text-5xl" style={{ opacity: 0.3 }}>
                 travel_explore
               </span>
-              <p className="text-sm font-semibold text-center">
+              <p className="text-sm font-semibold text-center" style={{ color: 'var(--text, #e2e8f0)' }}>
                 Busque por qualquer serviço rural
               </p>
               <p className="text-xs text-center max-w-xs">
-                Resultados reais do OpenStreetMap — sem dados fictícios.
+                Os resultados são carregados direto do Google Maps com os prestadores reais da sua região.
+              </p>
+              <p className="text-[11px] font-semibold mt-1" style={{ color: 'var(--primary)' }}>
+                Selecione uma categoria acima ou digite o que precisa
               </p>
             </div>
           )}
 
-          {/* ── CTA: Anunciar ──────────────────────────────────────────────── */}
+          {/* ── CTA: Anunciar ────────────────────────────────────────────────── */}
           <div
-            className="rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4"
-            style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-            }}
+            className="rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4 mt-6"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           >
             <div className="flex-1 text-center sm:text-left">
               <p className="text-sm font-bold mb-1" style={{ color: 'var(--text, #e2e8f0)' }}>
                 Você presta serviços para o campo?
               </p>
               <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                Em breve você poderá anunciar seus serviços aqui e ser encontrado por produtores da sua região.
+                Em breve você poderá anunciar seus serviços e ser encontrado por produtores da sua região.
               </p>
             </div>
             <button

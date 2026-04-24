@@ -66,6 +66,7 @@ export default function Reports() {
   const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
+  const [autoRunning, setAutoRunning] = useState(false);
 
   const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
     const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
@@ -159,6 +160,7 @@ export default function Reports() {
     }
   }, [fetchFieldIntelligence]);
 
+  // Auto-analyze active field immediately on selection
   useEffect(() => {
     if (!activeFieldId) return;
     const selected = fields.find((item) => item.id === activeFieldId);
@@ -166,6 +168,34 @@ export default function Reports() {
       void handleAnalyze(selected, false);
     }
   }, [activeFieldId, fields, handleAnalyze]);
+
+  // Auto-analyze ALL fields silently on mount (background, uses cache first)
+  useEffect(() => {
+    if (fields.length === 0) return;
+    setAutoRunning(true);
+    let completed = 0;
+    const total = fields.filter(f => f.id).length;
+    // Stagger requests to avoid hammering the API
+    fields.forEach((loc, i) => {
+      if (!loc.id) return;
+      const key = loc.id;
+      setTimeout(() => {
+        setAnalysisResults(prev => {
+          if (!prev[key]) {
+            void handleAnalyze(loc, false).finally(() => {
+              completed++;
+              if (completed >= total) setAutoRunning(false);
+            });
+          } else {
+            completed++;
+            if (completed >= total) setAutoRunning(false);
+          }
+          return prev;
+        });
+      }, i * 1200); // 1.2s stagger between requests
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only on mount
 
   const hasFields = fields.length > 0;
 
@@ -227,13 +257,32 @@ export default function Reports() {
           </button>
         </div>
 
-        {/* ── Aviso de Confiança ── */}
-        <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-          <span className="material-symbols-outlined shrink-0" style={{ color: '#38bdf8' }}>info</span>
-          <p className="text-sm font-medium" style={{ color: '#bae6fd' }}>
-            Dados reportados via motor determinístico. O histórico temporal requer meses de coleta ativa para calibração de curvas.
-          </p>
-        </div>
+        {/* ── Auto-análise banner ── */}
+        {autoRunning ? (
+          <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'rgba(236,91,19,0.08)', border: '1px solid rgba(236,91,19,0.2)' }}>
+            <span className="material-symbols-outlined shrink-0 animate-spin text-lg" style={{ color: '#ec5b13' }}>progress_activity</span>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#ec5b13' }}>
+                Análise automática em andamento...
+              </p>
+              <p className="text-xs" style={{ color: '#94a3b8' }}>
+                Coletando imagens de satélite Sentinel-2, dados meteorológicos e gerando relatório com IA para todos os talhões.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)' }}>
+            <span className="material-symbols-outlined shrink-0" style={{ color: '#4ade80' }}>smart_toy</span>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#4ade80' }}>
+                Análise automática concluída
+              </p>
+              <p className="text-xs" style={{ color: '#94a3b8' }}>
+                IA analisou Sentinel-2 + meteorologia de todos os talhões · Última verificação: {new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── KPIs ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
