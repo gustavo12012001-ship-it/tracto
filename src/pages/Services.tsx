@@ -54,21 +54,35 @@ function getTagsForKeyword(query: string): OsmTag[] {
 }
 
 // ── Build Overpass QL query ────────────────────────────────────────────────────
-function buildOverpassQuery(query: string, lat: number, lng: number, radiusM = 12000): string {
+function buildOverpassQuery(query: string, lat: number, lng: number, radiusM = 15000): string {
   const tags = getTagsForKeyword(query);
-  const nameFilter = `["name"~"${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",i]`;
+  // Sanitize query: keep only word chars + spaces for safe regex
+  const safeQ = query.replace(/[^a-zA-ZÀ-ÿ0-9\s]/g, '').trim();
 
-  const tagFilters = tags.map(t =>
-    `node["${t.key}"="${t.value}"](around:${radiusM},${lat},${lng});\n  way["${t.key}"="${t.value}"](around:${radiusM},${lat},${lng});`
-  ).join('\n  ');
+  // Tag-based filters (most reliable)
+  const tagLines = tags.flatMap(t => [
+    `node["${t.key}"="${t.value}"](around:${radiusM},${lat},${lng});`,
+    `way["${t.key}"="${t.value}"](around:${radiusM},${lat},${lng});`,
+  ]);
 
-  return `[out:json][timeout:20];
+  // Name text search (broader fallback)
+  const nameLines = safeQ.length >= 3 ? [
+    `node["name"~"${safeQ}",i](around:${radiusM},${lat},${lng});`,
+    `way["name"~"${safeQ}",i](around:${radiusM},${lat},${lng});`,
+  ] : [];
+
+  // Always have at least shop/amenity/craft search near user so union is never empty
+  const fallbackLines = tagLines.length === 0 && nameLines.length === 0 ? [
+    `node["amenity"](around:${radiusM},${lat},${lng});`,
+  ] : [];
+
+  const unionBody = [...tagLines, ...nameLines, ...fallbackLines].join('\n  ');
+
+  return `[out:json][timeout:25];
 (
-  node${nameFilter}(around:${radiusM},${lat},${lng});
-  way${nameFilter}(around:${radiusM},${lat},${lng});
-  ${tagFilters}
+  ${unionBody}
 );
-out body center 40;`;
+out body center 50;`;
 }
 
 // ── Haversine ─────────────────────────────────────────────────────────────────
@@ -85,6 +99,7 @@ async function fetchOverpass(query: string, lat: number, lng: number): Promise<P
   const ql = buildOverpassQuery(query, lat, lng);
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'data=' + encodeURIComponent(ql),
   });
   if (!res.ok) throw new Error('Overpass error ' + res.status);
