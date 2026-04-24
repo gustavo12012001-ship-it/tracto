@@ -948,11 +948,32 @@ export default function FieldMap() {
         <ActiveFieldFlyController />
         <FlyController target={flyTarget} />
 
-        {mapLayer === 'osm' && <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />}
+        {mapLayer === 'osm' && (
+          <TileLayer
+            attribution="&copy; OpenStreetMap contributors"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
+          />
+        )}
         {mapLayer === 'esri' && (
           <>
-            <TileLayer attribution="&copy; Esri" url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={20} />
-            <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" maxZoom={20} opacity={0.6} />
+            {/* Google Satellite — cobertura total do Brasil */}
+            <TileLayer
+              attribution="&copy; Google"
+              url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+              subdomains={['0', '1', '2', '3']}
+              maxZoom={21}
+              maxNativeZoom={20}
+            />
+            {/* Labels overlay — nomes de cidades e ruas */}
+            <TileLayer
+              attribution=""
+              url="https://mt{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}"
+              subdomains={['0', '1', '2', '3']}
+              maxZoom={21}
+              maxNativeZoom={20}
+              opacity={0.7}
+            />
           </>
         )}
 
