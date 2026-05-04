@@ -285,7 +285,7 @@ export default function Weather() {
 
             {loading && (
               <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 border border-white/10">
-                <span className="material-symbols-outlined text-xs animate-spin text-orange-500">refresh</span>
+                <span className="inline-block w-3 h-3 rounded-full border-2 border-orange-400 border-t-transparent animate-spin" />
                 <span className="text-[10px] text-slate-400">Atualizando...</span>
               </div>
             )}

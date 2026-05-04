@@ -100,7 +100,7 @@ export default function ResetPassword() {
 
             {stage === 'loading' && (
               <div className="flex flex-col items-center gap-4 py-8">
-                <span className="material-symbols-outlined text-orange-400 text-4xl animate-spin">refresh</span>
+                <span className="inline-block w-10 h-10 rounded-full border-4 border-orange-400 border-t-transparent animate-spin" />
                 <p className="text-slate-400 text-sm">Validando link de recuperação...</p>
               </div>
             )}
@@ -198,7 +198,7 @@ export default function ResetPassword() {
                   >
                     {loading ? (
                       <>
-                        <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
+                        <span className="inline-block w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
                         Salvando...
                       </>
                     ) : 'Redefinir Senha'}

@@ -157,12 +157,20 @@ export default function Chat() {
   const loadConversations = useCallback(async () => {
     try {
       setLoadingConversations(true);
+      setApiError(null); // clear previous error before retry
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const data = await apiFetch<{ conversations: SavedConversation[] }>('/api/conversations');
       setSavedConversations(data.conversations || []);
     } catch (e) {
-      setApiError(e instanceof Error ? e.message : 'Nao foi possivel carregar as conversas salvas.');
+      // Non-blocking: conversations fail gracefully — chat still works
+      console.warn('[Chat] Conversations unavailable:', e);
+      setSavedConversations([]); // show empty, don't block UI
+      // Only set error if it's a critical failure (not just network blip)
+      const msg = e instanceof Error ? e.message : '';
+      if (!msg.includes('fetch') && !msg.includes('network') && !msg.includes('Failed')) {
+        setApiError('Histórico de conversas indisponível');
+      }
     } finally {
       setLoadingConversations(false);
     }
@@ -170,7 +178,11 @@ export default function Chat() {
 
   useEffect(() => {
     void loadConversations();
-  }, [loadConversations]);
+    // Auto-retry once after 5s in case backend is cold-starting
+    const retry = setTimeout(() => void loadConversations(), 5000);
+    return () => clearTimeout(retry);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persistConversation = useCallback(
     async (msgs: Message[], cid: string, createdAt: string, farmContextForSave: string, fieldIdForSave: string | null) => {
