@@ -95,38 +95,89 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Fetch via Overpass API ────────────────────────────────────────────────────
-// Multiple endpoints for fallback
+// ── Fetch helpers ─────────────────────────────────────────────────────────────
+function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+// ── Overpass (POST) ───────────────────────────────────────────────────────────
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
-function fetchWithTimeout(url: string, ms: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-async function fetchOverpass(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
-  const ql = buildOverpassQuery(query, lat, lng);
-  const params = '?data=' + encodeURIComponent(ql);
-
-  let res: Response | null = null;
+async function fetchOverpassRaw(ql: string): Promise<Response> {
   let lastErr = '';
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
-      res = await fetchWithTimeout(endpoint + params, 15000);
-      if (res.ok) break;
+      const res = await fetchWithTimeout(endpoint, 30000, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(ql),
+      });
+      if (res.ok) return res;
       lastErr = 'HTTP ' + res.status;
-      res = null;
     } catch (e) {
       lastErr = e instanceof Error ? e.message : String(e);
-      res = null;
     }
   }
-  if (!res) throw new Error('Overpass indisponível: ' + lastErr);
+  throw new Error('Overpass indisponível: ' + lastErr);
+}
+
+// ── Nominatim fallback ────────────────────────────────────────────────────────
+async function fetchNominatim(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
+  const d = 0.15; // ~15 km bounding box
+  const viewbox = `${lng - d},${lat + d},${lng + d},${lat - d}`;
+  const url =
+    `https://nominatim.openstreetmap.org/search` +
+    `?format=json&q=${encodeURIComponent(query)}&viewbox=${viewbox}&bounded=1` +
+    `&limit=30&addressdetails=1&accept-language=pt`;
+
+  const res = await fetchWithTimeout(url, 20000, {
+    headers: { 'Accept-Language': 'pt-BR,pt;q=0.9', 'User-Agent': 'TractoApp/1.0' },
+  });
+  if (!res.ok) throw new Error('Nominatim HTTP ' + res.status);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items: any[] = await res.json();
+  const seen = new Set<string>();
+  const results: PlaceResult[] = [];
+
+  for (const item of items) {
+    const name: string = item.name || item.display_name?.split(',')[0] || '';
+    if (!name.trim()) continue;
+    const elLat = parseFloat(item.lat);
+    const elLng = parseFloat(item.lon);
+    if (!elLat || !elLng) continue;
+    const key = `${name.toLowerCase().slice(0, 20)}_${elLat.toFixed(3)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const addr = item.address;
+    const address = [addr?.road, addr?.house_number, addr?.city || addr?.town || addr?.village]
+      .filter(Boolean).join(', ');
+    results.push({
+      id: item.place_id,
+      name,
+      type: item.type?.replace(/_/g, ' ') || item.class?.replace(/_/g, ' ') || '',
+      address: address || undefined,
+      lat: elLat,
+      lng: elLng,
+      distance: haversine(lat, lng, elLat, elLng),
+    });
+  }
+
+  return results.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+}
+
+// ── Main search orchestrator ───────────────────────────────────────────────────
+async function fetchOverpass(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
+  const ql = buildOverpassQuery(query, lat, lng);
+
+  try {
+    const res = await fetchOverpassRaw(ql);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json: { elements: any[] } = await res.json();
@@ -165,7 +216,11 @@ async function fetchOverpass(query: string, lat: number, lng: number): Promise<P
     });
   }
 
-  return results.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+    return results.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+  } catch {
+    // Overpass failed — fall back to Nominatim
+    return fetchNominatim(query, lat, lng);
+  }
 }
 
 // ── Get device location ───────────────────────────────────────────────────────
