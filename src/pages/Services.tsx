@@ -99,7 +99,11 @@ async function fetchOverpass(query: string, lat: number, lng: number): Promise<P
   const ql = buildOverpassQuery(query, lat, lng);
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': 'TractoApp/1.0 (gustavo@tracto.app)'
+    },
     body: 'data=' + encodeURIComponent(ql),
   });
   if (!res.ok) throw new Error('Overpass error ' + res.status);
@@ -310,8 +314,18 @@ export default function Services() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="max-w-2xl mx-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin relative">
+        <div className={`max-w-2xl mx-auto px-4 w-full transition-all duration-500 ease-in-out ${
+          searched || loading ? 'pt-6 pb-24' : 'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[60%]'
+        }`}>
+
+          {!searched && !loading && (
+            <div className="text-center mb-8 flex flex-col items-center justify-center">
+              <span className="material-symbols-outlined text-6xl mb-2" style={{ color: 'var(--primary)', opacity: 0.9 }}>travel_explore</span>
+              <h2 className="text-3xl font-black tracking-tight" style={{ color: 'var(--text, #e2e8f0)' }}>Tracto<span style={{ color: 'var(--primary)' }}>Serviços</span></h2>
+              <p className="text-sm mt-2" style={{ color: 'var(--muted)' }}>Busque prestadores reais perto de você</p>
+            </div>
+          )}
 
           {/* Search */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-3 mb-5">
@@ -434,20 +448,6 @@ export default function Services() {
                 </div>
               )}
             </>
-          )}
-
-          {/* Empty state */}
-          {!searched && !loading && (
-            <div className="flex flex-col items-center gap-3 py-16 rounded-2xl"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-              <span className="material-symbols-outlined text-5xl" style={{ opacity: 0.3 }}>travel_explore</span>
-              <p className="text-sm font-semibold" style={{ color: 'var(--text, #e2e8f0)' }}>
-                Busque por qualquer serviço rural
-              </p>
-              <p className="text-xs text-center max-w-xs">
-                Selecione uma categoria acima ou digite o que precisa. Os resultados são estabelecimentos reais com nome, endereço e rota.
-              </p>
-            </div>
           )}
 
           {/* CTA */}

@@ -108,13 +108,6 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
-  {
-    to: '/app/services',
-    label: 'Serviços',
-    icon: (
-      <span className="material-symbols-outlined text-[16px]">handyman</span>
-    ),
-  },
 ];
 
 // ── Sidebar content (shared between desktop & mobile drawer) ──────────────────
