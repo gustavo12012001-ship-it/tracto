@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
-import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 // ── Theme helpers ─────────────────────────────────────────────────────────────
 type Theme = 'dark' | 'light';
@@ -295,6 +294,8 @@ export default function Layout() {
     updateField,
     removeField,
   } = useAppStore();
+
+  const activeField = fields.find(f => f.id === activeFieldId) || null;
 
   // Fechar dropdowns ao clicar fora
   useEffect(() => {

@@ -15,7 +15,6 @@ import Pricing from './pages/Pricing';
 import Settings from './pages/Settings';
 import Maps from './pages/Maps';
 import Research from './pages/Research';
-import Services from './pages/Services';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -46,7 +45,6 @@ function App() {
           <Route path="alerts" element={<Alerts />} />
           <Route path="reports" element={<Reports />} />
           <Route path="maps" element={<Maps />} />
-          <Route path="services" element={<Services />} />
           <Route path="market" element={<Market />} />
           <Route path="services" element={<Services />} />
           <Route path="billing" element={<Pricing />} />
