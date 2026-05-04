@@ -95,14 +95,32 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 }
 
 // ── Fetch via Overpass API ────────────────────────────────────────────────────
+// Multiple endpoints for fallback
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+
 async function fetchOverpass(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
   const ql = buildOverpassQuery(query, lat, lng);
-  const res = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(ql),
-  });
-  if (!res.ok) throw new Error('Overpass error ' + res.status);
+  // Use GET — simpler, no CORS preflight, works everywhere
+  const params = '?data=' + encodeURIComponent(ql);
+
+  let res: Response | null = null;
+  let lastErr = '';
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      res = await fetch(endpoint + params, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) break;
+      lastErr = 'HTTP ' + res.status;
+      res = null;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+      res = null;
+    }
+  }
+  if (!res) throw new Error('Overpass indisponível: ' + lastErr);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json: { elements: any[] } = await res.json();

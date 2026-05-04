@@ -519,7 +519,7 @@ export default function Maps() {
   }, []);
 
   const tileUrl = selectedMap.specialTile
-    ?? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    ?? 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
 
   // Mostra painel de cenas? Sim para mapas prontos ou no modo raw
   const showScenesPanel = selectedMap.backendReady || rawMode;
@@ -566,7 +566,13 @@ export default function Maps() {
       <div className="flex-1 relative min-w-0">
         {activeField ? (
           <MapContainer key={`${activeField.id}-${selectedMap.id}`} center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-            <TileLayer url={tileUrl} />
+            <TileLayer
+              url={tileUrl}
+              subdomains={tileUrl.includes('google.com') ? ['0','1','2','3'] : ['a','b','c']}
+              maxZoom={21}
+              maxNativeZoom={20}
+              attribution={tileUrl.includes('google.com') ? '&copy; Google' : undefined}
+            />
             <FlyToBounds boundaries={fieldBoundaries ?? null} />
             {fieldBoundaries && fieldBoundaries.length > 0 && (
               <Polygon positions={fieldBoundaries} pathOptions={{

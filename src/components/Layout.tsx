@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
+import { preloadWeather } from '../services/api';
 
 // ── Theme helpers ─────────────────────────────────────────────────────────────
 type Theme = 'dark' | 'light';
@@ -282,6 +283,7 @@ export default function Layout() {
     currentLocation,
     resetStore,
     weatherCache,
+    setWeatherCache,
     syncFromBackend,
     updateFarmInfo,
     deleteFarm,
@@ -307,7 +309,7 @@ export default function Layout() {
         const timeout = setTimeout(() => {
           useAppStore.setState({ isSyncing: false });
         }, 5000);
-        
+
         syncFromBackend().finally(() => clearTimeout(timeout));
 
         // Sempre tenta geolocalizacao no mount; o util decide fallback em caso de erro/negacao.
@@ -326,6 +328,15 @@ export default function Layout() {
 
     return () => subscription.unsubscribe();
   }, [syncFromBackend]);
+
+  // ── Pré-carrega meteorologia ao abrir o app ──────────────────────────────────
+  useEffect(() => {
+    const loc = currentLocation ?? FALLBACK_LOCATION;
+    preloadWeather(loc.lat, loc.lng, weatherCache).then((fresh) => {
+      if (fresh) setWeatherCache(fresh);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLocation?.lat, currentLocation?.lng]); // re-run if location changes
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
