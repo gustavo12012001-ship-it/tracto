@@ -28,7 +28,7 @@ const DAYS_PT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 
 // ── Open-Meteo fetch ──────────────────────────────────────────────────────────
-async function fetchOpenMeteo(lat: number, lng: number): Promise<WeatherCache> {
+export async function fetchOpenMeteo(lat: number, lng: number): Promise<WeatherCache> {
   const base = 'https://api.open-meteo.com/v1/forecast';
   const params = new URLSearchParams({
     latitude: String(lat),

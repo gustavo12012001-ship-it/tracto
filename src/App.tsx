@@ -6,6 +6,7 @@ import Chat from './pages/Chat';
 import Alerts from './pages/Alerts';
 import Reports from './pages/Reports';
 import Market from './pages/Market';
+import Services from './pages/Services';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import Register from './pages/Register';
@@ -47,6 +48,7 @@ function App() {
           <Route path="maps" element={<Maps />} />
           <Route path="services" element={<Services />} />
           <Route path="market" element={<Market />} />
+          <Route path="services" element={<Services />} />
           <Route path="billing" element={<Pricing />} />
           <Route path="settings" element={<Settings />} />
           <Route path="research" element={<Research />} />

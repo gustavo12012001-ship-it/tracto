@@ -109,6 +109,13 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    to: '/app/services',
+    label: 'Serviços',
+    icon: (
+      <span className="material-symbols-outlined text-[16px]">handyman</span>
+    ),
+  },
 ];
 
 // ── Sidebar content (shared between desktop & mobile drawer) ──────────────────
@@ -326,6 +333,30 @@ export default function Layout() {
 
     return () => subscription.unsubscribe();
   }, [syncFromBackend]);
+
+  useEffect(() => {
+    const loc = activeField
+      ? { lat: activeField.lat, lng: activeField.lng }
+      : currentLocation
+        ? { lat: currentLocation.lat, lng: currentLocation.lng }
+        : null;
+
+    if (!loc) return;
+
+    const isCacheValid =
+      weatherCache &&
+      Math.abs(weatherCache.lat - loc.lat) < 0.01 &&
+      Math.abs(weatherCache.lng - loc.lng) < 0.01 &&
+      Date.now() - weatherCache.fetchedAt < 30 * 60 * 1000;
+
+    if (isCacheValid) return;
+
+    import('../pages/Weather').then(({ fetchOpenMeteo }) => {
+      fetchOpenMeteo(loc.lat, loc.lng)
+        .then((data) => useAppStore.getState().setWeatherCache(data))
+        .catch((e) => console.warn('Background weather fetch failed:', e));
+    });
+  }, [activeField, currentLocation, weatherCache]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -749,7 +780,7 @@ export default function Layout() {
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
-                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
+                    {currentLocation?.name || 'Buscando localização...'}
                   </p>
                 </div>
               </div>
