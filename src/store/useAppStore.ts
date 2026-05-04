@@ -684,6 +684,7 @@ export const useAppStore = create<AppState>()(
         activeMapLayer: state.activeMapLayer,
         currentLocation: state.currentLocation,
         locationStatus: state.locationStatus,
+        weatherCache: state.weatherCache,
         // fields NÃO é persistido — vem sempre do Supabase via syncFields()
       }),
     }
