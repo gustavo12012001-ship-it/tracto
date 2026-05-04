@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
+import { preloadWeather } from '../services/api';
 
 // ── Theme helpers ─────────────────────────────────────────────────────────────
 type Theme = 'dark' | 'light';
@@ -281,14 +283,13 @@ export default function Layout() {
     currentLocation,
     resetStore,
     weatherCache,
+    setWeatherCache,
     syncFromBackend,
     updateFarmInfo,
     deleteFarm,
     updateField,
     removeField,
   } = useAppStore();
-
-  const activeField = fields.find(f => f.id === activeFieldId) || null;
 
   // Fechar dropdowns ao clicar fora
   useEffect(() => {
@@ -308,7 +309,7 @@ export default function Layout() {
         const timeout = setTimeout(() => {
           useAppStore.setState({ isSyncing: false });
         }, 5000);
-        
+
         syncFromBackend().finally(() => clearTimeout(timeout));
 
         // Sempre tenta geolocalizacao no mount; o util decide fallback em caso de erro/negacao.
@@ -328,29 +329,14 @@ export default function Layout() {
     return () => subscription.unsubscribe();
   }, [syncFromBackend]);
 
+  // ── Pré-carrega meteorologia ao abrir o app ──────────────────────────────────
   useEffect(() => {
-    const loc = activeField
-      ? { lat: activeField.lat, lng: activeField.lng }
-      : currentLocation
-        ? { lat: currentLocation.lat, lng: currentLocation.lng }
-        : null;
-
-    if (!loc) return;
-
-    const isCacheValid =
-      weatherCache &&
-      Math.abs(weatherCache.lat - loc.lat) < 0.01 &&
-      Math.abs(weatherCache.lng - loc.lng) < 0.01 &&
-      Date.now() - weatherCache.fetchedAt < 30 * 60 * 1000;
-
-    if (isCacheValid) return;
-
-    import('../pages/Weather').then(({ fetchOpenMeteo }) => {
-      fetchOpenMeteo(loc.lat, loc.lng)
-        .then((data) => useAppStore.getState().setWeatherCache(data))
-        .catch((e) => console.warn('Background weather fetch failed:', e));
+    const loc = currentLocation ?? FALLBACK_LOCATION;
+    preloadWeather(loc.lat, loc.lng, weatherCache).then((fresh) => {
+      if (fresh) setWeatherCache(fresh);
     });
-  }, [activeField, currentLocation, weatherCache]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLocation?.lat, currentLocation?.lng]); // re-run if location changes
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -774,7 +760,7 @@ export default function Layout() {
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
-                    {currentLocation?.name || 'Buscando localização...'}
+                    {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
                   </p>
                 </div>
               </div>
