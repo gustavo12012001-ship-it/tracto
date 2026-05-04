@@ -79,7 +79,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#080809' }}>
         <div className="flex flex-col items-center gap-4">
-          <span className="material-symbols-outlined text-5xl animate-spin" style={{ color: '#ec5b13' }}>refresh</span>
+          <span className="inline-block w-12 h-12 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: 'rgba(236,91,19,0.3)', borderTopColor: '#ec5b13' }} />
           <p className="text-sm font-medium" style={{ color: '#64748b' }}>Verificando sessão...</p>
         </div>
       </div>

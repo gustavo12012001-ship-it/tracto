@@ -120,7 +120,7 @@ export default function Login() {
                 className="w-full bg-white hover:bg-[#f8f9fa] text-[#3c4043] py-3.5 rounded-xl text-sm font-medium transition-all border border-[#dadce0] flex items-center justify-center gap-3 shadow-sm hover:shadow-md disabled:opacity-70"
               >
                 {googleLoading ? (
-                  <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
+                  <span className="inline-block w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
                 ) : (
                   <svg width="20" height="20" viewBox="0 0 24 24">
                     <path
@@ -208,7 +208,7 @@ export default function Login() {
                   >
                     {loading ? (
                       <>
-                        <span className="material-symbols-outlined text-sm animate-spin">refresh</span>
+                        <span className="inline-block w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
                         Entrando...
                       </>
                     ) : 'Entrar'}

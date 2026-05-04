@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { FALLBACK_LOCATION } from '../utils/geolocation';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PlaceResult {
@@ -102,16 +103,21 @@ const OVERPASS_ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
+function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function fetchOverpass(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
   const ql = buildOverpassQuery(query, lat, lng);
-  // Use GET — simpler, no CORS preflight, works everywhere
   const params = '?data=' + encodeURIComponent(ql);
 
   let res: Response | null = null;
   let lastErr = '';
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
-      res = await fetch(endpoint + params, { signal: AbortSignal.timeout(15000) });
+      res = await fetchWithTimeout(endpoint + params, 15000);
       if (res.ok) break;
       lastErr = 'HTTP ' + res.status;
       res = null;
@@ -286,21 +292,22 @@ export default function Services() {
       if (currentLocation) {
         lat = currentLocation.lat; lng = currentLocation.lng;
       } else {
+        // Try device GPS, fallback to saved device loc, then FALLBACK_LOCATION
         let geo = deviceLoc;
         if (!geo) { geo = await getDeviceLocation(); if (geo) setDeviceLoc(geo); }
         if (!geo) {
-          setError('Localização não encontrada. Defina a localização da fazenda nas configurações.');
-          setLoading(false);
-          return;
+          lat = FALLBACK_LOCATION.lat; lng = FALLBACK_LOCATION.lng;
+        } else {
+          lat = geo.lat; lng = geo.lng;
         }
-        lat = geo.lat; lng = geo.lng;
       }
 
       setSearchLoc({ lat, lng });
       const data = await fetchOverpass(q, lat, lng);
       setResults(data);
-    } catch {
-      setError('Não foi possível buscar. Tente novamente em instantes.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError('Não foi possível buscar: ' + msg);
       setResults([]);
     } finally {
       setLoading(false);
