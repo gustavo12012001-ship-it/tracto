@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
+import { apiFetch } from '../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PlaceResult {
@@ -30,142 +31,30 @@ const QUICK_CHIPS = [
   { label: 'Ferragem',          icon: 'handyman' },
 ];
 
-// ── Keyword → OSM tag mapping ─────────────────────────────────────────────────
-type OsmTag = { key: string; value: string };
 
-const KEYWORD_TAGS: { pattern: RegExp; tags: OsmTag[] }[] = [
-  { pattern: /mecân|trator|máquina|agrícol/i,   tags: [{ key: 'shop', value: 'car_repair' }, { key: 'craft', value: 'agricultural_engines' }, { key: 'shop', value: 'machinery' }] },
-  { pattern: /solda/i,                           tags: [{ key: 'craft', value: 'metal_construction' }, { key: 'craft', value: 'blacksmith' }] },
-  { pattern: /guincho|reboque/i,                 tags: [{ key: 'amenity', value: 'car_rental' }, { key: 'shop', value: 'car_repair' }] },
-  { pattern: /agrônom|consultori/i,              tags: [{ key: 'office', value: 'agricultural' }, { key: 'amenity', value: 'bureau_de_change' }] },
-  { pattern: /veterinár|vet\b/i,                 tags: [{ key: 'amenity', value: 'veterinary' }] },
-  { pattern: /eletric/i,                         tags: [{ key: 'craft', value: 'electrician' }, { key: 'shop', value: 'electrical' }] },
-  { pattern: /borrachar|pneu/i,                  tags: [{ key: 'shop', value: 'tyres' }, { key: 'shop', value: 'car_repair' }] },
-  { pattern: /oficina/i,                         tags: [{ key: 'shop', value: 'car_repair' }] },
-  { pattern: /combustív|gasolina|diesel|posto/i, tags: [{ key: 'amenity', value: 'fuel' }] },
-  { pattern: /ferragem|material de construção/i, tags: [{ key: 'shop', value: 'hardware' }, { key: 'shop', value: 'doityourself' }] },
-  { pattern: /farmác|agricu/i,                   tags: [{ key: 'shop', value: 'agrarian' }, { key: 'shop', value: 'farm' }] },
-];
-
-function getTagsForKeyword(query: string): OsmTag[] {
-  for (const { pattern, tags } of KEYWORD_TAGS) {
-    if (pattern.test(query)) return tags;
-  }
-  return [];
-}
-
-// ── Build Overpass QL query ────────────────────────────────────────────────────
-function buildOverpassQuery(query: string, lat: number, lng: number, radiusM = 15000): string {
-  const tags = getTagsForKeyword(query);
-  // Sanitize query: keep only word chars + spaces for safe regex
-  const safeQ = query.replace(/[^a-zA-ZÀ-ÿ0-9\s]/g, '').trim();
-
-  // Tag-based filters (most reliable)
-  const tagLines = tags.flatMap(t => [
-    `node["${t.key}"="${t.value}"](around:${radiusM},${lat},${lng});`,
-    `way["${t.key}"="${t.value}"](around:${radiusM},${lat},${lng});`,
-  ]);
-
-  // Name text search (broader fallback)
-  const nameLines = safeQ.length >= 3 ? [
-    `node["name"~"${safeQ}",i](around:${radiusM},${lat},${lng});`,
-    `way["name"~"${safeQ}",i](around:${radiusM},${lat},${lng});`,
-  ] : [];
-
-  // Always have at least shop/amenity/craft search near user so union is never empty
-  const fallbackLines = tagLines.length === 0 && nameLines.length === 0 ? [
-    `node["amenity"](around:${radiusM},${lat},${lng});`,
-  ] : [];
-
-  const unionBody = [...tagLines, ...nameLines, ...fallbackLines].join('\n  ');
-
-  return `[out:json][timeout:25];
-(
-  ${unionBody}
-);
-out body center 50;`;
-}
-
-// ── Haversine ─────────────────────────────────────────────────────────────────
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-// ── Fetch via Overpass API ────────────────────────────────────────────────────
-// Multiple endpoints for fallback
-const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-
-function fetchWithTimeout(url: string, ms: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-async function fetchOverpass(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
-  const ql = buildOverpassQuery(query, lat, lng);
-  const params = '?data=' + encodeURIComponent(ql);
-
-  let res: Response | null = null;
-  let lastErr = '';
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      res = await fetchWithTimeout(endpoint + params, 15000);
-      if (res.ok) break;
-      lastErr = 'HTTP ' + res.status;
-      res = null;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : String(e);
-      res = null;
-    }
-  }
-  if (!res) throw new Error('Overpass indisponível: ' + lastErr);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const json: { elements: any[] } = await res.json();
-
-  const seen = new Set<string>();
-  const results: PlaceResult[] = [];
-
-  for (const el of json.elements ?? []) {
-    const tags = el.tags ?? {};
-    const name: string = tags.name ?? tags['name:pt'] ?? '';
-    if (!name.trim()) continue;
-
-    const elLat: number = el.lat ?? el.center?.lat ?? 0;
-    const elLng: number = el.lon ?? el.center?.lon ?? 0;
-    if (!elLat || !elLng) continue;
-
-    // Dedup by name + approximate coords
-    const key = `${name.toLowerCase().slice(0, 20)}_${elLat.toFixed(3)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    const typeRaw: string = tags.shop ?? tags.amenity ?? tags.craft ?? tags.office ?? tags.tourism ?? '';
-    const address = [tags['addr:street'], tags['addr:housenumber'], tags['addr:city']].filter(Boolean).join(', ');
-
-    results.push({
-      id: el.id,
-      name,
-      type: typeRaw.replace(/_/g, ' '),
-      address: address || undefined,
-      lat: elLat,
-      lng: elLng,
-      distance: haversine(lat, lng, elLat, elLng),
-      phone: tags.phone ?? tags['contact:phone'] ?? undefined,
-      website: tags.website ?? tags['contact:website'] ?? undefined,
-      opening_hours: tags.opening_hours ?? undefined,
-    });
-  }
-
-  return results.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
+// ── Backend places search (server-side proxy — no CORS issues) ────────────────
+async function searchPlaces(query: string, lat: number, lng: number): Promise<PlaceResult[]> {
+  const items = await apiFetch<Array<{
+    id: number; name: string; type: string; address?: string;
+    lat: number; lng: number; distance_km: number;
+    phone?: string; website?: string; opening_hours?: string;
+  }>>('/api/places/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, lat, lng, radius_km: 15 }),
+  });
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    address: item.address,
+    lat: item.lat,
+    lng: item.lng,
+    distance: item.distance_km,
+    phone: item.phone,
+    website: item.website,
+    opening_hours: item.opening_hours,
+  }));
 }
 
 // ── Get device location ───────────────────────────────────────────────────────
@@ -303,7 +192,7 @@ export default function Services() {
       }
 
       setSearchLoc({ lat, lng });
-      const data = await fetchOverpass(q, lat, lng);
+      const data = await searchPlaces(q, lat, lng);
       setResults(data);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

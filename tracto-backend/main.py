@@ -35,6 +35,8 @@ from models import (
     PushSubscriptionCreate,
     WhatsAppWebhookPayload,
     GeoSearchRequest,
+    PlacesSearchRequest,
+    PlaceItem,
     FieldIntelligenceSnapshot,
     SentinelPreloadRequest,
 )
@@ -60,7 +62,7 @@ from services.planet_service import (
     get_planet_overlay,
     get_bbox_from_boundaries,
 )
-from services.geo_service import GeoProviderError, search_location
+from services.geo_service import GeoProviderError, search_location, search_places_nearby
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
 from services.field_intelligence_service import build_field_intelligence_snapshot
@@ -892,6 +894,30 @@ async def geo_search_endpoint(
     except Exception as exc:
         logging.error("Erro na busca geografica: %s", exc)
         raise HTTPException(status_code=502, detail="Erro temporario ao consultar o provedor de localizacao.") from exc
+
+
+@app.post("/api/places/search", response_model=list[PlaceItem])
+@limiter.limit("20/minute")
+async def places_search_endpoint(
+    request: Request,
+    body: PlacesSearchRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Search for local service providers near a coordinate (server-side proxy to Nominatim)."""
+    try:
+        results = await search_places_nearby(
+            query=body.query,
+            lat=body.lat,
+            lng=body.lng,
+            radius_km=min(body.radius_km, 50.0),
+        )
+        return results
+    except GeoProviderError as exc:
+        logging.warning("Falha ao buscar lugares. query=%s erro=%s", body.query, str(exc))
+        raise HTTPException(status_code=502, detail="Erro ao buscar prestadores de serviço.") from exc
+    except Exception as exc:
+        logging.error("Erro em places_search: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro interno ao buscar lugares.") from exc
 
 
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)
