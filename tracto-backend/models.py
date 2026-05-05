@@ -80,6 +80,26 @@ class GeoSearchRequest(BaseModel):
     query: str = Field(validation_alias=AliasChoices("query", "q"))
 
 
+class PlacesSearchRequest(BaseModel):
+    query: str
+    lat: float
+    lng: float
+    radius_km: float = 15.0
+
+
+class PlaceItem(BaseModel):
+    id: int
+    name: str
+    type: str
+    address: str | None = None
+    lat: float
+    lng: float
+    distance_km: float
+    phone: str | None = None
+    website: str | None = None
+    opening_hours: str | None = None
+
+
 class FieldAnalysisResponse(BaseModel):
     field_name: str
     ndvi_image_base64: str | None
