@@ -17,8 +17,8 @@ self.addEventListener('push', function (event) {
 
     const options = {
       body: payload.body,
-      icon: '/vite.svg', // Substituir por ícone real depois
-      badge: '/vite.svg',
+      icon: '/tracto-icon.png',
+      badge: '/tracto-icon.png',
       vibrate: [100, 50, 100],
       data: {
         dateOfArrival: Date.now(),
