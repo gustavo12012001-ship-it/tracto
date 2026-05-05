@@ -1,12 +1,72 @@
 import { useState, useEffect, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from 'recharts';
 import useAppStore from '../store/useAppStore';
 import type { Location } from '../store/useAppStore';
 import type { FieldAnalysisResult, FieldIntelligenceSnapshot } from '../services/api';
+import { apiFetch } from '../services/api';
 import { polygonAreaHa } from '../utils/geo';
 
-// ── Sem dados históricos simulados na Etapa 2 ───────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
+interface AnalysisHistoryEntry {
+  date: string;          // ISO date string
+  ndvi_medio: number;
+  zona_saudavel_pct: number;
+  zona_critica_pct: number;
+  cloud_coverage: number | null;
+  is_mock: boolean;
+}
+
+// Shape returned by /api/fields/{id}/analyses — adapt if backend differs
+interface ApiAnalysisEntry {
+  date?: string;
+  analyzed_at?: string;
+  ndvi_medio?: number;
+  ndvi_avg?: number;
+  zona_saudavel_pct?: number;
+  zona_critica_pct?: number;
+  cloud_coverage?: number | null;
+  is_mock?: boolean;
+}
+
+// ── Tooltip pt-BR para recharts ───────────────────────────────────────────────
+
+interface TooltipPayloadEntry {
+  value: number;
+  name: string;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadEntry[];
+  label?: string;
+}
+
+function NdviTooltip({ active, payload, label }: CustomTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null;
+  const value = payload[0].value;
+  const dateStr = label
+    ? new Date(label).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+  return (
+    <div
+      className="rounded-xl px-3 py-2 text-xs shadow-xl"
+      style={{ background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(236,91,19,0.3)', color: '#f1f5f9' }}
+    >
+      <p className="font-semibold mb-0.5" style={{ color: '#ec5b13' }}>{dateStr}</p>
+      <p>NDVI Médio: <span className="font-bold text-white">{value.toFixed(3)}</span></p>
+    </div>
+  );
+}
 
 // ── PDF export ────────────────────────────────────────────────────────────────
 function exportPDF(
@@ -61,12 +121,81 @@ function exportPDF(
   doc.save('tracto-relatorio.pdf');
 }
 
+// ── CSV export ────────────────────────────────────────────────────────────────
+function exportCSV(
+  fields: ReturnType<typeof useAppStore.getState>['fields'],
+  intelligenceById: ReturnType<typeof useAppStore.getState>['fieldIntelligenceById']
+) {
+  const cols = [
+    'campo',
+    'area_ha',
+    'lat',
+    'lng',
+    'ndvi_medio',
+    'zona_saudavel_pct',
+    'zona_critica_pct',
+    'cloud_coverage',
+    'data_analise',
+    'is_mock',
+  ];
+
+  const rows: string[][] = fields.map((f) => {
+    const area = f.boundaries ? polygonAreaHa(f.boundaries) : 0;
+    const snap: FieldIntelligenceSnapshot | undefined = f.id ? intelligenceById[f.id] : undefined;
+
+    const satellite = (snap?.satellite ?? {}) as Record<string, unknown>;
+    const ndviStats = (satellite.ndvi_stats ?? {}) as Record<string, unknown>;
+    const analysis = (snap?.analysis ?? {}) as Record<string, unknown>;
+
+    const ndviMedio = snap ? Number(ndviStats.ndvi_avg ?? 0) : 0;
+    const cloudCoverage = snap ? String(satellite.cloud_coverage ?? '') : '';
+    const dataAnalise = snap ? snap.updated_at : '';
+    const isMock = snap ? String(snap.weather_status.status !== 'ok') : '';
+
+    // zona_saudavel_pct / zona_critica_pct são derivados do engine; fallback 0 se não disponível
+    const sprayLevel = ((analysis.spray_window as Record<string, unknown> | undefined)?.level as number | undefined) ?? 0;
+    const zonaSaudavel = snap ? Math.max(0, Math.round(sprayLevel * 20)).toString() : '';
+    const zonaCritica = snap ? Math.max(0, Math.round((5 - sprayLevel) * 5)).toString() : '';
+
+    return [
+      f.name ?? `Talhão`,
+      area.toFixed(2),
+      f.lat.toFixed(6),
+      f.lng.toFixed(6),
+      ndviMedio.toFixed(3),
+      zonaSaudavel,
+      zonaCritica,
+      cloudCoverage,
+      dataAnalise,
+      isMock,
+    ];
+  });
+
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const csvContent = [
+    cols.map(escape).join(','),
+    ...rows.map((row) => row.map(escape).join(',')),
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `tracto-relatorio-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Reports() {
-  const { fields, activeFieldId, fetchFieldIntelligence } = useAppStore();
+  const { fields, activeFieldId, fetchFieldIntelligence, fieldIntelligenceById } = useAppStore();
   const [analysisResults, setAnalysisResults] = useState<Record<string, FieldAnalysisResult>>({});
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<string, boolean>>({});
   const [autoRunning, setAutoRunning] = useState(false);
+
+  // ── Histórico de análises ──
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyData, setHistoryData] = useState<AnalysisHistoryEntry[]>([]);
 
   const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
     const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
@@ -175,7 +304,6 @@ export default function Reports() {
     setAutoRunning(true);
     let completed = 0;
     const total = fields.filter(f => f.id).length;
-    // Stagger requests to avoid hammering the API
     fields.forEach((loc, i) => {
       if (!loc.id) return;
       const key = loc.id;
@@ -192,13 +320,47 @@ export default function Reports() {
           }
           return prev;
         });
-      }, i * 1200); // 1.2s stagger between requests
+      }, i * 1200);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only on mount
 
-  const hasFields = fields.length > 0;
+  // ── Buscar histórico quando activeFieldId mudar ──────────────────────────────
+  useEffect(() => {
+    if (!activeFieldId) {
+      setHistoryData([]);
+      return;
+    }
 
+    setHistoryLoading(true);
+    setHistoryData([]);
+
+    apiFetch<ApiAnalysisEntry[]>(`/api/fields/${activeFieldId}/analyses`)
+      .then((entries) => {
+        const parsed: AnalysisHistoryEntry[] = entries
+          .filter((e) => (e.date ?? e.analyzed_at) && (e.ndvi_medio ?? e.ndvi_avg) !== undefined)
+          .map((e) => ({
+            date: e.date ?? e.analyzed_at ?? '',
+            ndvi_medio: Number(e.ndvi_medio ?? e.ndvi_avg ?? 0),
+            zona_saudavel_pct: Number(e.zona_saudavel_pct ?? 0),
+            zona_critica_pct: Number(e.zona_critica_pct ?? 0),
+            cloud_coverage: e.cloud_coverage ?? null,
+            is_mock: Boolean(e.is_mock ?? false),
+          }))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        setHistoryData(parsed);
+      })
+      .catch(() => {
+        // Silenciar: campo pode não ter histórico ainda
+        setHistoryData([]);
+      })
+      .finally(() => {
+        setHistoryLoading(false);
+      });
+  }, [activeFieldId]);
+
+  const hasFields = fields.length > 0;
 
   const totalArea = fields.reduce((s, l) =>
     s + (l.boundaries ? polygonAreaHa(l.boundaries) : 0.01), 0);
@@ -235,7 +397,7 @@ export default function Reports() {
       <div className="p-5 flex flex-col gap-5 max-w-5xl mx-auto w-full">
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-xl font-bold text-white">Relatórios</h1>
             <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
@@ -247,14 +409,26 @@ export default function Reports() {
               </p>
             )}
           </div>
-          <button
-            onClick={() => exportPDF(fields, activeField?.name ?? null)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
-            style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.28)' }}
-          >
-            <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-            Exportar PDF
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Exportar CSV */}
+            <button
+              onClick={() => exportCSV(fields, fieldIntelligenceById)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90"
+              style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+            >
+              <span className="material-symbols-outlined text-sm">table_view</span>
+              Exportar CSV
+            </button>
+            {/* Exportar PDF */}
+            <button
+              onClick={() => exportPDF(fields, activeField?.name ?? null)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+              style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.28)' }}
+            >
+              <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+              Exportar PDF
+            </button>
+          </div>
         </div>
 
         {/* ── Auto-análise banner ── */}
@@ -338,8 +512,8 @@ export default function Reports() {
                         </div>
 
                         {result.ndvi_image_base64 && (
-                          <img 
-                            src={`data:image/png;base64,${result.ndvi_image_base64}`} 
+                          <img
+                            src={`data:image/png;base64,${result.ndvi_image_base64}`}
                             alt={`NDVI ${name}`}
                             className="w-full h-[200px] object-cover rounded-xl mb-6"
                             style={{ border: '1px solid rgba(255,255,255,0.1)' }}
@@ -348,39 +522,39 @@ export default function Reports() {
 
                         <div className="mb-6">
                           <div className="flex justify-between items-center mb-2">
-                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Metricas Deterministicas</h4>
-                             <div className="flex items-center gap-2">
-                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase ${result.confidence > 0.7 ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                    Confianca: {(result.confidence * 100).toFixed(0)}%
-                                </span>
-                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded uppercase bg-slate-700 text-slate-300">
-                                    {result.source || 'Sentinel-2'}
-                                </span>
-                             </div>
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Metricas Deterministicas</h4>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase ${result.confidence > 0.7 ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                Confianca: {(result.confidence * 100).toFixed(0)}%
+                              </span>
+                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded uppercase bg-slate-700 text-slate-300">
+                                {result.source || 'Sentinel-2'}
+                              </span>
+                            </div>
                           </div>
-                          
+
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                             <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                                <p className="text-[10px] text-slate-500 mb-1">NDVI Médio</p>
-                                <p className="text-sm font-bold text-white">{result.ndvi_analysis.ndvi_medio.toFixed(3)}</p>
+                              <p className="text-[10px] text-slate-500 mb-1">NDVI Médio</p>
+                              <p className="text-sm font-bold text-white">{result.ndvi_analysis.ndvi_medio.toFixed(3)}</p>
                             </div>
                             <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                                <p className="text-[10px] text-slate-500 mb-1">Pulverização</p>
-                                <p className={`text-[10px] font-bold ${result.engine_results?.spray_window?.color === 'green' ? 'text-green-400' : 'text-amber-400'}`}>
-                                    {result.engine_results?.spray_window?.label.toUpperCase()}
-                                </p>
+                              <p className="text-[10px] text-slate-500 mb-1">Pulverização</p>
+                              <p className={`text-[10px] font-bold ${result.engine_results?.spray_window?.color === 'green' ? 'text-green-400' : 'text-amber-400'}`}>
+                                {result.engine_results?.spray_window?.label.toUpperCase()}
+                              </p>
                             </div>
                             <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                                <p className="text-[10px] text-slate-500 mb-1">Risco Geada</p>
-                                <p className={`text-[10px] font-bold ${result.engine_results?.frost_risk?.level > 2 ? 'text-red-400' : 'text-white'}`}>
-                                    {result.engine_results?.frost_risk?.label.toUpperCase()}
-                                </p>
+                              <p className="text-[10px] text-slate-500 mb-1">Risco Geada</p>
+                              <p className={`text-[10px] font-bold ${result.engine_results?.frost_risk?.level > 2 ? 'text-red-400' : 'text-white'}`}>
+                                {result.engine_results?.frost_risk?.label.toUpperCase()}
+                              </p>
                             </div>
                             <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                                <p className="text-[10px] text-slate-500 mb-1">Estresse Hídrico</p>
-                                <p className={`text-[10px] font-bold ${result.engine_results?.water_stress?.level > 2 ? 'text-red-400' : 'text-white'}`}>
-                                    {result.engine_results?.water_stress?.label.toUpperCase()}
-                                </p>
+                              <p className="text-[10px] text-slate-500 mb-1">Estresse Hídrico</p>
+                              <p className={`text-[10px] font-bold ${result.engine_results?.water_stress?.level > 2 ? 'text-red-400' : 'text-white'}`}>
+                                {result.engine_results?.water_stress?.label.toUpperCase()}
+                              </p>
                             </div>
                           </div>
 
@@ -413,15 +587,15 @@ export default function Reports() {
                             </div>
                           </div>
                         )}
-                        
+
                         <div className="mt-6 flex justify-end">
-                            <button
-                                onClick={() => handleAnalyze(loc, true)}
-                                className="px-4 py-2 rounded-lg text-xs font-bold transition-all border text-slate-300 hover:text-white hover:bg-white/5"
-                                style={{ borderColor: 'rgba(255,255,255,0.1)', background: 'transparent' }}
-                            >
-                                Re-analisar
-                            </button>
+                          <button
+                            onClick={() => handleAnalyze(loc, true)}
+                            className="px-4 py-2 rounded-lg text-xs font-bold transition-all border text-slate-300 hover:text-white hover:bg-white/5"
+                            style={{ borderColor: 'rgba(255,255,255,0.1)', background: 'transparent' }}
+                          >
+                            Re-analisar
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -445,14 +619,131 @@ export default function Reports() {
           </div>
         )}
 
-        {/* ── Honest UX: Histórico Real Missing ── */}
+        {/* ── HISTÓRICO DE ANÁLISES ─────────────────────────────────────────── */}
         {hasFields && (
-          <div className="py-10 text-center rounded-2xl mb-6" style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)' }}>
-            <span className="material-symbols-outlined text-4xl block mb-3 opacity-50" style={{ color: '#64748b' }}>timeline</span>
-            <p className="text-sm font-semibold text-white mb-1">Histórico Temporal Indisponível</p>
-            <p className="text-xs max-w-sm mx-auto" style={{ color: '#64748b' }}>
-              São necessários múltiplos meses de coleta de imagens de satélite e dados de campo para gerar curvas de evolução do NDVI e Produtividade (Etapa 2).
-            </p>
+          <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>timeline</span>
+                Histórico de Análises
+              </h2>
+              {activeField && (
+                <span className="text-[10px] font-semibold px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.05)', color: '#64748b' }}>
+                  {activeField.name ?? 'Talhão'}
+                </span>
+              )}
+            </div>
+
+            <div className="p-5">
+              {historyLoading ? (
+                <div className="flex flex-col gap-3 animate-pulse">
+                  <div className="h-4 bg-white/10 rounded w-1/3" />
+                  <div className="h-40 bg-white/05 rounded-xl" />
+                </div>
+              ) : historyData.length === 0 ? (
+                <div className="py-10 text-center">
+                  <span className="material-symbols-outlined text-3xl block mb-2 opacity-40" style={{ color: '#64748b' }}>show_chart</span>
+                  <p className="text-sm font-semibold text-white mb-1">Sem histórico disponível</p>
+                  <p className="text-xs max-w-sm mx-auto" style={{ color: '#64748b' }}>
+                    Execute análises para ver a evolução do NDVI ao longo do tempo.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  {/* Gráfico de linha NDVI */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Evolução do NDVI</p>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={historyData} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(v: string) =>
+                            new Date(v).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                          }
+                          tick={{ fontSize: 10, fill: '#64748b' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          domain={[0, 1]}
+                          tick={{ fontSize: 10, fill: '#64748b' }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickCount={5}
+                        />
+                        <Tooltip content={<NdviTooltip />} />
+                        <Line
+                          type="monotone"
+                          dataKey="ndvi_medio"
+                          stroke="#ec5b13"
+                          strokeWidth={2}
+                          dot={{ r: 3, fill: '#ec5b13', strokeWidth: 0 }}
+                          activeDot={{ r: 5, fill: '#ec5b13' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Cards de linha do tempo */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Registros</p>
+                    <div className="flex flex-col gap-2">
+                      {historyData.slice().reverse().map((entry, idx) => (
+                        <div
+                          key={`${entry.date}-${idx}`}
+                          className="flex items-center justify-between px-4 py-3 rounded-xl"
+                          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ background: '#ec5b13' }}
+                            />
+                            <div>
+                              <p className="text-xs font-semibold text-white">
+                                {new Date(entry.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                              </p>
+                              {entry.cloud_coverage !== null && (
+                                <p className="text-[10px]" style={{ color: '#64748b' }}>
+                                  Nuvens: {entry.cloud_coverage}%
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-right">
+                            <div>
+                              <p className="text-[10px]" style={{ color: '#64748b' }}>NDVI</p>
+                              <p className="text-sm font-bold text-white">{entry.ndvi_medio.toFixed(3)}</p>
+                            </div>
+                            {entry.zona_saudavel_pct > 0 && (
+                              <div>
+                                <p className="text-[10px]" style={{ color: '#64748b' }}>Saudável</p>
+                                <p className="text-sm font-bold text-green-400">{entry.zona_saudavel_pct}%</p>
+                              </div>
+                            )}
+                            {entry.zona_critica_pct > 0 && (
+                              <div>
+                                <p className="text-[10px]" style={{ color: '#64748b' }}>Crítico</p>
+                                <p className="text-sm font-bold text-red-400">{entry.zona_critica_pct}%</p>
+                              </div>
+                            )}
+                            {entry.is_mock && (
+                              <span
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase"
+                                style={{ background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}
+                              >
+                                mock
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

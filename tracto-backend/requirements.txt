@@ -12,3 +12,5 @@ requests
 anthropic
 Pillow
 rasterio
+yfinance
+pywebpush

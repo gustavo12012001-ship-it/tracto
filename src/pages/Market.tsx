@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, ExternalLink } from 'lucide-react';
+import { apiFetch } from '../services/api';
 
 // --- Utilitários ---
 function getCategory(title: string) {
@@ -15,14 +16,13 @@ function getCategory(title: string) {
 
 function timeAgo(dateString: string) {
   try {
-    // Normalizar a data do RSS caso tenha formato inesperado
     const d = new Date(dateString);
     if (isNaN(d.getTime())) return dateString;
-    const diff = Math.floor((Date.now() - d.getTime()) / 60000); // mins
+    const diff = Math.floor((Date.now() - d.getTime()) / 60000);
     if (diff < 1) return `agora mesmo`;
     if (diff < 60) return `há ${diff}min`;
-    if (diff < 1440) return `há ${Math.floor(diff/60)}h`;
-    return `há ${Math.floor(diff/1440)}d`;
+    if (diff < 1440) return `há ${Math.floor(diff / 60)}h`;
+    return `há ${Math.floor(diff / 1440)}d`;
   } catch {
     return dateString;
   }
@@ -52,10 +52,17 @@ interface RssResponse {
   items?: RssItem[];
 }
 
+export interface QuoteItem {
+  name: string;
+  place: string;
+  price: string;
+  change: number;
+  category: string;
+  live: boolean;
+}
 
-
-// Valores de commodities ref (já que HG/Awesome não cobrem gratuitamente commodities físicas BR)
-const STATIC_COMMODITIES = {
+// Valores de commodities ref (fallback estático)
+const STATIC_COMMODITIES: Record<string, { name: string; place: string; price: string; change: number; pos: number }[]> = {
   "GRÃOS": [
     { name: 'Soja', place: 'Paranaguá (sc 60kg)', price: '132,50', change: 1.2, pos: 80 },
     { name: 'Milho', place: 'Campinas (sc 60kg)', price: '58,20', change: -0.5, pos: 40 },
@@ -90,14 +97,66 @@ const TICKER_ITEMS = [
   { name: 'Petróleo', price: 'US$ 82,50', change: +1.1 },
   { name: 'Ouro', price: 'US$ 2.340', change: +0.9 },
   { name: 'Ureia', price: 'R$ 2.100', change: -1.5 },
-  { name: 'USD', price: 'R$ 4,95', change: -0.3 }, 
-  { name: 'EUR', price: 'R$ 5,35', change: +0.2 }, 
-  { name: 'GBP', price: 'R$ 6,24', change: +0.4 }, 
+  { name: 'USD', price: 'R$ 4,95', change: -0.3 },
+  { name: 'EUR', price: 'R$ 5,35', change: +0.2 },
+  { name: 'GBP', price: 'R$ 6,24', change: +0.4 },
 ];
+
+// --- Agrupa QuoteItem[] por categoria para renderização ---
+function groupQuotesByCategory(quotes: QuoteItem[]): Record<string, QuoteItem[]> {
+  const grouped: Record<string, QuoteItem[]> = {};
+  for (const q of quotes) {
+    const key = q.category.toUpperCase();
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(q);
+  }
+  return grouped;
+}
+
+// --- Calcula posição relativa da barra (0–100) baseada no change ---
+function barPosition(change: number): number {
+  // Mapeia change de [-3, +3] para [10, 90]
+  const clamped = Math.max(-3, Math.min(3, change));
+  return Math.round(((clamped + 3) / 6) * 80 + 10);
+}
+
+// --- Skeleton card para cotações ---
+function QuoteSkeleton() {
+  return (
+    <div className="flex flex-col gap-3">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="p-4 rounded-xl animate-pulse"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <div className="flex justify-between items-start mb-3">
+            <div className="flex flex-col gap-1.5">
+              <div className="h-3.5 w-20 rounded bg-white/10" />
+              <div className="h-2.5 w-28 rounded bg-white/05" />
+            </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="h-4 w-16 rounded bg-white/10" />
+              <div className="h-2.5 w-10 rounded bg-white/05" />
+            </div>
+          </div>
+          <div className="h-1 w-full rounded-full bg-white/05" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Market() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // Quotes state
+  const [quotesLoading, setQuotesLoading] = useState(true);
+  const [quotesError, setQuotesError] = useState(false);
+  const [liveQuotes, setLiveQuotes] = useState<QuoteItem[] | null>(null);
+  const [quotesTimestamp, setQuotesTimestamp] = useState<Date | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // BLOCO 2 — Notícias via RSS
   const fetchNews = async () => {
@@ -112,7 +171,6 @@ export default function Market() {
           source: 'Canal Rural',
           time: timeAgo(item.pubDate ?? ''),
           url: item.link ?? '#',
-          // A API rss2json costuma extrair thumbnail/enclosure
           image: item.thumbnail || item.enclosure?.link || undefined
         }));
         setNews(formattedNews);
@@ -123,26 +181,210 @@ export default function Market() {
     }
   };
 
+  // BLOCO COTAÇÕES — apiFetch com retry de 10s em caso de falha
+  const fetchQuotes = () => {
+    setQuotesLoading(true);
+    setQuotesError(false);
 
+    apiFetch<QuoteItem[]>('/api/market/quotes')
+      .then((data) => {
+        setLiveQuotes(data);
+        setQuotesTimestamp(new Date());
+        setQuotesLoading(false);
+        setQuotesError(false);
+      })
+      .catch((err) => {
+        console.error('[Market] Erro ao buscar cotações:', err);
+        setQuotesLoading(false);
+        setQuotesError(true);
+        // Retry em 10s
+        retryTimerRef.current = setTimeout(() => {
+          fetchQuotes();
+        }, 10_000);
+      });
+  };
 
   useEffect(() => {
     const initialFetch = window.setTimeout(() => {
       void fetchNews();
     }, 0);
-    
-    // Updates
+
     const inv1 = window.setInterval(() => {
       void fetchNews();
-    }, 5 * 60 * 1000); // 5 mins
-    
+    }, 5 * 60 * 1000);
+
+    fetchQuotes();
+
     return () => {
       window.clearTimeout(initialFetch);
       window.clearInterval(inv1);
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+      }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const topNews = news[0];
   const gridNews = news.slice(1, 5);
+
+  // Decide o que renderizar no painel de cotações
+  const renderQuotesPanel = () => {
+    // LOADING: skeleton
+    if (quotesLoading && liveQuotes === null) {
+      return (
+        <div className="space-y-6">
+          {['GRÃOS', 'PECUÁRIA', 'INSUMOS'].map((cat) => (
+            <div key={cat} className="space-y-4">
+              <h3 className="text-[10px] font-bold text-[#ec5b13] uppercase tracking-[0.2em] pl-1 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#ec5b13]"></span>
+                {cat}
+              </h3>
+              <QuoteSkeleton />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // LIVE DATA
+    if (liveQuotes !== null && liveQuotes.length > 0) {
+      const grouped = groupQuotesByCategory(liveQuotes);
+      const hasLive = liveQuotes.some((q) => q.live);
+
+      return (
+        <div className="space-y-6">
+          {hasLive && quotesTimestamp && (
+            <div className="flex items-center gap-2 text-[10px] font-medium" style={{ color: '#94a3b8' }}>
+              <span className="relative flex w-2 h-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full w-2 h-2 bg-green-500"></span>
+              </span>
+              Atualizado às {quotesTimestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
+          {Object.entries(grouped).map(([cat, items]) => (
+            <div key={cat} className="space-y-4">
+              <h3 className="text-[10px] font-bold text-[#ec5b13] uppercase tracking-[0.2em] pl-1 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#ec5b13]"></span>
+                {cat}
+              </h3>
+              <div className="flex flex-col gap-3">
+                {items.map((item) => (
+                  <div
+                    key={item.name}
+                    className="group p-4 rounded-xl relative overflow-hidden transition-all duration-200 hover:border-[#ec5b13] glass-panel"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
+                          {item.name}
+                          {item.live ? (
+                            <span
+                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                              style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)' }}
+                            >
+                              LIVE
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[9px] font-medium uppercase px-1.5 py-0.5 rounded"
+                              style={{ background: 'rgba(255,255,255,0.05)', color: '#64748b' }}
+                            >
+                              Ref.
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{item.place}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-base font-bold text-white tracking-tight mb-0.5">R$ {item.price}</p>
+                        <p className={`text-[10px] font-bold flex items-center justify-end gap-0.5 ${item.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {item.change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {item.change > 0 ? '+' : ''}{item.change.toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+                    <div className="h-1 w-full bg-slate-800/50 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-1000"
+                        style={{
+                          width: `${barPosition(item.change)}%`,
+                          background: item.change >= 0 ? '#4ade80' : '#f87171'
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // FALLBACK (erro ou resposta vazia): STATIC_COMMODITIES
+    return (
+      <div className="space-y-6">
+        {quotesError && (
+          <div
+            className="flex items-center gap-2 text-[10px] font-medium px-3 py-2 rounded-lg"
+            style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)', color: '#fbbf24' }}
+          >
+            <span className="material-symbols-outlined text-sm">wifi_off</span>
+            Usando preços de referência · Tentando reconectar…
+          </div>
+        )}
+        {Object.entries(STATIC_COMMODITIES).map(([cat, items]) => (
+          <div key={cat} className="space-y-4">
+            <h3 className="text-[10px] font-bold text-[#ec5b13] uppercase tracking-[0.2em] pl-1 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ec5b13]"></span>
+              {cat}
+            </h3>
+            <div className="flex flex-col gap-3">
+              {items.map((item) => (
+                <div
+                  key={item.name}
+                  className="group p-4 rounded-xl relative overflow-hidden transition-all duration-200 hover:border-[#ec5b13] glass-panel"
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <p className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
+                        {item.name}
+                        <span
+                          className="text-[9px] font-medium uppercase px-1.5 py-0.5 rounded"
+                          style={{ background: 'rgba(255,255,255,0.05)', color: '#64748b' }}
+                        >
+                          Ref.
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{item.place}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-base font-bold text-white tracking-tight mb-0.5">R$ {item.price}</p>
+                      <p className={`text-[10px] font-bold flex items-center justify-end gap-0.5 ${item.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {item.change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {item.change > 0 ? '+' : ''}{item.change.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-1 w-full bg-slate-800/50 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-1000"
+                      style={{
+                        width: `${item.pos}%`,
+                        background: item.change >= 0 ? '#4ade80' : '#f87171'
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin font-sans selection:bg-orange-500/30" style={{ background: 'var(--bg)' }}>
@@ -177,12 +419,11 @@ export default function Market() {
       `}</style>
 
       {/* BLOCO 1 — TICKER ANIMADO */}
-      <div 
+      <div
         className="w-full relative overflow-hidden flex items-center h-10 select-none"
         style={{ background: 'rgba(236,91,19,0.08)', borderBottom: '1px solid rgba(236,91,19,0.2)' }}
       >
         <div className="ticker-wrap absolute flex whitespace-nowrap">
-          {/* Ticker duplo para animação contínua */}
           {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, i) => (
             <div key={i} className="flex items-center mx-6 gap-2 text-xs font-semibold">
               <span className="text-slate-300">{item.name}</span>
@@ -198,7 +439,7 @@ export default function Market() {
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-6 pb-10">
-        
+
         {/* CABEÇALHO */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
@@ -218,13 +459,13 @@ export default function Market() {
 
         {/* 3 Colunas: Esquerda (2/3) Notícias | Direita (1/3) Painel */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           {/* BLOCO 2 — NOTÍCIAS */}
           <div className="lg:col-span-2 flex flex-col gap-6">
-            
+
             {/* Destaque Principal */}
             {topNews ? (
-              <a 
+              <a
                 href={topNews.url} target="_blank" rel="noopener noreferrer"
                 className="group relative block rounded-2xl overflow-hidden h-[400px] transition-transform duration-200 hover:-translate-y-1 glass-panel"
               >
@@ -235,10 +476,10 @@ export default function Market() {
                     <span className="material-symbols-outlined text-[80px] text-white/20">agriculture</span>
                   </div>
                 )}
-                
+
                 {/* Gradient Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
-                
+
                 <div className="absolute bottom-0 left-0 p-8 w-full">
                   <div className="flex items-center gap-3 mb-4">
                     <span className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] rounded ${getCategory(topNews.title).bg}`}>
@@ -262,8 +503,8 @@ export default function Market() {
             {/* Grid Secundário: 2x2 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {gridNews.length > 0 ? gridNews.map(item => (
-                <a 
-                  key={item.id} 
+                <a
+                  key={item.id}
                   href={item.url} target="_blank" rel="noopener noreferrer"
                   className="group flex flex-col rounded-2xl overflow-hidden transition-transform duration-200 hover:-translate-y-1 glass-panel"
                 >
@@ -278,79 +519,32 @@ export default function Market() {
                   </div>
                   <div className="p-5 flex-1 flex flex-col justify-between">
                     <div>
-                        <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-2 mb-3">
                         <span className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded ${getCategory(item.title).bg}`}>
-                            {getCategory(item.title).label}
+                          {getCategory(item.title).label}
                         </span>
                         <span className="text-[10px] text-slate-500 font-medium">{item.time}</span>
-                        </div>
-                        <h3 className="text-sm font-bold text-slate-100 leading-snug line-clamp-2 group-hover:text-[#ec5b13] transition-colors mb-4">
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-100 leading-snug line-clamp-2 group-hover:text-[#ec5b13] transition-colors mb-4">
                         {item.title}
-                        </h3>
+                      </h3>
                     </div>
                     <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
-                        {item.source}
+                      {item.source}
                     </p>
                   </div>
                 </a>
               )) : (
-                 Array(4).fill(0).map((_, i) => <div key={i} className="h-64 rounded-2xl animate-pulse glass-panel" />)
+                Array(4).fill(0).map((_, i) => <div key={i} className="h-64 rounded-2xl animate-pulse glass-panel" />)
               )}
             </div>
           </div>
 
           {/* BLOCO 3 — PAINEL DE PREÇOS */}
           <div className="lg:col-span-1 flex flex-col gap-8">
-            
-            {Object.entries(STATIC_COMMODITIES).map(([cat, items]) => (
-              <div key={cat} className="space-y-4">
-                <h3 className="text-[10px] font-bold text-[#ec5b13] uppercase tracking-[0.2em] pl-1 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#ec5b13]"></span>
-                  {cat}
-                </h3>
-                <div className="flex flex-col gap-3">
-                  {items.map(item => (
-                    <div 
-                      key={item.name} 
-                      className="group p-4 rounded-xl relative overflow-hidden transition-all duration-200 hover:border-[#ec5b13] glass-panel"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <p className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
-                            {item.name} 
-                            <span className="text-[9px] font-medium text-slate-500 uppercase px-1.5 py-0.5 bg-slate-800/50 rounded" title="Preço de Referência Base">(ref.)</span>
-                          </p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{item.place}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-base font-bold text-white tracking-tight mb-0.5">R$ {item.price}</p>
-                          <p className={`text-[10px] font-bold flex items-center justify-end gap-0.5 ${item.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {item.change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                            {item.change > 0 ? '+' : ''}{item.change.toFixed(2)}%
-                          </p>
-                        </div>
-                      </div>
-                      
-                      {/* Bar indicator */}
-                      <div className="h-1 w-full bg-slate-800/50 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full rounded-full transition-all duration-1000"
-                          style={{ 
-                            width: `${item.pos}%`, 
-                            background: item.change >= 0 ? '#4ade80' : '#f87171' 
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-
+            {renderQuotesPanel()}
           </div>
         </div>
-
-
 
       </div>
     </div>

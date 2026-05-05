@@ -66,6 +66,8 @@ from services.geo_service import GeoProviderError, search_location, search_place
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
 from services.field_intelligence_service import build_field_intelligence_snapshot
+from services.market_service import get_market_quotes
+from services.analysis_history_service import save_analysis, get_field_analyses
 
 # --- Security & Rate Limiting ---
 
@@ -169,15 +171,61 @@ async def create_checkout(req: CheckoutRequest, user: AuthenticatedUser = Depend
         "message": f"MOCK: Checkout do plano {req.plan_id} via {req.payment_method}. Pagamento nÃ£o efetuado na realidade."
     }
 
+def send_push_notification(
+    subscription_info: dict,
+    title: str,
+    body: str,
+    url: str = "/app/alerts",
+) -> None:
+    """
+    Envia uma Web Push Notification via pywebpush + VAPID.
+
+    subscription_info deve ter as chaves:
+      {"endpoint": str, "keys": {"p256dh": str, "auth": str}}
+
+    Usa as env vars VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_CLAIMS_EMAIL.
+    Se alguma env var estiver ausente, loga warning e retorna sem crash.
+    """
+    vapid_private = os.getenv("VAPID_PRIVATE_KEY")
+    vapid_public = os.getenv("VAPID_PUBLIC_KEY")
+    vapid_email = os.getenv("VAPID_CLAIMS_EMAIL", "tracto@example.com")
+
+    if not vapid_private or not vapid_public:
+        logging.warning(
+            "[push] VAPID_PRIVATE_KEY ou VAPID_PUBLIC_KEY não configurados — notificação não enviada."
+        )
+        return
+
+    try:
+        import json as _json
+        from pywebpush import webpush, WebPushException
+
+        webpush(
+            subscription_info=subscription_info,
+            data=_json.dumps({"title": title, "body": body, "url": url}),
+            vapid_private_key=vapid_private,
+            vapid_claims={"sub": f"mailto:{vapid_email}"},
+        )
+        logging.info("[push] Notificação enviada para endpoint=%s", subscription_info.get("endpoint", "?")[:60])
+    except Exception as exc:
+        logging.warning("[push] Falha ao enviar notificação push: %s", exc)
+
+
 @app.post("/api/push/subscribe")
 async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = Depends(get_current_user)):
-    # Insere na nova tabela push_subscriptions
-    billing_service.supabase.table("push_subscriptions").upsert({
-        "user_id": user.id,
-        "endpoint": req.endpoint,
-        "p256dh": req.p256dh,
-        "auth": req.auth
-    }).execute()
+    # Salva a subscription na tabela push_subscriptions (upsert por endpoint)
+    try:
+        billing_service.supabase.table("push_subscriptions").upsert(
+            {
+                "user_id": user.id,
+                "endpoint": req.endpoint,
+                "p256dh": req.p256dh,
+                "auth": req.auth,
+            },
+            on_conflict="endpoint",
+        ).execute()
+    except Exception as exc:
+        logging.warning("[push/subscribe] Falha ao salvar subscription no Supabase: %s", exc)
     return {"status": "ok", "message": "Inscricao de push salva com sucesso na base de dados."}
 
 @app.post("/webhooks/whatsapp")
@@ -1045,6 +1093,43 @@ async def analyze_field_endpoint(request: Request, field_req: FieldAnalysisReque
         }
 
         analysis_cache.set(cache_key, result, ttl_hours=24)
+
+        # --- Histórico de análises (best-effort, não bloqueia resposta) ---
+        field_id_for_history = getattr(field_req, "field_id", None)
+        if field_id_for_history:
+            try:
+                await save_analysis(
+                    supabase_client=None,
+                    field_id=str(field_id_for_history),
+                    user_id=_user.id,
+                    analysis_data=result,
+                )
+            except Exception as _hist_exc:
+                logging.warning("[analyze-field] Falha ao salvar histórico (best-effort): %s", _hist_exc)
+
+        # --- Push notifications para alertas críticos (best-effort) ---
+        try:
+            critical_alerts = [a for a in (alerts or []) if isinstance(a, dict) and a.get("severity") in ("critical", "high", "alta", "critico")]
+            if critical_alerts:
+                push_res = billing_service.supabase.table("push_subscriptions").select("endpoint,p256dh,auth").eq("user_id", _user.id).execute()
+                for row in (push_res.data or []):
+                    try:
+                        sub_info = {
+                            "endpoint": row["endpoint"],
+                            "keys": {"p256dh": row["p256dh"], "auth": row["auth"]},
+                        }
+                        first_alert = critical_alerts[0]
+                        send_push_notification(
+                            subscription_info=sub_info,
+                            title=f"Alerta Tracto — {field_req.field_name}",
+                            body=first_alert.get("message") or first_alert.get("title") or "Alerta crítico detectado.",
+                            url="/app/alerts",
+                        )
+                    except Exception as _row_exc:
+                        logging.warning("[analyze-field] Falha push para subscription: %s", _row_exc)
+        except Exception as _push_exc:
+            logging.warning("[analyze-field] Falha ao enviar push de alertas: %s", _push_exc)
+
         return FieldAnalysisResponse(**result)
     except HTTPException:
         raise
@@ -1306,6 +1391,53 @@ async def delete_field_endpoint(field_id: str, user: AuthenticatedUser = Depends
     except Exception as exc:
         logging.error("Erro ao deletar talhao: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao deletar talhao.") from exc
+
+
+@app.get("/api/market/quotes")
+@limiter.limit("10/minute")
+async def market_quotes_endpoint(
+    request: Request,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Retorna cotações de commodities em tempo real (yfinance + awesomeapi).
+    Cache de 30 minutos no servidor. Fallback estático se as fontes falharem.
+    """
+    try:
+        quotes = await get_market_quotes()
+        return quotes  # retorna lista direta: QuoteItem[]
+    except Exception as exc:
+        logging.error("[/api/market/quotes] Erro inesperado: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar cotações de mercado.") from exc
+
+
+@app.get("/api/fields/{field_id}/analyses")
+async def get_field_analyses_endpoint(
+    field_id: str,
+    limit: int = 30,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Retorna o histórico de análises do talhão (até 30 registros, mais recente primeiro).
+    O talhão precisa pertencer ao usuário autenticado.
+    """
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
+
+        analyses = await get_field_analyses(
+            supabase_client=None,
+            field_id=field_id,
+            user_id=user.id,
+            limit=min(limit, 100),
+        )
+        return analyses  # retorna lista direta: ApiAnalysisEntry[]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/analyses] Erro: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar histórico de análises.") from exc
 
 
 @app.post("/api/verify-recaptcha")
