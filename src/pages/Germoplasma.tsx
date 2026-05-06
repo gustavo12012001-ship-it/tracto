@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { apiFetch } from '../services/api';
+import jsPDF from 'jspdf';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type GenoStatus = 'Em desenvolvimento' | 'Candidata' | 'Descartada' | 'Registrada';
@@ -106,7 +107,118 @@ async function syncGenerationToAPI(data: Generation): Promise<string | null> {
   } catch { return null; }
 }
 
-// ── Style helpers ──────────────────────────────────────────────────────────────
+// ── Passport PDF Export ────────────────────────────────────────────────────────
+function exportPassport(geno: Genotype) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  let y = 18;
+
+  const line = (text: string, indent = 0, bold = false, size = 10) => {
+    doc.setFontSize(size);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    const lines = doc.splitTextToSize(text, W - 20 - indent);
+    doc.text(lines, 10 + indent, y);
+    y += Array.isArray(lines) ? lines.length * (size * 0.45) + 2 : size * 0.45 + 2;
+  };
+
+  const divider = (color = '#e2e8f0') => {
+    doc.setDrawColor(color);
+    doc.setLineWidth(0.2);
+    doc.line(10, y, W - 10, y);
+    y += 4;
+  };
+
+  const section = (title: string) => {
+    y += 2;
+    doc.setFillColor('#f1f5f9');
+    doc.roundedRect(9, y - 1, W - 18, 7, 1, 1, 'F');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor('#64748b');
+    doc.text(title.toUpperCase(), 12, y + 4);
+    doc.setTextColor('#0f172a');
+    y += 10;
+  };
+
+  // Header block
+  doc.setFillColor('#ec5b13');
+  doc.rect(0, 0, W, 12, 'F');
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor('#ffffff');
+  doc.text('TRACTO — PASSAPORTE GENÉTICO', 10, 8);
+  doc.setFontSize(8);
+  doc.text(`Emitido em ${new Date().toLocaleDateString('pt-BR')}`, W - 10, 8, { align: 'right' });
+  doc.setTextColor('#0f172a');
+  y = 22;
+
+  // Title
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text(geno.name, 10, y);
+  y += 6;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor('#64748b');
+  if (geno.species) { doc.text(geno.species, 10, y); y += 5; }
+  doc.setTextColor('#0f172a');
+
+  divider();
+
+  // Identification
+  section('Identificação');
+  if (geno.generation)    line(`Geração: ${geno.generation}`, 0, false);
+  if (geno.status)        line(`Status: ${geno.status}`, 0, false);
+  if (geno.year_obtained) line(`Ano de obtenção: ${geno.year_obtained}`, 0, false);
+  if (geno.origin)        line(`Origem / Instituição: ${geno.origin}`, 0, false);
+
+  // Pedigree
+  if (geno.female_parent || geno.male_parent) {
+    section('Pedigree');
+    if (geno.female_parent) line(`♀ Parental feminino: ${geno.female_parent}`, 0, false);
+    if (geno.male_parent)   line(`♂ Parental masculino: ${geno.male_parent}`, 0, false);
+  }
+
+  // Traits
+  if (geno.traits) {
+    section('Características Fenotípicas');
+    const traitList = geno.traits.split(',').map((t: string) => t.trim()).filter(Boolean);
+    traitList.forEach(t => line(`• ${t}`, 3, false));
+  }
+
+  // Generations from localStorage
+  const allGens = loadGenerations().filter(g => g.genotype_id === geno.id);
+  if (allGens.length > 0) {
+    section('Histórico de Gerações');
+    allGens.forEach(g => {
+      line(`${g.generation_label} — ${g.year || '?'} — ${g.location || '—'}`, 0, true, 9);
+      if (g.plants_evaluated) line(`Avaliadas: ${g.plants_evaluated}  |  Selecionadas: ${g.plants_selected}`, 4, false, 8);
+      if (g.mean_yield)       line(`Produtividade média: ${g.mean_yield} sc/ha`, 4, false, 8);
+      if (g.selection_criteria) line(`Critério: ${g.selection_criteria}`, 4, false, 8);
+      if (g.notes)            line(`Obs: ${g.notes}`, 4, false, 8);
+      y += 2;
+    });
+  }
+
+  // Notes
+  if (geno.notes) {
+    section('Observações Gerais');
+    line(geno.notes, 0, false);
+  }
+
+  // Footer
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor('#94a3b8');
+    doc.text('Tracto — Plataforma AgTech | tracto.ag', 10, 290);
+    doc.text(`Página ${i} de ${totalPages}`, W - 10, 290, { align: 'right' });
+  }
+
+  doc.save(`Passaporte_${geno.name.replace(/\s+/g, '_')}.pdf`);
+}
 const STATUS_COLORS: Record<GenoStatus, { bg: string; color: string }> = {
   'Registrada':       { bg: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
   'Candidata':        { bg: 'rgba(96,165,250,0.12)',  color: '#60a5fa' },
@@ -279,6 +391,14 @@ function GermoplasmaTab() {
                     <p className="text-sm font-black text-white">{g.name}</p>
                     {g.species && <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{g.species}</p>}
                   </div>
+                  <button
+                    onClick={() => exportPassport(g)}
+                    className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-all"
+                    style={{ color: '#60a5fa', flexShrink: 0 }}
+                    title="Exportar Passaporte PDF"
+                  >
+                    <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                  </button>
                   <button onClick={() => del(g.id)} className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#f87171', flexShrink: 0 }}>
                     <span className="material-symbols-outlined text-sm">delete</span>
                   </button>
