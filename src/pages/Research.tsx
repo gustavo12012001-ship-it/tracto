@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { apiFetch } from '../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ResearchEntry {
@@ -223,6 +224,274 @@ function EditPanel({
   );
 }
 
+// ── Avaliações Fenológicas ─────────────────────────────────────────────────────
+interface FenologicalEval {
+  id: string;
+  date: string;
+  stage: string;
+  stand_plants_m2?: number;
+  height_cm?: number;
+  disease_score?: number;
+  notes?: string;
+}
+
+const FENO_KEY = 'tracto-fenologia-v1';
+const FENOLOGICAL_STAGES = ['VE','V1','V2','V3','V4','V5','V6','V7','V8','V9','R1','R2','R3','R4','R5','R6','R7','R8','Maturação'];
+
+function loadFenologia(fieldId: string): FenologicalEval[] {
+  try { return JSON.parse(localStorage.getItem(FENO_KEY) ?? '{}')[fieldId] ?? []; } catch { return []; }
+}
+
+function saveFenologia(fieldId: string, evals: FenologicalEval[]) {
+  try {
+    const all = JSON.parse(localStorage.getItem(FENO_KEY) ?? '{}');
+    all[fieldId] = evals;
+    localStorage.setItem(FENO_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
+
+function FenologiaPanel({ fieldId, fieldName }: { fieldId: string; fieldName: string }) {
+  const [evals, setEvals] = useState<FenologicalEval[]>(() => loadFenologia(fieldId));
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ date: '', stage: 'V1', stand_plants_m2: '', height_cm: '', disease_score: '', notes: '' });
+
+  const handleAdd = () => {
+    if (!form.date || !form.stage) return;
+    const ev: FenologicalEval = {
+      id: crypto.randomUUID(),
+      date: form.date,
+      stage: form.stage,
+      stand_plants_m2: form.stand_plants_m2 ? Number(form.stand_plants_m2) : undefined,
+      height_cm: form.height_cm ? Number(form.height_cm) : undefined,
+      disease_score: form.disease_score ? Number(form.disease_score) : undefined,
+      notes: form.notes || undefined,
+    };
+    const updated = [...evals, ev].sort((a, b) => a.date.localeCompare(b.date));
+    setEvals(updated);
+    saveFenologia(fieldId, updated);
+    setForm({ date: '', stage: 'V1', stand_plants_m2: '', height_cm: '', disease_score: '', notes: '' });
+    setShowForm(false);
+  };
+
+  const handleDelete = (id: string) => {
+    const updated = evals.filter(e => e.id !== id);
+    setEvals(updated);
+    saveFenologia(fieldId, updated);
+  };
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: 'rgba(74,222,128,0.04)', border: '1px solid rgba(74,222,128,0.15)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-base" style={{ color: '#4ade80' }}>grass</span>
+          <p className="text-xs font-black uppercase tracking-widest" style={{ color: '#4ade80' }}>
+            Avaliações Fenológicas — {fieldName}
+          </p>
+        </div>
+        <button onClick={() => setShowForm(v => !v)}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold"
+          style={{ background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
+          <span className="material-symbols-outlined text-sm">{showForm ? 'close' : 'add'}</span>
+          {showForm ? 'Cancelar' : 'Nova Avaliação'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          {[
+            { label: 'Data *', key: 'date', type: 'date' },
+            { label: 'Estande (pl/m²)', key: 'stand_plants_m2', type: 'number', placeholder: '0' },
+            { label: 'Altura (cm)', key: 'height_cm', type: 'number', placeholder: '0' },
+            { label: 'Nota doenças (1-9)', key: 'disease_score', type: 'number', placeholder: '1-9' },
+          ].map(({ label, key, type, placeholder }) => (
+            <div key={key}>
+              <label className="block text-[10px] font-semibold mb-1" style={{ color: 'var(--muted)' }}>{label}</label>
+              <input type={type} value={form[key as keyof typeof form]}
+                onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                placeholder={placeholder}
+                className="w-full px-2 py-1.5 rounded-lg text-xs text-white bg-transparent border"
+                style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }} />
+            </div>
+          ))}
+          <div>
+            <label className="block text-[10px] font-semibold mb-1" style={{ color: 'var(--muted)' }}>Estádio *</label>
+            <select value={form.stage} onChange={e => setForm(p => ({ ...p, stage: e.target.value }))}
+              className="w-full px-2 py-1.5 rounded-lg text-xs text-white border"
+              style={{ borderColor: 'rgba(255,255,255,0.12)', background: '#1e293b' }}>
+              {FENOLOGICAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2 sm:col-span-3">
+            <label className="block text-[10px] font-semibold mb-1" style={{ color: 'var(--muted)' }}>Observações</label>
+            <input type="text" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+              placeholder="Notas de campo..."
+              className="w-full px-2 py-1.5 rounded-lg text-xs text-white bg-transparent border"
+              style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }} />
+          </div>
+          <button onClick={handleAdd} disabled={!form.date}
+            className="col-span-2 sm:col-span-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+            style={{ background: '#4ade80', color: '#0f172a' }}>
+            Registrar Avaliação
+          </button>
+        </div>
+      )}
+
+      {/* Mini-timeline dos estádios */}
+      {evals.length > 0 && (
+        <div className="flex gap-1 flex-wrap">
+          {evals.map(ev => (
+            <span key={ev.id} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(74,222,128,0.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
+              {ev.stage} · {ev.date.split('-').reverse().slice(0,2).join('/')}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Lista */}
+      {evals.length === 0 && !showForm && (
+        <p className="text-xs text-center py-3" style={{ color: 'var(--muted)' }}>Nenhuma avaliação registrada para este talhão.</p>
+      )}
+      <div className="flex flex-col gap-1.5">
+        {evals.map(ev => (
+          <div key={ev.id} className="flex items-start gap-2 p-2 rounded-lg text-xs"
+            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="flex-1 min-w-0">
+              <span className="font-bold text-white">{ev.stage}</span>
+              <span className="mx-1" style={{ color: 'var(--muted)' }}>·</span>
+              <span style={{ color: 'var(--muted)' }}>{ev.date.split('-').reverse().join('/')}</span>
+              {ev.stand_plants_m2 != null && <span className="ml-2" style={{ color: '#94a3b8' }}>Estande: {ev.stand_plants_m2} pl/m²</span>}
+              {ev.height_cm != null && <span className="ml-2" style={{ color: '#94a3b8' }}>Alt: {ev.height_cm} cm</span>}
+              {ev.disease_score != null && <span className="ml-2" style={{ color: '#f59e0b' }}>Nota: {ev.disease_score}/9</span>}
+              {ev.notes && <p className="mt-0.5 italic" style={{ color: 'var(--muted)' }}>{ev.notes}</p>}
+            </div>
+            <button onClick={() => handleDelete(ev.id)} className="p-1 rounded hover:bg-red-500/10 flex-shrink-0" style={{ color: '#f87171' }}>
+              <span className="material-symbols-outlined text-sm">delete</span>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── NDVI Panel ─────────────────────────────────────────────────────────────────
+interface NdviResult {
+  ndvi: number;
+  scene_date: string;
+  interpretation: string;
+  color: string;
+  status: string;
+}
+
+function NdviPanel({ fieldId, lat, lng }: { fieldId: string; lat: number; lng: number }) {
+  const [result, setResult] = useState<NdviResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fetched, setFetched] = useState(false);
+
+  const delta = 0.005; // ~500m box around field center
+  const boundaries: number[][] = [
+    [lat - delta, lng - delta],
+    [lat - delta, lng + delta],
+    [lat + delta, lng + delta],
+    [lat + delta, lng - delta],
+    [lat - delta, lng - delta],
+  ];
+
+  const fetchNdvi = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch<NdviResult>(`/api/fields/${fieldId}/parcels/ndvi`, {
+        method: 'POST',
+        body: JSON.stringify({ parcel_boundaries: boundaries }),
+      });
+      setResult(res);
+    } catch {
+      setError('Não foi possível obter NDVI. Verifique a integração SentinelHub.');
+    } finally {
+      setLoading(false);
+      setFetched(true);
+    }
+  }, [fieldId, lat, lng]);
+
+  useEffect(() => { void fetchNdvi(); }, [fetchNdvi]);
+
+  if (loading) return (
+    <div className="flex items-center gap-2 p-3 rounded-xl text-xs" style={{ background: 'rgba(74,222,128,0.04)', border: '1px solid rgba(74,222,128,0.12)' }}>
+      <span className="material-symbols-outlined text-sm animate-spin" style={{ color: '#4ade80' }}>progress_activity</span>
+      <span style={{ color: '#4ade80' }}>Buscando NDVI via satélite...</span>
+    </div>
+  );
+
+  if (error) return (
+    <div className="flex items-start gap-2 p-3 rounded-xl text-xs" style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)' }}>
+      <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>satellite_alt</span>
+      <div>
+        <p className="font-bold" style={{ color: '#f87171' }}>NDVI indisponível</p>
+        <p style={{ color: '#94a3b8' }}>{error}</p>
+      </div>
+      <button onClick={() => { setFetched(false); void fetchNdvi(); }} className="ml-auto px-2 py-1 rounded-lg text-xs font-bold"
+        style={{ background: 'rgba(248,113,113,0.12)', color: '#f87171' }}>
+        Tentar novamente
+      </button>
+    </div>
+  );
+
+  if (!result) return null;
+
+  // Color & gauge based on NDVI value
+  const ndvPct = Math.round(((result.ndvi + 1) / 2) * 100); // -1..1 → 0..100%
+  const gaugeColor = result.ndvi >= 0.6 ? '#4ade80' : result.ndvi >= 0.4 ? '#86efac' : result.ndvi >= 0.2 ? '#fbbf24' : result.ndvi >= 0 ? '#f97316' : '#f87171';
+
+  return (
+    <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: 'rgba(74,222,128,0.04)', border: '1px solid rgba(74,222,128,0.15)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-base" style={{ color: '#4ade80' }}>satellite_alt</span>
+          <p className="text-xs font-black uppercase tracking-widest" style={{ color: '#4ade80' }}>
+            NDVI — Índice de Vegetação
+          </p>
+        </div>
+        <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}>
+          {result.scene_date}
+        </span>
+      </div>
+
+      {/* Big number */}
+      <div className="flex items-center gap-4">
+        <div className="text-center">
+          <p className="text-3xl font-black" style={{ color: gaugeColor }}>{result.ndvi.toFixed(3)}</p>
+          <p className="text-[10px] uppercase tracking-widest mt-0.5" style={{ color: gaugeColor }}>{result.status}</p>
+        </div>
+        <div className="flex-1">
+          {/* Gauge bar */}
+          <div className="relative h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${ndvPct}%`, background: gaugeColor }} />
+          </div>
+          <div className="flex justify-between text-[9px] mt-1" style={{ color: '#475569' }}>
+            <span>-1 (Água/Solo)</span>
+            <span>0</span>
+            <span>+1 (Vegetação densa)</span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs p-2.5 rounded-lg italic" style={{ background: 'rgba(255,255,255,0.02)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.04)' }}>
+        {result.interpretation}
+      </p>
+
+      {fetched && (
+        <button onClick={() => void fetchNdvi()} className="self-end flex items-center gap-1 text-[10px] font-semibold hover:opacity-70"
+          style={{ color: '#64748b' }}>
+          <span className="material-symbols-outlined text-xs">refresh</span>
+          Atualizar
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Block Card ─────────────────────────────────────────────────────────────────
 function BlockCard({
   field,
@@ -231,6 +500,8 @@ function BlockCard({
   gddData,
   onEdit,
   onClearActual,
+  onFenologia,
+  fenologiaActive,
 }: {
   field: { id?: string; name?: string; cultura?: string; variedade?: string; dataPlantio?: string; lat: number; lng: number; areaHa?: number };
   farmName: string;
@@ -238,6 +509,8 @@ function BlockCard({
   gddData: GDDData;
   onEdit: () => void;
   onClearActual: () => void;
+  onFenologia: () => void;
+  fenologiaActive: boolean;
 }) {
   const plantsHa = calcPlantsPerHa(entry.plantsPerMeter, entry.rowSpacingCm);
 
@@ -369,6 +642,22 @@ function BlockCard({
             <span className="text-[10px] truncate max-w-[120px]" style={{ color: '#475569' }}>{entry.notes}</span>
           </div>
         )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-2 px-4 pb-3">
+        <button
+          onClick={onFenologia}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-80"
+          style={{
+            background: fenologiaActive ? 'rgba(74,222,128,0.15)' : 'rgba(74,222,128,0.06)',
+            color: '#4ade80',
+            border: `1px solid ${fenologiaActive ? 'rgba(74,222,128,0.3)' : 'rgba(74,222,128,0.15)'}`,
+          }}
+        >
+          <span className="material-symbols-outlined text-sm">monitoring</span>
+          Avaliações
+        </button>
       </div>
     </div>
   );
@@ -584,6 +873,250 @@ function statPower(nTreatments: number, nRep: number): { design: string; power: 
 
 const inpClsExp = 'w-full px-3 py-2 rounded-xl text-sm text-white bg-transparent border focus:outline-none focus:border-[var(--primary)] transition-colors';
 const inpStyleExp = { borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' };
+
+// ── ANOVA types ────────────────────────────────────────────────────────────────
+interface AnovaResult {
+  anova: { f_statistic: number; p_value: number; significant: boolean; df_between: number; df_within: number };
+  means: Record<string, { mean: number; std: number; n: number; letter: string }>;
+  cv_pct: number;
+  mse: number;
+  tukey_groups: string;
+  interpretation: string;
+}
+
+const LETTER_COLORS = ['#60a5fa','#4ade80','#f59e0b','#f472b6','#a78bfa','#34d399'];
+
+// Gera relatório TXT de um experimento
+function exportResearchReport(exp: Experiment, anova: AnovaResult | null) {
+  const lines: string[] = [
+    '='.repeat(60),
+    'RELATÓRIO DE EXPERIMENTO — TRACTO AGRO',
+    '='.repeat(60),
+    '',
+    `Título:     ${exp.name}`,
+    `Cultura:    ${exp.cultura || '—'}`,
+    `Objetivo:   ${exp.objetivo || '—'}`,
+    `Período:    ${exp.startDate || '—'} a ${exp.endDate || '—'}`,
+    `Gerado em:  ${new Date().toLocaleString('pt-BR')}`,
+    '',
+    '-'.repeat(60),
+    'DELINEAMENTO EXPERIMENTAL',
+    '-'.repeat(60),
+    `Tipo:             ${exp.repetitions >= 3 ? 'DBC — Delineamento em Blocos Completos ao Acaso' : 'DIC — Delineamento Inteiramente Casualizado'}`,
+    `Nº de tratamentos: ${exp.treatments.length}`,
+    `Nº de repetições:  ${exp.repetitions}`,
+    `Total de parcelas: ${exp.treatments.length * exp.repetitions}`,
+    '',
+    '-'.repeat(60),
+    'TRATAMENTOS',
+    '-'.repeat(60),
+    ...exp.treatments.map(t =>
+      `${t.label} — ${t.description || '—'}${t.product ? ' | Produto: ' + t.product : ''}${t.dose ? ' | Dose: ' + t.dose : ''}`
+    ),
+    '',
+  ];
+
+  if (anova) {
+    lines.push(
+      '-'.repeat(60),
+      'RESULTADOS ANOVA (α = 0,05)',
+      '-'.repeat(60),
+      `F calculado:  ${anova.anova.f_statistic.toFixed(4)}`,
+      `p-valor:      ${anova.anova.p_value.toFixed(6)}`,
+      `GL tratam.:   ${anova.anova.df_between}`,
+      `GL resíduo:   ${anova.anova.df_within}`,
+      `MSE:          ${anova.mse.toFixed(6)}`,
+      `CV%:          ${anova.cv_pct.toFixed(2)}%`,
+      `Significativo: ${anova.anova.significant ? 'SIM (p < 0,05)' : 'NÃO (p ≥ 0,05)'}`,
+      '',
+      '-'.repeat(60),
+      'TABELA DE MÉDIAS — TUKEY HSD (α = 0,05)',
+      '-'.repeat(60),
+      `${'Tratamento'.padEnd(14)} ${'Média'.padEnd(10)} ${'Desvio'.padEnd(10)} ${'n'.padEnd(5)} Letra`,
+      ...Object.entries(anova.means)
+        .sort((a, b) => b[1].mean - a[1].mean)
+        .map(([name, s]) =>
+          `${name.padEnd(14)} ${String(s.mean.toFixed(4)).padEnd(10)} ${String(s.std.toFixed(4)).padEnd(10)} ${String(s.n).padEnd(5)} ${s.letter}`
+        ),
+      '',
+      '-'.repeat(60),
+      'INTERPRETAÇÃO',
+      '-'.repeat(60),
+      anova.interpretation,
+      '',
+    );
+  }
+
+  lines.push('='.repeat(60), 'Gerado por Tracto Agro | tracto.app', '='.repeat(60));
+
+  const content = lines.join('\n');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `relatorio-${exp.name.replace(/\s+/g, '-').toLowerCase()}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── AnovaPanel: painel de ANOVA por experimento ───────────────────────────────
+function AnovaPanel({ exp }: { exp: Experiment }) {
+  const [inputData, setInputData] = useState<Record<string, string>>(() =>
+    Object.fromEntries(exp.treatments.map(t => [t.label, '']))
+  );
+  const [result, setResult] = useState<AnovaResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canCalculate = exp.treatments.length >= 2 &&
+    exp.treatments.every(t => {
+      const vals = (inputData[t.label] ?? '').split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+      return vals.length >= 2;
+    });
+
+  const handleCalc = useCallback(async () => {
+    setLoading(true); setError(null);
+    const groups: Record<string, number[]> = {};
+    for (const t of exp.treatments) {
+      groups[t.label] = (inputData[t.label] ?? '').split(',')
+        .map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+    }
+    try {
+      const res = await apiFetch<AnovaResult>('/api/stats/anova', { method: 'POST', body: JSON.stringify({ groups }) });
+      setResult(res);
+    } catch (e) {
+      setError('Erro ao calcular. Verifique se há pelo menos 2 valores por tratamento.');
+    } finally {
+      setLoading(false);
+    }
+  }, [exp.treatments, inputData]);
+
+  const allLetters = result ? [...new Set(Object.values(result.means).map(m => m.letter))] : [];
+
+  return (
+    <div className="flex flex-col gap-4 p-4 rounded-xl" style={{ background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.12)' }}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-black uppercase tracking-widest" style={{ color: '#60a5fa' }}>
+          Análise Estatística — ANOVA + Tukey HSD
+        </p>
+        {result && (
+          <button
+            onClick={() => exportResearchReport(exp, result)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+            style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+          >
+            <span className="material-symbols-outlined text-sm">download</span>
+            Exportar Relatório
+          </button>
+        )}
+      </div>
+
+      {/* Input por tratamento */}
+      <div className="grid sm:grid-cols-2 gap-2">
+        {exp.treatments.map(t => (
+          <div key={t.label}>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--muted)' }}>
+              Tratamento {t.label}{t.description ? ` — ${t.description}` : ''} (valores separados por vírgula)
+            </label>
+            <input
+              type="text"
+              value={inputData[t.label] ?? ''}
+              onChange={e => setInputData(prev => ({ ...prev, [t.label]: e.target.value }))}
+              placeholder={`Ex: 45.2, 46.1, 44.8`}
+              className="w-full px-3 py-2 rounded-xl text-sm text-white bg-transparent border focus:outline-none transition-colors"
+              style={{ borderColor: 'rgba(96,165,250,0.2)', background: 'rgba(255,255,255,0.03)' }}
+            />
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => void handleCalc()}
+        disabled={!canCalculate || loading}
+        className="self-start flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-40"
+        style={{ background: '#60a5fa', color: '#0f172a' }}
+      >
+        {loading ? (
+          <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>Calculando...</>
+        ) : (
+          <><span className="material-symbols-outlined text-sm">analytics</span>Calcular ANOVA</>
+        )}
+      </button>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {/* Resultado */}
+      {result && (
+        <div className="flex flex-col gap-3">
+          {/* Badge principal */}
+          <div className="flex items-center gap-3 p-3 rounded-xl"
+            style={{
+              background: result.anova.significant ? 'rgba(34,197,94,0.08)' : 'rgba(100,116,139,0.08)',
+              border: `1px solid ${result.anova.significant ? 'rgba(34,197,94,0.2)' : 'rgba(100,116,139,0.2)'}`,
+            }}>
+            <span className="material-symbols-outlined text-xl" style={{ color: result.anova.significant ? '#4ade80' : '#64748b' }}>
+              {result.anova.significant ? 'check_circle' : 'remove_circle'}
+            </span>
+            <div>
+              <p className="font-black text-sm" style={{ color: result.anova.significant ? '#4ade80' : '#94a3b8' }}>
+                {result.anova.significant ? 'Diferença Significativa (p < 0,05)' : 'Sem Diferença Significativa (p ≥ 0,05)'}
+              </p>
+              <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--muted)' }}>
+                F = {result.anova.f_statistic.toFixed(2)} &nbsp;|&nbsp; p = {result.anova.p_value.toFixed(4)} &nbsp;|&nbsp; GL = {result.anova.df_between}/{result.anova.df_within}
+              </p>
+            </div>
+            <div className="ml-auto text-right">
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>CV%</p>
+              <p className="font-black" style={{ color: result.cv_pct < 10 ? '#4ade80' : result.cv_pct < 20 ? '#f59e0b' : '#f87171' }}>
+                {result.cv_pct.toFixed(1)}%
+              </p>
+            </div>
+          </div>
+
+          {/* Tabela de médias */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  {['Tratamento', 'Média', 'Desvio', 'n', 'Letra'].map(h => (
+                    <th key={h} className="text-left px-2 py-1.5 text-xs font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(result.means)
+                  .sort((a, b) => b[1].mean - a[1].mean)
+                  .map(([name, s]) => {
+                    const letterIdx = allLetters.indexOf(s.letter);
+                    const letterColor = LETTER_COLORS[letterIdx % LETTER_COLORS.length];
+                    return (
+                      <tr key={name} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td className="px-2 py-2 font-bold text-white">{name}</td>
+                        <td className="px-2 py-2 font-bold" style={{ color: '#4ade80' }}>{s.mean.toFixed(4)}</td>
+                        <td className="px-2 py-2" style={{ color: '#94a3b8' }}>±{s.std.toFixed(4)}</td>
+                        <td className="px-2 py-2" style={{ color: '#94a3b8' }}>{s.n}</td>
+                        <td className="px-2 py-2">
+                          <span className="font-black px-2 py-0.5 rounded-md text-xs"
+                            style={{ background: `${letterColor}22`, color: letterColor }}>
+                            {s.letter}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Interpretação */}
+          <p className="text-xs p-3 rounded-xl italic" style={{ background: 'rgba(255,255,255,0.02)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.05)' }}>
+            {result.interpretation}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ExperimentsTab() {
   const [experiments, setExperiments] = useState<Experiment[]>(loadExperiments);
@@ -886,6 +1419,19 @@ function ExperimentsTab() {
                         {exp.treatments.length} × {exp.repetitions} = {exp.treatments.length * exp.repetitions} parcelas
                       </p>
                     </div>
+
+                    {/* ANOVA + Tukey */}
+                    <AnovaPanel exp={exp} />
+
+                    {/* Exportar relatório sem ANOVA */}
+                    <button
+                      onClick={() => exportResearchReport(exp, null)}
+                      className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+                      style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--muted)', border: '1px solid rgba(255,255,255,0.08)' }}
+                    >
+                      <span className="material-symbols-outlined text-sm">description</span>
+                      Exportar planejamento (.txt)
+                    </button>
                   </div>
                 )}
               </div>
@@ -912,6 +1458,8 @@ export default function Research() {
   const [gddLoadingMap, setGddLoading] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
   const [gddLastUpdate, setGddLastUpdate] = useState<string | null>(null);
+  const [expandedFenologia, setExpandedFenologia] = useState<string | null>(null);
+  const [expandedNdvi, setExpandedNdvi] = useState<string | null>(null);
 
   const isGddLoading = Object.values(gddLoadingMap).some(Boolean);
 
@@ -1163,28 +1711,60 @@ export default function Research() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {farmFields.map(field => {
                       const entry = entries[field.id ?? ''] ?? { fieldId: field.id ?? '' };
-                      return editingId === field.id ? (
-                        <div key={field.id} className="sm:col-span-2">
-                          <div className="mb-2 px-1">
-                            <p className="text-sm font-bold text-white">{field.name}</p>
+                      const fid = field.id ?? '';
+                      const isFenologiaOpen = expandedFenologia === fid;
+                      const isNdviOpen = expandedNdvi === fid;
+
+                      if (editingId === field.id) {
+                        return (
+                          <div key={field.id} className="sm:col-span-2">
+                            <div className="mb-2 px-1">
+                              <p className="text-sm font-bold text-white">{field.name}</p>
+                            </div>
+                            <EditPanel
+                              fieldId={fid}
+                              initialEntry={entry}
+                              onSave={handleSave}
+                              onCancel={() => setEditingId(null)}
+                            />
                           </div>
-                          <EditPanel
-                            fieldId={field.id ?? ''}
-                            initialEntry={entry}
-                            onSave={handleSave}
-                            onCancel={() => setEditingId(null)}
+                        );
+                      }
+
+                      return (
+                        <React.Fragment key={fid}>
+                          <BlockCard
+                            field={field}
+                            farmName={farm.name}
+                            entry={entry}
+                            gddData={gddCache[fid] ?? []}
+                            onEdit={() => {
+                              setEditingId(fid);
+                              setExpandedFenologia(null);
+                              setExpandedNdvi(null);
+                            }}
+                            onClearActual={() => handleClearActual(fid)}
+                            onFenologia={() => {
+                              setExpandedFenologia(isFenologiaOpen ? null : fid);
+                              setExpandedNdvi(null);
+                            }}
+                            fenologiaActive={isFenologiaOpen}
                           />
-                        </div>
-                      ) : (
-                        <BlockCard
-                          key={field.id}
-                          field={field}
-                          farmName={farm.name}
-                          entry={entry}
-                          gddData={gddCache[field.id ?? ''] ?? []}
-                          onEdit={() => setEditingId(field.id ?? null)}
-                          onClearActual={() => handleClearActual(field.id ?? '')}
-                        />
+
+                          {/* Fenologia expanded panel (full width) */}
+                          {isFenologiaOpen && (
+                            <div className="sm:col-span-2">
+                              <FenologiaPanel fieldId={fid} fieldName={field.name ?? 'Talhão'} />
+                            </div>
+                          )}
+
+                          {/* NDVI expanded panel (full width) */}
+                          {isNdviOpen && (
+                            <div className="sm:col-span-2">
+                              <NdviPanel fieldId={fid} lat={field.lat} lng={field.lng} />
+                            </div>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </div>
