@@ -23,113 +23,40 @@ function applyTheme(theme: Theme) {
 
 
 
-const NAV_ITEMS = [
-  {
-    to: '/app/dashboard',
-    label: 'Mapa / Talhões',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/weather',
-    label: 'Meteorologia',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/chat',
-    label: 'Chat IA',
-    badge: 'IA',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/alerts',
-    label: 'Alertas',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/reports',
-    label: 'Relatórios',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/maps',
-    label: 'Mapas Agro',
-    badge: 'NDVI',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-        <path d="M9 3v15M15 6v15" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/research',
-    label: 'Pesquisa',
-    badge: 'NEW',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-        <circle cx="12" cy="12" r="2" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    to: '/app/field-log',
-    label: 'Caderno',
-    icon: (
-      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>book</span>
-    ),
-  },
-  {
-    to: '/app/calculator',
-    label: 'Calculadora',
-    icon: (
-      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>calculate</span>
-    ),
-  },
-  {
-    to: '/app/soil',
-    label: 'Solo',
-    icon: (
-      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>science</span>
-    ),
-  },
-  {
-    to: '/app/seasons',
-    label: 'Safras',
-    icon: (
-      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>grass</span>
-    ),
-  },
-  {
-    to: '/app/market',
-    label: 'Mercado',
-    profile: 'produtor' as const,
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
+// ── Nav items por perfil ──────────────────────────────────────────────────────
+type NavItem = { to: string; label: string; icon: React.ReactNode; badge?: string };
+
+const iconMap = (name: string) => (
+  <span className="material-symbols-outlined" style={{ fontSize: 17 }}>{name}</span>
+);
+
+const NAV_PRODUTOR: NavItem[] = [
+  { to: '/app/dashboard', label: 'Mapa & Talhões',      icon: iconMap('map') },
+  { to: '/app/caderno',   label: 'Caderno de Campo',    icon: iconMap('menu_book') },
+  { to: '/app/weather',   label: 'Clima & Alertas',     icon: iconMap('wb_sunny') },
+  { to: '/app/reports',   label: 'Relatórios',           icon: iconMap('bar_chart') },
+  { to: '/app/market',    label: 'Mercado',              icon: iconMap('trending_up') },
+  { to: '/app/chat',      label: 'IA Agronômica',        icon: iconMap('smart_toy'), badge: 'IA' },
+];
+
+const NAV_PESQUISADOR: NavItem[] = [
+  { to: '/app/dashboard',    label: 'Mapa & Talhões',      icon: iconMap('map') },
+  { to: '/app/research',     label: 'Pesquisa Agronômica', icon: iconMap('biotech') },
+  { to: '/app/germoplasma',  label: 'Germoplasma',         icon: iconMap('genetics'), badge: 'NEW' },
+  { to: '/app/reports',      label: 'Relatórios',           icon: iconMap('bar_chart') },
+  { to: '/app/chat',         label: 'IA de Pesquisa',       icon: iconMap('smart_toy'), badge: 'IA' },
+];
+
+// Fallback quando nenhum perfil selecionado — mostra tudo
+const NAV_DEFAULT: NavItem[] = [
+  { to: '/app/dashboard',   label: 'Mapa & Talhões',      icon: iconMap('map') },
+  { to: '/app/caderno',     label: 'Caderno de Campo',    icon: iconMap('menu_book') },
+  { to: '/app/research',    label: 'Pesquisa',             icon: iconMap('biotech') },
+  { to: '/app/germoplasma', label: 'Germoplasma',          icon: iconMap('genetics') },
+  { to: '/app/weather',     label: 'Clima & Alertas',     icon: iconMap('wb_sunny') },
+  { to: '/app/reports',     label: 'Relatórios',           icon: iconMap('bar_chart') },
+  { to: '/app/market',      label: 'Mercado',              icon: iconMap('trending_up') },
+  { to: '/app/chat',        label: 'IA Agronômica',        icon: iconMap('smart_toy'), badge: 'IA' },
 ];
 
 // ── Sidebar content (shared between desktop & mobile drawer) ──────────────────
@@ -144,13 +71,20 @@ function SidebarContent({
   theme: Theme;
   toggleTheme: () => void;
 }) {
+  const navigate = useNavigate();
   const { alerts, userProfile } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
-  const visibleItems = NAV_ITEMS.filter((item) => {
-    if (!('profile' in item)) return true;
-    if (userProfile === 'pesquisador' && (item as { profile?: string }).profile === 'produtor') return false;
-    return true;
-  });
+
+  const navItems: NavItem[] =
+    userProfile === 'produtor'   ? NAV_PRODUTOR :
+    userProfile === 'pesquisador' ? NAV_PESQUISADOR :
+    NAV_DEFAULT;
+
+  const profileLabel =
+    userProfile === 'produtor'    ? '🌾 Produtor Rural' :
+    userProfile === 'pesquisador' ? '🔬 Pesquisador' :
+    null;
+
   const [userName, setUserName] = useState('Usuário');
 
   useEffect(() => {
@@ -182,8 +116,35 @@ function SidebarContent({
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
-        <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Navegação</p>
-        {visibleItems.map((item) => (
+
+        {/* Profile badge or prompt */}
+        {profileLabel ? (
+          <div className="flex items-center justify-between px-3 pt-2 pb-1">
+            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
+              {profileLabel}
+            </span>
+            <button
+              onClick={() => { navigate('/app/settings'); onNavClick?.(); }}
+              className="text-[9px] hover:opacity-70 transition-opacity"
+              style={{ color: 'var(--primary)' }}
+              title="Trocar perfil"
+            >
+              trocar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { navigate('/app/settings'); onNavClick?.(); }}
+            className="w-full flex items-center gap-2 mx-0 mb-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition-all hover:opacity-90"
+            style={{ background: 'rgba(236,91,19,0.10)', border: '1px solid rgba(236,91,19,0.25)', color: '#ec5b13' }}
+          >
+            <span className="material-symbols-outlined text-sm">person_pin</span>
+            <span className="flex-1">Selecione seu perfil</span>
+            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+          </button>
+        )}
+
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -192,7 +153,7 @@ function SidebarContent({
           >
             {item.icon}
             <span className="flex-1">{item.label}</span>
-            {item.to === '/app/alerts' && activeAlertCount > 0 && (
+            {item.to === '/app/weather' && activeAlertCount > 0 && (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                 style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
                 {activeAlertCount}

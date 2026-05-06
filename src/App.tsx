@@ -19,6 +19,8 @@ import SoilData from './pages/SoilData';
 import FieldLog from './pages/FieldLog';
 import Calculator from './pages/Calculator';
 import Seasons from './pages/Seasons';
+import Caderno from './pages/Caderno';
+import Germoplasma from './pages/Germoplasma';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -58,6 +60,8 @@ function App() {
           <Route path="field-log" element={<FieldLog />} />
           <Route path="calculator" element={<Calculator />} />
           <Route path="seasons" element={<Seasons />} />
+          <Route path="caderno" element={<Caderno />} />
+          <Route path="germoplasma" element={<Germoplasma />} />
         </Route>
       </Routes>
     </BrowserRouter>
