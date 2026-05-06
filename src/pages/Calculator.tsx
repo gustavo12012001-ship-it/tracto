@@ -7,11 +7,6 @@ type DoseMode = 'per_ha' | 'per_100l';
 type DoseUnit = 'mL' | 'L' | 'g' | 'kg';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function roundUp(value: number, decimals = 2): number {
-  const factor = Math.pow(10, decimals);
-  return Math.ceil(value * factor) / factor;
-}
-
 function fmt(n: number, decimals = 2): string {
   return n.toLocaleString('pt-BR', {
     minimumFractionDigits: decimals,
