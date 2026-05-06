@@ -1443,8 +1443,303 @@ function ExperimentsTab() {
   );
 }
 
+// ── GxE Tab ───────────────────────────────────────────────────────────────────
+interface GxEResult {
+  grand_mean: number;
+  genotypes: { genotype: string; mean: number; bi: number; s2di: number; classification: string; rank: number }[];
+  environments: { environment: string; mean: number; index: number; type: string }[];
+  interaction_summary: string;
+  recommendation: { best_overall: string | null; stable: string[]; favorable_environments: string[]; unfavorable_environments: string[] };
+}
+
+function GxETab() {
+  const [environments, setEnvironments] = useState<string[]>(['Loc 1', 'Loc 2', 'Loc 3']);
+  const [genotypes, setGenotypes] = useState<string[]>(['Genótipo A', 'Genótipo B', 'Genótipo C']);
+  const [matrix, setMatrix] = useState<Record<string, Record<string, string>>>({});
+  const [newEnv, setNewEnv] = useState('');
+  const [newGeno, setNewGeno] = useState('');
+  const [result, setResult] = useState<GxEResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const setCellValue = (geno: string, env: string, val: string) => {
+    setMatrix(prev => ({
+      ...prev,
+      [geno]: { ...(prev[geno] ?? {}), [env]: val },
+    }));
+  };
+
+  const addEnvironment = () => {
+    const name = newEnv.trim();
+    if (!name || environments.includes(name)) return;
+    setEnvironments(prev => [...prev, name]);
+    setNewEnv('');
+  };
+
+  const addGenotype = () => {
+    const name = newGeno.trim();
+    if (!name || genotypes.includes(name)) return;
+    setGenotypes(prev => [...prev, name]);
+    setNewGeno('');
+  };
+
+  const removeEnvironment = (env: string) => setEnvironments(prev => prev.filter(e => e !== env));
+  const removeGenotype = (geno: string) => setGenotypes(prev => prev.filter(g => g !== geno));
+
+  const runAnalysis = async () => {
+    setError(null);
+    // Build payload — skip empty cells
+    const data: Record<string, Record<string, number>> = {};
+    for (const geno of genotypes) {
+      const row: Record<string, number> = {};
+      for (const env of environments) {
+        const raw = matrix[geno]?.[env]?.trim();
+        if (raw && !isNaN(Number(raw))) row[env] = Number(raw);
+      }
+      if (Object.keys(row).length >= 2) data[geno] = row;
+    }
+    if (Object.keys(data).length < 2) {
+      setError('Preencha pelo menos 2 genótipos com dados em 2 ou mais ambientes.'); return;
+    }
+    setLoading(true);
+    try {
+      const res = await apiFetch<GxEResult>('/api/stats/gxe', {
+        method: 'POST',
+        body: JSON.stringify({ data }),
+      });
+      setResult(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao calcular GxE.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const CLASS_COLORS: Record<string, string> = {
+    'Estável e adaptado': '#4ade80',
+    'Responsivo a ambientes favoráveis': '#60a5fa',
+    'Adaptado a ambientes desfavoráveis': '#f59e0b',
+    'Instável (alta interação)': '#f87171',
+    'Comportamento intermediário': '#94a3b8',
+  };
+
+  const inpCls = 'w-full px-2 py-1.5 rounded-lg text-xs text-white bg-transparent border focus:outline-none focus:border-[var(--primary)] transition-colors text-center';
+  const inpStyle = { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' };
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div>
+        <p className="text-sm font-bold text-white flex items-center gap-2">
+          <span className="material-symbols-outlined text-base" style={{ color: '#a78bfa' }}>hub</span>
+          Análise GxE — Estabilidade Genotípica
+        </p>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+          Método Eberhart &amp; Russell (1966). Insira os dados de produtividade por ambiente e calcule estabilidade, responsividade e adaptabilidade.
+        </p>
+      </div>
+
+      {/* Add environments */}
+      <div className="flex flex-col gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#60a5fa' }}>Ambientes / Locais</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {environments.map(env => (
+            <span key={env} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.25)', color: '#60a5fa' }}>
+              {env}
+              <button onClick={() => removeEnvironment(env)} className="ml-0.5 hover:opacity-60">✕</button>
+            </span>
+          ))}
+          <input
+            className="px-2 py-1 rounded-lg text-xs text-white border focus:outline-none focus:border-[#60a5fa]"
+            style={inpStyle} placeholder="+ Novo local" value={newEnv}
+            onChange={e => setNewEnv(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addEnvironment()}
+          />
+          <button onClick={addEnvironment}
+            className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+            style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.25)' }}>
+            Adicionar
+          </button>
+        </div>
+      </div>
+
+      {/* Add genotypes */}
+      <div className="flex flex-col gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>Genótipos / Materiais</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {genotypes.map(g => (
+            <span key={g} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa' }}>
+              {g}
+              <button onClick={() => removeGenotype(g)} className="ml-0.5 hover:opacity-60">✕</button>
+            </span>
+          ))}
+          <input
+            className="px-2 py-1 rounded-lg text-xs text-white border focus:outline-none focus:border-[#a78bfa]"
+            style={inpStyle} placeholder="+ Novo genótipo" value={newGeno}
+            onChange={e => setNewGeno(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addGenotype()}
+          />
+          <button onClick={addGenotype}
+            className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+            style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.25)' }}>
+            Adicionar
+          </button>
+        </div>
+      </div>
+
+      {/* Data matrix */}
+      {genotypes.length > 0 && environments.length > 0 && (
+        <div className="rounded-2xl border overflow-x-auto" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.09)' }}>
+          <table className="w-full min-w-[400px] text-xs">
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                <th className="px-3 py-2.5 text-left font-bold" style={{ color: '#94a3b8' }}>Genótipo</th>
+                {environments.map(env => (
+                  <th key={env} className="px-2 py-2.5 text-center font-bold" style={{ color: '#60a5fa' }}>{env}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {genotypes.map((geno, gi) => (
+                <tr key={geno} style={{ borderTop: gi > 0 ? '1px solid rgba(255,255,255,0.04)' : undefined }}>
+                  <td className="px-3 py-1.5 font-semibold" style={{ color: '#a78bfa', minWidth: 120 }}>{geno}</td>
+                  {environments.map(env => (
+                    <td key={env} className="px-2 py-1.5" style={{ minWidth: 80 }}>
+                      <input
+                        type="number"
+                        className={inpCls}
+                        style={inpStyle}
+                        placeholder="—"
+                        value={matrix[geno]?.[env] ?? ''}
+                        onChange={e => setCellValue(geno, env, e.target.value)}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="px-3 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-[10px]" style={{ color: '#475569' }}>Insira os valores de produtividade (sc/ha, t/ha, kg/ha, etc.) para cada combinação</p>
+          </div>
+        </div>
+      )}
+
+      {/* Run button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => void runAnalysis()}
+          disabled={loading}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+          style={{ background: 'linear-gradient(135deg, #7c3aed, #a78bfa)' }}
+        >
+          {loading && <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>}
+          <span className="material-symbols-outlined text-base">hub</span>
+          {loading ? 'Calculando...' : 'Calcular GxE'}
+        </button>
+        {result && (
+          <button onClick={() => setResult(null)}
+            className="px-4 py-3 rounded-xl text-xs font-semibold hover:bg-white/5 transition-all"
+            style={{ color: '#64748b', border: '1px solid var(--border)' }}>
+            Limpar resultado
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-xl text-xs font-semibold" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+          <span className="material-symbols-outlined text-sm">error</span>{error}
+        </div>
+      )}
+
+      {/* Results */}
+      {result && (
+        <div className="flex flex-col gap-4">
+          {/* Summary */}
+          <div className="p-4 rounded-2xl" style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: '#a78bfa' }}>Resumo da Análise</p>
+            <p className="text-xs leading-relaxed" style={{ color: '#cbd5e1' }}>{result.interaction_summary}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {result.recommendation.best_overall && (
+                <span className="px-2 py-1 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(74,222,128,0.12)', color: '#4ade80' }}>
+                  🏆 Maior média: {result.recommendation.best_overall}
+                </span>
+              )}
+              {result.recommendation.stable.map(g => (
+                <span key={g} className="px-2 py-1 rounded-lg text-[10px] font-bold" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>
+                  🎯 Estável: {g}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Genotype rankings */}
+          <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.09)' }}>
+            <div className="px-4 py-2.5" style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#94a3b8' }}>Ranking por Estabilidade</p>
+            </div>
+            {result.genotypes.map((g, i) => (
+              <div key={g.genotype} className="px-4 py-3 flex items-center gap-4"
+                style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : undefined }}>
+                <span className="text-lg font-black w-6 text-center" style={{ color: i === 0 ? '#f59e0b' : '#334155' }}>
+                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${g.rank}`}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{g.genotype}</p>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                      style={{ background: CLASS_COLORS[g.classification] + '20', color: CLASS_COLORS[g.classification] ?? '#94a3b8' }}>
+                      {g.classification}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-4 text-right flex-shrink-0">
+                  <div>
+                    <p className="text-[9px] uppercase" style={{ color: '#475569' }}>Média</p>
+                    <p className="text-sm font-bold text-white">{g.mean.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase" style={{ color: '#475569' }}>bi</p>
+                    <p className="text-sm font-bold" style={{ color: g.bi > 1.15 ? '#60a5fa' : g.bi < 0.85 ? '#f59e0b' : '#4ade80' }}>{g.bi.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase" style={{ color: '#475569' }}>S²di</p>
+                    <p className="text-sm font-bold" style={{ color: g.s2di < 0.5 ? '#4ade80' : '#f87171' }}>{g.s2di.toFixed(3)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Environments */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {result.environments.map(env => (
+              <div key={env.environment} className="p-3 rounded-xl flex flex-col gap-1"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-white">{env.environment}</p>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                    style={env.type === 'Favorável'
+                      ? { background: 'rgba(74,222,128,0.12)', color: '#4ade80' }
+                      : { background: 'rgba(248,113,113,0.12)', color: '#f87171' }}>
+                    {env.type}
+                  </span>
+                </div>
+                <p className="text-xs" style={{ color: '#94a3b8' }}>Média: <strong className="text-white">{env.mean.toFixed(2)}</strong></p>
+                <p className="text-[10px]" style={{ color: '#475569' }}>Índice: {env.index >= 0 ? '+' : ''}{env.index.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
-type ResearchTab = 'blocos' | 'experimentos';
+type ResearchTab = 'blocos' | 'experimentos' | 'gxe';
 
 export default function Research() {
   const navigate = useNavigate();
@@ -1590,27 +1885,34 @@ export default function Research() {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto scrollbar-thin" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
           {([
             { id: 'blocos' as ResearchTab, label: 'Blocos / Parcelas', icon: 'grid_view' },
             { id: 'experimentos' as ResearchTab, label: 'Experimentos', icon: 'science' },
+            { id: 'gxe' as ResearchTab, label: 'Análise GxE', icon: 'hub', badge: 'NOVO' },
           ]).map(tab => (
             <button
               key={tab.id}
               onClick={() => setResearchTab(tab.id)}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all"
+              className="flex-shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all"
               style={researchTab === tab.id
                 ? { background: 'var(--primary-dim)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }
                 : { color: 'var(--muted)', border: '1px solid transparent' }}
             >
               <span className="material-symbols-outlined text-sm">{tab.icon}</span>
               {tab.label}
+              {tab.badge && researchTab !== tab.id && (
+                <span className="text-[8px] font-black px-1 py-0.5 rounded" style={{ background: 'rgba(167,139,250,0.2)', color: '#a78bfa' }}>{tab.badge}</span>
+              )}
             </button>
           ))}
         </div>
 
         {/* Experimentos tab */}
         {researchTab === 'experimentos' && <ExperimentsTab />}
+
+        {/* GxE tab */}
+        {researchTab === 'gxe' && <GxETab />}
 
         {/* Blocos tab content below */}
         {researchTab === 'blocos' && (<>
