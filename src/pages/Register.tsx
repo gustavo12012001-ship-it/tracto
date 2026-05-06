@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { useAppStore } from '../store/useAppStore';
 
 const maskPhone = (v: string) => {
   let val = v.replace(/\D/g, '');
@@ -36,7 +37,9 @@ export default function Register() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [profile, setProfile] = useState<'produtor' | 'pesquisador' | null>(null);
 
+  const { setUserProfile } = useAppStore();
   const [success, setSuccess] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -96,6 +99,9 @@ export default function Register() {
       });
 
       if (signUpError) throw new Error(signUpError.message);
+
+      // Persiste o perfil escolhido no Zustand (localStorage)
+      if (profile) setUserProfile(profile);
 
       setSuccess(true);
     } catch (err: unknown) {
@@ -260,6 +266,35 @@ export default function Register() {
                     placeholder="••••••••"
                     required
                   />
+                </div>
+
+                {/* Seleção de perfil */}
+                <div className="space-y-2">
+                  <label className="text-[9px] uppercase tracking-widest text-slate-400 font-bold ml-1">Qual é o seu perfil?</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { id: 'produtor' as const, emoji: '👨‍🌾', title: 'Produtor Rural', desc: 'Gestão de safras e monitoramento' },
+                      { id: 'pesquisador' as const, emoji: '🔬', title: 'Pesquisador', desc: 'Experimentos e melhoramento' },
+                    ]).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setProfile(p.id)}
+                        className="flex flex-col items-center gap-1 p-3 rounded-xl text-center transition-all"
+                        style={{
+                          background: profile === p.id ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.04)',
+                          border: `1px solid ${profile === p.id ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                        }}
+                      >
+                        <span className="text-xl">{p.emoji}</span>
+                        <span className="text-[11px] font-bold text-white leading-tight">{p.title}</span>
+                        <span className="text-[9px] leading-tight" style={{ color: '#64748b' }}>{p.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {!profile && (
+                    <p className="text-[10px] text-center" style={{ color: '#475569' }}>Você pode trocar depois em Configurações</p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
