@@ -14,9 +14,6 @@ export async function buildAuthHeaders(): Promise<Record<string, string>> {
       session = refreshed.data.session;
     }
 
-    console.log('[API] Token:', session?.access_token ? 'presente' : 'AUSENTE');
-    console.log('[API] User:', session?.user?.email ?? 'nenhum');
-
     if (!session?.access_token) {
       return {};
     }
@@ -64,9 +61,6 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
     throw new Error('Backend não configurado. Defina VITE_API_URL no .env');
   }
   const url = `${API_URL}${path}`;
-  console.log('[API] API_URL:', API_URL);
-  console.log('[API] Chamando:', url);
-
   const authHeaders = await buildAuthHeaders();
   const headers = new Headers(options.headers ?? {});
 

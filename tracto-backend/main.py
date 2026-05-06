@@ -74,10 +74,8 @@ from services.api_key_service import generate_api_key, verify_api_key, list_api_
 
 # --- Security & Rate Limiting ---
 
-# --- Security & Rate Limiting ---
-
-# O limitador usa IP (get_remote_address) como chave primÃ¡ria para governanÃ§a econÃ´mica.
-# A identidade do usuÃ¡rio (context_user_id) Ã© usada apenas para contexto em logs.
+# O limitador usa IP (get_remote_address) como chave primária para governança econômica.
+# A identidade do usuário (context_user_id) é usada apenas para contexto em logs.
 limiter = Limiter(key_func=get_remote_address)
 APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
 
@@ -113,6 +111,22 @@ async def structured_log_middleware(request: Request, call_next):
     return response
 
 
+# --- Security Headers Middleware ---
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Remove headers that reveal server info
+    response.headers.pop("server", None)
+    response.headers.pop("x-powered-by", None)
+    return response
+
+
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 if allowed_origins_env:
     allow_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
@@ -140,9 +154,9 @@ app.add_middleware(
     allow_origins=allow_origins,
     allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-Scene-Bounds", "X-Scene-Id", "X-Cache", "X-Cache-Source", "X-Source", "X-Scene-Date", "X-Mode"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "Accept", "Origin", "X-Request-ID"],
+    expose_headers=["X-Scene-Bounds", "X-Scene-Id", "X-Cache", "X-Cache-Source", "X-Source", "X-Scene-Date", "X-Mode", "X-Request-ID"],
 )
 
 

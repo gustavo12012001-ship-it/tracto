@@ -5,8 +5,8 @@ import App from './App.tsx'
 import { supabase } from './services/supabase'
 
 // Detectar sessão OAuth do URL hash ao iniciar
-supabase.auth.onAuthStateChange((event, session) => {
-  console.log('[Auth] Event:', event, '| User:', session?.user?.email ?? 'none')
+supabase.auth.onAuthStateChange((_event, _session) => {
+  // auth state tracked internally by Supabase
 })
 
 createRoot(document.getElementById('root')!).render(
