@@ -653,6 +653,8 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
             image_base64=chat_req.image_base64,
             image_mime_type=chat_req.image_mime_type or "image/jpeg",
             hourly_weather=chat_req.hourly_weather,
+            user_profile=chat_req.user_profile,
+            research_context=chat_req.research_context,
         )
 
         satellite = snapshot.satellite or {}

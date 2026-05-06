@@ -18,6 +18,10 @@ class ChatRequest(BaseModel):
     image_mime_type: str | None = "image/jpeg"
     hourly_weather: dict | None = None
     satellite_context: dict[str, Any] | None = None
+    # Perfil do usuário: 'produtor' | 'pesquisador' | None
+    user_profile: str | None = None
+    # Contexto de pesquisa (RAG): experimentos, ANOVA, germoplasma serializados
+    research_context: str | None = None
 
 
 class ChatResponse(BaseModel):

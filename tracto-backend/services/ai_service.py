@@ -43,6 +43,8 @@ def generate_chat_response(
     image_base64: str | None = None,
     image_mime_type: str = "image/jpeg",
     hourly_weather: dict | None = None,
+    user_profile: str | None = None,
+    research_context: str | None = None,
 ) -> str:
     last_msg = messages[-1] if messages else None
     last_text = last_msg.get("text", "") if last_msg else ""
@@ -54,14 +56,31 @@ def generate_chat_response(
             "Reenvie a imagem para eu fazer a analise visual com precisao."
         )
 
+    is_researcher = user_profile == "pesquisador"
+
     try:
         client = _get_client()
 
-        system_parts = [
-            "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
-            "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
-            f"\nContexto da fazenda:\n{farm_context}",
-        ]
+        if is_researcher:
+            system_parts = [
+                "Voce e o assistente de pesquisa agronomica da Tracto, especializado em melhoramento vegetal e experimentacao.",
+                "Responda como pesquisador senior / melhorista: rigoroso, estatisticamente embasado, foque em selecao genotipica, interacao GxE e recomendacoes de avanco de geracao.",
+                "Use terminologia tecnica de melhoramento (GxE, BLUP, ANOVA, seleção recorrente, linhagem pura, etc.).",
+                f"\nContexto do talhao/ambiente:\n{farm_context}",
+            ]
+            if research_context:
+                system_parts.append(
+                    f"\n=== BANCO DE DADOS DA EMPRESA (use como contexto primario para suas respostas) ===\n"
+                    f"{research_context}\n"
+                    "=== FIM DO BANCO DE DADOS ==="
+                )
+        else:
+            system_parts = [
+                "Voce e o assistente agronomico da Tracto, plataforma de inteligencia agricola.",
+                "Responda como agronomo senior: direto, tecnico e focado no lucro do produtor.",
+                f"\nContexto da fazenda:\n{farm_context}",
+            ]
+
         if ndvi_context:
             system_parts.append(f"\nAnalise NDVI recente:\n{ndvi_context}")
         if hourly_weather:

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { analyzeField } from '../services/api';
 import type { FieldAnalysisResult } from '../services/api';
@@ -38,9 +38,29 @@ const ALERT_COLORS: Record<Alert['type'], { accent: string; text: string; border
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
+/** KPIs de pesquisa lidos do localStorage */
+function useResearchKPIs() {
+  return useMemo(() => {
+    try {
+      const genos = JSON.parse(localStorage.getItem('tracto-germoplasma-v1') || '[]') as Array<{ status: string }>;
+      const crosses = JSON.parse(localStorage.getItem('tracto-crosses-v1') || '[]') as unknown[];
+      const gens = JSON.parse(localStorage.getItem('tracto-generations-v1') || '[]') as unknown[];
+      const exps = JSON.parse(localStorage.getItem('tracto-experiments-v1') || '[]') as Array<{ status: string }>;
+      return {
+        totalGenos: genos.length,
+        candidatas: genos.filter((g) => g.status === 'Candidata').length,
+        totalCrosses: crosses.length,
+        totalGens: gens.length,
+        activeExps: exps.filter((e) => e.status === 'Ativo' || e.status === 'Em andamento').length,
+      };
+    } catch { return { totalGenos: 0, candidatas: 0, totalCrosses: 0, totalGens: 0, activeExps: 0 }; }
+  }, []);
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { fields, weatherCache, alerts, activeFieldId, focusActiveField } = useAppStore();
+  const { fields, weatherCache, alerts, activeFieldId, focusActiveField, userProfile } = useAppStore();
+  const researchKPIs = useResearchKPIs();
   const [market, setMarket] = useState<MarketData>({
     soja: { price: 'Atualizando...', change: '—', up: true },
   });
@@ -224,8 +244,47 @@ export default function Dashboard() {
             </p>
           </div>
 
+          {/* ── Pesquisador: painel de germoplasma ── */}
+          {userProfile === 'pesquisador' && (
+            <div className="flex flex-col gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest px-1" style={{ color: '#64748b' }}>Programa de Melhoramento</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Materiais', value: researchKPIs.totalGenos, icon: 'genetics', color: '#a78bfa' },
+                  { label: 'Candidatas', value: researchKPIs.candidatas, icon: 'star', color: '#4ade80' },
+                  { label: 'Cruzamentos', value: researchKPIs.totalCrosses, icon: 'join_inner', color: '#60a5fa' },
+                  { label: 'Exp. ativos', value: researchKPIs.activeExps, icon: 'biotech', color: '#fb923c' },
+                ].map((kpi) => (
+                  <div key={kpi.label} className="p-3 rounded-xl flex flex-col gap-0.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span className="material-symbols-outlined text-sm" style={{ color: kpi.color }}>{kpi.icon}</span>
+                    <p className="text-xl font-bold text-white leading-tight">{kpi.value}</p>
+                    <p className="text-[10px]" style={{ color: '#64748b' }}>{kpi.label}</p>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => navigate('/app/germoplasma')}
+                className="w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all hover:opacity-80"
+                style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa' }}
+              >
+                <span className="material-symbols-outlined text-sm">genetics</span>
+                Banco de Germoplasma
+              </button>
+              <button
+                onClick={() => navigate('/app/research')}
+                className="w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all hover:opacity-80"
+                style={{ background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.25)', color: '#60a5fa' }}
+              >
+                <span className="material-symbols-outlined text-sm">biotech</span>
+                Pesquisa Agronômica
+              </button>
+            </div>
+          )}
+
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 px-1" style={{ color: '#64748b' }}>Métricas da Fazenda</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 px-1" style={{ color: '#64748b' }}>
+              {userProfile === 'pesquisador' ? 'Ambientes de Teste' : 'Métricas da Fazenda'}
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {METRICS.map((m) => (
                 <div key={m.label} className="p-3 rounded-xl flex flex-col gap-1" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>

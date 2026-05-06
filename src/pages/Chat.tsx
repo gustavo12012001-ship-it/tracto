@@ -52,11 +52,96 @@ function relativeDate(iso: string): string {
   return `há ${days} dias`;
 }
 
-const INITIAL_MSG = (time: string): Message => ({
+const INITIAL_MSG = (time: string, profile?: string | null): Message => ({
   role: 'assistant',
-  text: 'Olá! Sou a **Tracto IA**, sua analista agronômica. Posso ajudar com análise de solo, NDVI, irrigação, pragas, colheita e clima.\n\n📸 **Dica:** Envie uma foto da lavoura para análise visual de pragas e doenças.\n\nComo posso ajudar?',
+  text: profile === 'pesquisador'
+    ? 'Olá! Sou a **Tracto IA de Pesquisa**. Analiso seus experimentos, germoplasma e dados de melhoramento vegetal.\n\n🧬 **Capacidades:** ANOVA, interação GxE, seleção de linhagens, avaliação fenotípica e recomendações de avanço de geração.\n\nTodos os seus dados cadastrados já estão disponíveis como contexto. Como posso ajudar?'
+    : 'Olá! Sou a **Tracto IA**, sua analista agronômica. Posso ajudar com análise de solo, NDVI, irrigação, pragas, colheita e clima.\n\n📸 **Dica:** Envie uma foto da lavoura para análise visual de pragas e doenças.\n\nComo posso ajudar?',
   time,
 });
+
+/** Serializa dados de pesquisa do localStorage para contexto RAG */
+function buildResearchContext(): string {
+  try {
+    const parts: string[] = [];
+
+    // Experimentos
+    const expsRaw = localStorage.getItem('tracto-experiments-v1');
+    if (expsRaw) {
+      const exps = JSON.parse(expsRaw) as Array<Record<string, unknown>>;
+      if (exps.length > 0) {
+        parts.push('## EXPERIMENTOS CADASTRADOS');
+        exps.forEach((e) => {
+          parts.push(
+            `- ID: ${e.id} | Nome: ${e.name} | Cultura: ${e.culture} | Safra: ${e.season} | Local: ${e.location} | Tratamentos: ${e.treatments} | Blocos: ${e.blocks} | Status: ${e.status}${e.notes ? ` | Obs: ${e.notes}` : ''}`
+          );
+        });
+      }
+    }
+
+    // Resultados de ANOVA
+    const anovaRaw = localStorage.getItem('tracto-anova-results-v1');
+    if (anovaRaw) {
+      const anovas = JSON.parse(anovaRaw) as Array<Record<string, unknown>>;
+      if (anovas.length > 0) {
+        parts.push('## RESULTADOS DE ANOVA');
+        anovas.forEach((a) => {
+          parts.push(
+            `- Experimento: ${a.experiment_id} | Variável: ${a.variable} | F calculado: ${a.f_value} | p-valor: ${a.p_value} | CV%: ${a.cv_percent} | Significativo: ${a.significant ? 'Sim' : 'Não'}`
+          );
+        });
+      }
+    }
+
+    // Germoplasma
+    const genoRaw = localStorage.getItem('tracto-germoplasma-v1');
+    if (genoRaw) {
+      const genos = JSON.parse(genoRaw) as Array<Record<string, unknown>>;
+      if (genos.length > 0) {
+        parts.push('## BANCO DE GERMOPLASMA');
+        genos.forEach((g) => {
+          parts.push(
+            `- ${g.name} | ${g.species} | Geração: ${g.generation} | Status: ${g.status} | Origem: ${g.origin || 'N/D'} | ♀ ${g.female_parent || '-'} × ♂ ${g.male_parent || '-'}${(g.traits as string[])?.length ? ` | Traits: ${(g.traits as string[]).join(', ')}` : ''}`
+          );
+        });
+      }
+    }
+
+    // Cruzamentos
+    const crossesRaw = localStorage.getItem('tracto-crosses-v1');
+    if (crossesRaw) {
+      const crosses = JSON.parse(crossesRaw) as Array<Record<string, unknown>>;
+      if (crosses.length > 0) {
+        parts.push('## CRUZAMENTOS REALIZADOS');
+        crosses.forEach((c) => {
+          parts.push(
+            `- ${c.f1_name} | ♀ ${c.female_parent} × ♂ ${c.male_parent} | Data: ${c.date} | Local: ${c.location} | F1 obtidos: ${c.f1_count}${c.purpose ? ` | Objetivo: ${c.purpose}` : ''}`
+          );
+        });
+      }
+    }
+
+    // Gerações
+    const gensRaw = localStorage.getItem('tracto-generations-v1');
+    if (gensRaw) {
+      const gens = JSON.parse(gensRaw) as Array<Record<string, unknown>>;
+      if (gens.length > 0) {
+        parts.push('## HISTÓRICO DE GERAÇÕES');
+        gens.forEach((g) => {
+          parts.push(
+            `- Genótipo: ${g.genotype_id} | Geração: ${g.generation_label} | Ano: ${g.year} | Local: ${g.location} | Plantas avaliadas: ${g.plants_evaluated} | Selecionadas: ${g.plants_selected}${g.mean_yield ? ` | Produtividade média: ${g.mean_yield}` : ''}`
+          );
+        });
+      }
+    }
+
+    return parts.length > 0
+      ? parts.join('\n')
+      : 'Nenhum dado de pesquisa cadastrado ainda.';
+  } catch {
+    return 'Erro ao carregar dados de pesquisa do dispositivo.';
+  }
+}
 
 function buildFarmContextFromSnapshot(snapshot: FieldIntelligenceSnapshot): string {
   const weather = snapshot.weather || {};
@@ -114,12 +199,13 @@ export default function Chat() {
     weatherCache,
     fetchFieldIntelligence,
     currentSatelliteScene,
+    userProfile,
   } = useAppStore();
 
   // Conversation state
   const [conversationId, setConversationId] = useState<string>(() => uuidv4());
   const [conversationCreatedAt, setConversationCreatedAt] = useState<string>(() => nowISO());
-  const [messages, setMessages] = useState<Message[]>(() => [INITIAL_MSG(nowTime())]);
+  const [messages, setMessages] = useState<Message[]>(() => [INITIAL_MSG(nowTime(), userProfile)]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -228,7 +314,7 @@ export default function Chat() {
     const createdAt = nowISO();
     setConversationId(newId);
     setConversationCreatedAt(createdAt);
-    setMessages([INITIAL_MSG(nowTime())]);
+    setMessages([INITIAL_MSG(nowTime(), userProfile)]);
     setActiveConversationId(null);
     clearChat();
     setApiError(null);
@@ -428,6 +514,8 @@ export default function Chat() {
           }
         : null;
 
+      const research_context = userProfile === 'pesquisador' ? buildResearchContext() : null;
+
       const data = await apiFetch<ChatApiResponse>('/api/chat', {
         method: 'POST',
         body: JSON.stringify({
@@ -438,6 +526,8 @@ export default function Chat() {
           image_mime_type: imageMime,
           hourly_weather,
           satellite_context,
+          user_profile: userProfile,
+          research_context,
         }),
       });
 
@@ -639,12 +729,16 @@ export default function Chat() {
               </span>
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">Tracto IA</h2>
+              <h2 className="text-sm font-bold text-white">
+                {userProfile === 'pesquisador' ? 'Tracto IA de Pesquisa' : 'Tracto IA'}
+              </h2>
               <p className="text-[10px] flex items-center gap-1.5" style={{ color: '#64748b' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
-                {pendingImage
-                  ? 'Analista Agronômica · Claude Sonnet · Visão ativa nesta mensagem'
-                  : 'Analista Agronômica · Claude Sonnet · Sem imagem anexada'}
+                {userProfile === 'pesquisador'
+                  ? 'Melhorista IA · Claude Sonnet · RAG ativo com seus dados'
+                  : pendingImage
+                    ? 'Analista Agronômica · Claude Sonnet · Visão ativa nesta mensagem'
+                    : 'Analista Agronômica · Claude Sonnet · Sem imagem anexada'}
               </p>
               {contextUsedLabel && (
                 <p className="text-[10px] mt-1" style={{ color: '#4ade80' }}>
