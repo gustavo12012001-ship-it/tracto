@@ -49,6 +49,7 @@ from models import (
     GenotypeUpdate,
     CrossCreate,
     BreedingGenerationCreate,
+    GxERequest,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -81,7 +82,7 @@ from services.analysis_history_service import save_analysis, get_field_analyses
 from services.field_log_service import create_log, get_field_logs, delete_log
 from services.season_service import create_season, get_field_seasons, update_season, delete_season
 from services.spray_window_service import evaluate_spray_window
-from services.stats_service import run_anova_tukey
+from services.stats_service import run_anova_tukey, run_gxe_analysis
 from services.api_key_service import generate_api_key, verify_api_key, list_api_keys, revoke_api_key
 from services.germoplasm_service import (
     create_genotype, get_genotypes, update_genotype, delete_genotype,
@@ -2021,6 +2022,37 @@ async def verify_recaptcha(request: RecaptchaRequest):
     except Exception as exc:
         logging.error("Erro na verificacao do reCAPTCHA: %s", exc)
         raise HTTPException(status_code=500, detail="Erro interno na verificacao de seguranca.") from exc
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GxE — Análise de Interação Genótipo × Ambiente
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/stats/gxe")
+async def gxe_analysis_endpoint(
+    body: GxERequest,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    """
+    Análise de estabilidade Genótipo × Ambiente (Eberhart-Russell 1966).
+
+    Body: { "data": { "Genótipo A": { "Ambiente1": 52.3, "Ambiente2": 48.1 }, ... } }
+
+    Returns:
+      - grand_mean: média geral
+      - genotypes: [ { genotype, mean, bi, s2di, classification, rank } ]
+      - environments: [ { environment, mean, index, type } ]
+      - interaction_summary: texto interpretativo
+      - recommendation: { best_overall, stable, favorable, unfavorable }
+    """
+    try:
+        result = run_gxe_analysis(body.data)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.error("[GxE] Erro inesperado: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao calcular análise GxE.") from exc
 
 
 # ─────────────────────────────────────────────────────────────────────────────

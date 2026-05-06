@@ -208,3 +208,175 @@ def run_anova_tukey(groups: dict[str, list[float]]) -> dict:
         "tukey_groups": tukey_groups,
         "interpretation": interpretation,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GxE — Análise de Estabilidade Eberhart & Russell (1966)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_gxe_analysis(data: dict[str, dict[str, float]]) -> dict:
+    """
+    Análise de interação Genótipo × Ambiente pelo método de Eberhart & Russell.
+
+    Parameters
+    ----------
+    data : { genotype: { environment: yield } }
+        Cada genótipo deve ter valores em pelo menos 2 ambientes.
+        Ambientes com valor None/missing são ignorados por genótipo.
+
+    Returns
+    -------
+    dict com:
+        - genotypes: lista de resultados por genótipo (mean, bi, s2di, classification, rank)
+        - environments: índices ambientais (Ij)
+        - grand_mean: média geral
+        - interaction_summary: texto interpretativo
+        - recommendation: melhores genótipos para ambientes favoráveis/desfavoráveis
+
+    Raises
+    ------
+    ValueError se dados insuficientes.
+    """
+    if len(data) < 2:
+        raise ValueError("GxE requer pelo menos 2 genótipos.")
+
+    genotype_names = list(data.keys())
+    environment_names: list[str] = []
+    for g_data in data.values():
+        for env in g_data.keys():
+            if env not in environment_names:
+                environment_names.append(env)
+
+    if len(environment_names) < 2:
+        raise ValueError("GxE requer pelo menos 2 ambientes (locais/anos).")
+
+    # Matriz de médias: genótipo × ambiente (None se ausente)
+    matrix: dict[str, dict[str, Optional[float]]] = {
+        g: {e: data[g].get(e) for e in environment_names}
+        for g in genotype_names
+    }
+
+    # ── Médias por ambiente ───────────────────────────────────────────────────
+    env_means: dict[str, float] = {}
+    for env in environment_names:
+        vals = [matrix[g][env] for g in genotype_names if matrix[g][env] is not None]
+        if not vals:
+            raise ValueError(f"Ambiente '{env}' sem observações válidas.")
+        env_means[env] = sum(vals) / len(vals)
+
+    # Média geral (apenas células preenchidas)
+    all_vals = [v for g in genotype_names for e in environment_names
+                if (v := matrix[g][e]) is not None]
+    grand_mean = sum(all_vals) / len(all_vals)
+
+    # ── Índice ambiental Ij ───────────────────────────────────────────────────
+    env_index: dict[str, float] = {
+        env: env_means[env] - grand_mean for env in environment_names
+    }
+
+    # ── Regressão por genótipo (Eberhart-Russell) ─────────────────────────────
+    geno_results = []
+    for geno in genotype_names:
+        # Pares (Ij, Yij) para ambientes com dados
+        pairs = [
+            (env_index[env], matrix[geno][env])
+            for env in environment_names
+            if matrix[geno][env] is not None
+        ]
+        if len(pairs) < 2:
+            continue
+
+        xs = [p[0] for p in pairs]
+        ys = [p[1] for p in pairs]
+        n_e = len(pairs)
+        mean_y = sum(ys) / n_e
+
+        # Coeficiente de regressão bi
+        sum_xy = sum(x * y for x, y in zip(xs, ys))
+        sum_xx = sum(x * x for x in xs)
+        bi = sum_xy / sum_xx if sum_xx != 0 else 1.0
+
+        # Desvio da regressão S²di
+        y_pred = [mean_y + bi * x for x in xs]
+        ss_dev = sum((y - yp) ** 2 for y, yp in zip(ys, y_pred))
+        s2di = ss_dev / (n_e - 2) if n_e > 2 else 0.0
+
+        # Classificação semântica
+        if bi >= 0.85 and bi <= 1.15 and s2di < 0.5:
+            classification = "Estável e adaptado"
+        elif bi > 1.15 and s2di < 0.5:
+            classification = "Responsivo a ambientes favoráveis"
+        elif bi < 0.85 and s2di < 0.5:
+            classification = "Adaptado a ambientes desfavoráveis"
+        elif s2di >= 0.5:
+            classification = "Instável (alta interação)"
+        else:
+            classification = "Comportamento intermediário"
+
+        geno_results.append({
+            "genotype": geno,
+            "mean": round(mean_y, 3),
+            "bi": round(bi, 3),
+            "s2di": round(s2di, 4),
+            "n_environments": n_e,
+            "classification": classification,
+        })
+
+    if not geno_results:
+        raise ValueError("Dados insuficientes para calcular GxE — verifique valores ausentes.")
+
+    # ── Rank por média geral ──────────────────────────────────────────────────
+    geno_results.sort(key=lambda r: r["mean"], reverse=True)
+    for i, r in enumerate(geno_results):
+        r["rank"] = i + 1
+
+    # ── Melhores por tipo ─────────────────────────────────────────────────────
+    stable = [r for r in geno_results if "Estável" in r["classification"]]
+    favorable = [r for r in geno_results if "favoráveis" in r["classification"]]
+    unfavorable = [r for r in geno_results if "desfavoráveis" in r["classification"]]
+    best_overall = geno_results[0] if geno_results else None
+
+    # ── Texto interpretativo ──────────────────────────────────────────────────
+    lines = [
+        f"Análise GxE — {len(genotype_names)} genótipos × {len(environment_names)} ambientes.",
+        f"Média geral: {grand_mean:.2f}.",
+    ]
+    if best_overall:
+        lines.append(
+            f"Genótipo de maior média: {best_overall['genotype']} "
+            f"({best_overall['mean']:.2f}, bi={best_overall['bi']:.2f})."
+        )
+    if stable:
+        lines.append(
+            f"Genótipos estáveis e amplamente adaptados: {', '.join(r['genotype'] for r in stable)}."
+        )
+    if favorable:
+        lines.append(
+            f"Genótipos recomendados para ambientes favoráveis: {', '.join(r['genotype'] for r in favorable)}."
+        )
+    if unfavorable:
+        lines.append(
+            f"Genótipos recomendados para ambientes desfavoráveis: {', '.join(r['genotype'] for r in unfavorable)}."
+        )
+    interaction_summary = " ".join(lines)
+
+    # Ambientes favoráveis / desfavoráveis
+    sorted_envs = sorted(environment_names, key=lambda e: env_index[e])
+    env_list = [
+        {"environment": e, "mean": round(env_means[e], 3), "index": round(env_index[e], 3),
+         "type": "Favorável" if env_index[e] >= 0 else "Desfavorável"}
+        for e in sorted_envs
+    ]
+
+    return {
+        "grand_mean": round(grand_mean, 3),
+        "genotypes": geno_results,
+        "environments": env_list,
+        "interaction_summary": interaction_summary,
+        "recommendation": {
+            "best_overall": best_overall["genotype"] if best_overall else None,
+            "stable": [r["genotype"] for r in stable],
+            "favorable_environments": [r["genotype"] for r in favorable],
+            "unfavorable_environments": [r["genotype"] for r in unfavorable],
+        },
+    }

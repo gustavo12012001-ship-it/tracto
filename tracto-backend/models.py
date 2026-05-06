@@ -328,3 +328,11 @@ class BreedingGenerationCreate(BaseModel):
     selection_criteria: str | None = None
     mean_yield: float | None = None
     notes: str | None = None
+
+
+class GxERequest(BaseModel):
+    """
+    Análise de Interação Genótipo × Ambiente (Eberhart-Russell).
+    data: { "Genótipo A": { "Ambiente1": 52.3, "Ambiente2": 48.1 }, ... }
+    """
+    data: dict[str, dict[str, float]]
