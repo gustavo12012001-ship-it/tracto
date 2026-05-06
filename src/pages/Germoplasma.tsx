@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { apiFetch } from '../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type GenoStatus = 'Em desenvolvimento' | 'Candidata' | 'Descartada' | 'Registrada';
@@ -59,6 +60,52 @@ const saveCrosses    = (d: Cross[])     => { try { localStorage.setItem(C_KEY,  
 const loadGenerations = (): Generation[] => { try { return JSON.parse(localStorage.getItem(GEN_KEY) ?? '[]'); } catch { return []; } };
 const saveGenerations = (d: Generation[]) => { try { localStorage.setItem(GEN_KEY, JSON.stringify(d)); } catch { /**/ } };
 
+// ── API sync helpers (fire-and-forget, localStorage stays as source of truth) ──
+async function syncGenotypeToAPI(data: Genotype): Promise<string | null> {
+  try {
+    const res = await apiFetch<{ id: string }>('/api/germoplasma/genotypes', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: data.name, species: data.species, generation: data.generation,
+        status: data.status, origin: data.origin, female_parent: data.female_parent,
+        male_parent: data.male_parent, year_obtained: data.year_obtained ? Number(data.year_obtained) : null,
+        notes: data.notes, traits: data.traits ? data.traits.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+      }),
+    });
+    return res?.id ?? null;
+  } catch { return null; }
+}
+
+async function syncCrossToAPI(data: Cross): Promise<string | null> {
+  try {
+    const res = await apiFetch<{ id: string }>('/api/germoplasma/crosses', {
+      method: 'POST',
+      body: JSON.stringify({
+        female_parent: data.female_parent, male_parent: data.male_parent,
+        date: data.date, f1_name: data.f1_name, purpose: data.purpose,
+        location: data.location, f1_count: data.f1_count, notes: data.notes,
+      }),
+    });
+    return res?.id ?? null;
+  } catch { return null; }
+}
+
+async function syncGenerationToAPI(data: Generation): Promise<string | null> {
+  try {
+    const res = await apiFetch<{ id: string }>('/api/germoplasma/generations', {
+      method: 'POST',
+      body: JSON.stringify({
+        genotype_id: data.genotype_id, generation_label: data.generation_label,
+        year: data.year ? Number(data.year) : null, location: data.location,
+        plants_evaluated: data.plants_evaluated, plants_selected: data.plants_selected,
+        selection_criteria: data.selection_criteria, mean_yield: data.mean_yield,
+        notes: data.notes,
+      }),
+    });
+    return res?.id ?? null;
+  } catch { return null; }
+}
+
 // ── Style helpers ──────────────────────────────────────────────────────────────
 const STATUS_COLORS: Record<GenoStatus, { bg: string; color: string }> = {
   'Registrada':       { bg: 'rgba(74,222,128,0.12)',  color: '#4ade80' },
@@ -78,6 +125,16 @@ function GermoplasmaTab() {
   const [list, setList]     = useState<Genotype[]>(loadGenotypes);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
+
+  // Load from API on mount, update localStorage as cache
+  useEffect(() => {
+    apiFetch<Genotype[]>('/api/germoplasma/genotypes').then((rows) => {
+      if (Array.isArray(rows) && rows.length > 0) {
+        saveGenotypes(rows);
+        setList(rows);
+      }
+    }).catch(() => { /* offline — use localStorage */ });
+  }, []);
   const [filterStatus, setFilterStatus] = useState<GenoStatus | 'Todos'>('Todos');
 
   const emptyForm = { name:'', species:'', generation:'F1', status:'Em desenvolvimento' as GenoStatus,
@@ -88,14 +145,19 @@ function GermoplasmaTab() {
 
   const save = () => {
     if (!form.name.trim()) return;
-    const updated = [...list, { ...form, id: crypto.randomUUID(), createdAt: new Date().toISOString() }];
+    const newItem = { ...form, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    const updated = [...list, newItem];
     setList(updated); saveGenotypes(updated); setForm(emptyForm); setShowForm(false);
+    // Sync to backend (fire-and-forget)
+    void syncGenotypeToAPI(newItem);
   };
 
   const del = (id: string) => {
     if (!window.confirm('Excluir esta linhagem?')) return;
     const updated = list.filter(g => g.id !== id);
     setList(updated); saveGenotypes(updated);
+    // Sync delete to backend (fire-and-forget)
+    apiFetch(`/api/germoplasma/genotypes/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
   const filtered = useMemo(() => list.filter(g => {
@@ -254,6 +316,13 @@ function CruzamentosTab() {
   const [list, setList]     = useState<Cross[]>(loadCrosses);
   const [showForm, setShowForm] = useState(false);
 
+  // Sync from API on mount
+  useEffect(() => {
+    apiFetch<Cross[]>('/api/germoplasma/crosses').then((rows) => {
+      if (Array.isArray(rows) && rows.length > 0) { saveCrosses(rows); setList(rows); }
+    }).catch(() => {});
+  }, []);
+
   const empty = { date: '', female_parent: '', male_parent: '', f1_name: '', purpose: '', location: '', f1_count: 0, notes: '' };
   const [form, setForm] = useState(empty);
   const f = (k: string, v: string | number) => {
@@ -269,13 +338,16 @@ function CruzamentosTab() {
 
   const save = () => {
     if (!form.female_parent.trim() || !form.male_parent.trim()) return;
-    const updated = [{ ...form, id: crypto.randomUUID(), createdAt: new Date().toISOString() }, ...list];
+    const newItem = { ...form, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    const updated = [newItem, ...list];
     setList(updated); saveCrosses(updated); setForm(empty); setShowForm(false);
+    void syncCrossToAPI(newItem);
   };
 
   const del = (id: string) => {
     const updated = list.filter(c => c.id !== id);
     setList(updated); saveCrosses(updated);
+    apiFetch(`/api/germoplasma/crosses/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
   return (
@@ -365,10 +437,20 @@ function CruzamentosTab() {
 
 // ── Gerações Tab ───────────────────────────────────────────────────────────────
 function GeracoesTab() {
-  const genotypes        = useState<Genotype[]>(loadGenotypes)[0];
+  const [genotypes, setGenotypes] = useState<Genotype[]>(loadGenotypes);
   const [allGens, setAllGens] = useState<Generation[]>(loadGenerations);
   const [selectedId, setSelectedId] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
+
+  // Sync from API on mount
+  useEffect(() => {
+    apiFetch<Genotype[]>('/api/germoplasma/genotypes').then((rows) => {
+      if (Array.isArray(rows) && rows.length > 0) { saveGenotypes(rows); setGenotypes(rows); }
+    }).catch(() => {});
+    apiFetch<Generation[]>('/api/germoplasma/generations').then((rows) => {
+      if (Array.isArray(rows) && rows.length > 0) { saveGenerations(rows); setAllGens(rows); }
+    }).catch(() => {});
+  }, []);
 
   const empty = { genotype_id: selectedId, generation_label: 'F2', year: String(new Date().getFullYear()),
     location: '', plants_evaluated: 0, plants_selected: 0, selection_criteria: '', mean_yield: null as null | number, notes: '' };
@@ -379,13 +461,16 @@ function GeracoesTab() {
 
   const save = () => {
     if (!selectedId || !form.generation_label) return;
-    const updated = [...allGens, { ...form, genotype_id: selectedId, id: crypto.randomUUID(), createdAt: new Date().toISOString() }];
+    const newItem = { ...form, genotype_id: selectedId, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    const updated = [...allGens, newItem];
     setAllGens(updated); saveGenerations(updated); setForm({ ...empty, genotype_id: selectedId }); setShowForm(false);
+    void syncGenerationToAPI(newItem);
   };
 
   const del = (id: string) => {
     const updated = allGens.filter(g => g.id !== id);
     setAllGens(updated); saveGenerations(updated);
+    apiFetch(`/api/germoplasma/generations/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
   const selected = genotypes.find(g => g.id === selectedId);

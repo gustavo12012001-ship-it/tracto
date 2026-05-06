@@ -275,3 +275,56 @@ class FieldIntelligenceSnapshot(BaseModel):
     analysis_status: SnapshotSourceStatus
     ai_summary_status: SnapshotSourceStatus
     updated_at: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GERMOPLASMA
+# ─────────────────────────────────────────────────────────────────────────────
+
+class GenotypeCreate(BaseModel):
+    name: str
+    species: str | None = None
+    generation: str | None = None          # F1..F8, BC1..BC3, S1..S5, Linhagem Pura
+    status: str | None = "Em desenvolvimento"  # Em desenvolvimento|Candidata|Descartada|Registrada
+    origin: str | None = None
+    female_parent: str | None = None
+    male_parent: str | None = None
+    year_obtained: int | None = None
+    notes: str | None = None
+    traits: list[str] | None = None
+
+
+class GenotypeUpdate(BaseModel):
+    name: str | None = None
+    species: str | None = None
+    generation: str | None = None
+    status: str | None = None
+    origin: str | None = None
+    female_parent: str | None = None
+    male_parent: str | None = None
+    year_obtained: int | None = None
+    notes: str | None = None
+    traits: list[str] | None = None
+
+
+class CrossCreate(BaseModel):
+    female_parent: str
+    male_parent: str
+    date: str | None = None
+    f1_name: str | None = None
+    purpose: str | None = None
+    location: str | None = None
+    f1_count: int | None = None
+    notes: str | None = None
+
+
+class BreedingGenerationCreate(BaseModel):
+    genotype_id: str
+    generation_label: str
+    year: int | None = None
+    location: str | None = None
+    plants_evaluated: int | None = None
+    plants_selected: int | None = None
+    selection_criteria: str | None = None
+    mean_yield: float | None = None
+    notes: str | None = None

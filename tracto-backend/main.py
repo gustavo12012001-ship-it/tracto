@@ -45,6 +45,10 @@ from models import (
     SprayWindowRequest,
     AnovaRequest,
     ParcelNdviRequest,
+    GenotypeCreate,
+    GenotypeUpdate,
+    CrossCreate,
+    BreedingGenerationCreate,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -79,6 +83,11 @@ from services.season_service import create_season, get_field_seasons, update_sea
 from services.spray_window_service import evaluate_spray_window
 from services.stats_service import run_anova_tukey
 from services.api_key_service import generate_api_key, verify_api_key, list_api_keys, revoke_api_key
+from services.germoplasm_service import (
+    create_genotype, get_genotypes, update_genotype, delete_genotype,
+    create_cross, get_crosses, delete_cross,
+    create_generation, get_generations, delete_generation,
+)
 
 # --- Security & Rate Limiting ---
 
@@ -2012,4 +2021,113 @@ async def verify_recaptcha(request: RecaptchaRequest):
     except Exception as exc:
         logging.error("Erro na verificacao do reCAPTCHA: %s", exc)
         raise HTTPException(status_code=500, detail="Erro interno na verificacao de seguranca.") from exc
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GERMOPLASMA
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/germoplasma/genotypes")
+async def api_create_genotype(
+    body: GenotypeCreate,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    try:
+        return await create_genotype(user.id, body.model_dump())
+    except Exception as exc:
+        logging.error("[germoplasma] create_genotype: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao salvar genótipo.") from exc
+
+
+@app.get("/api/germoplasma/genotypes")
+async def api_get_genotypes(
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    return await get_genotypes(user.id)
+
+
+@app.patch("/api/germoplasma/genotypes/{genotype_id}")
+async def api_update_genotype(
+    genotype_id: str,
+    body: GenotypeUpdate,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    try:
+        result = await update_genotype(genotype_id, user.id, body.model_dump(exclude_none=True))
+        return result
+    except Exception as exc:
+        logging.error("[germoplasma] update_genotype %s: %s", genotype_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao atualizar genótipo.") from exc
+
+
+@app.delete("/api/germoplasma/genotypes/{genotype_id}")
+async def api_delete_genotype(
+    genotype_id: str,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    deleted = await delete_genotype(genotype_id, user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Genótipo não encontrado.")
+    return {"deleted": True}
+
+
+@app.post("/api/germoplasma/crosses")
+async def api_create_cross(
+    body: CrossCreate,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    try:
+        return await create_cross(user.id, body.model_dump())
+    except Exception as exc:
+        logging.error("[germoplasma] create_cross: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao salvar cruzamento.") from exc
+
+
+@app.get("/api/germoplasma/crosses")
+async def api_get_crosses(
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    return await get_crosses(user.id)
+
+
+@app.delete("/api/germoplasma/crosses/{cross_id}")
+async def api_delete_cross(
+    cross_id: str,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    deleted = await delete_cross(cross_id, user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Cruzamento não encontrado.")
+    return {"deleted": True}
+
+
+@app.post("/api/germoplasma/generations")
+async def api_create_generation(
+    body: BreedingGenerationCreate,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    try:
+        return await create_generation(user.id, body.model_dump())
+    except Exception as exc:
+        logging.error("[germoplasma] create_generation: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao salvar geração.") from exc
+
+
+@app.get("/api/germoplasma/generations")
+async def api_get_generations(
+    genotype_id: str | None = None,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    return await get_generations(user.id, genotype_id)
+
+
+@app.delete("/api/germoplasma/generations/{generation_id}")
+async def api_delete_generation(
+    generation_id: str,
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+):
+    deleted = await delete_generation(generation_id, user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Geração não encontrada.")
+    return {"deleted": True}
 
