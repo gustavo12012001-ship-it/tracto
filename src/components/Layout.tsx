@@ -93,6 +93,27 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: '/app/field-log',
+    label: 'Caderno',
+    icon: (
+      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>book</span>
+    ),
+  },
+  {
+    to: '/app/calculator',
+    label: 'Calculadora',
+    icon: (
+      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>calculate</span>
+    ),
+  },
+  {
+    to: '/app/soil',
+    label: 'Solo',
+    icon: (
+      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>science</span>
+    ),
+  },
+  {
     to: '/app/services',
     label: 'Serviços',
     icon: (

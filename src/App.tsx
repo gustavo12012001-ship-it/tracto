@@ -15,6 +15,9 @@ import Pricing from './pages/Pricing';
 import Settings from './pages/Settings';
 import Maps from './pages/Maps';
 import Research from './pages/Research';
+import SoilData from './pages/SoilData';
+import FieldLog from './pages/FieldLog';
+import Calculator from './pages/Calculator';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -50,6 +53,9 @@ function App() {
           <Route path="billing" element={<Pricing />} />
           <Route path="settings" element={<Settings />} />
           <Route path="research" element={<Research />} />
+          <Route path="soil" element={<SoilData />} />
+          <Route path="field-log" element={<FieldLog />} />
+          <Route path="calculator" element={<Calculator />} />
         </Route>
       </Routes>
     </BrowserRouter>

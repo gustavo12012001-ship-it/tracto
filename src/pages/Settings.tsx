@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useAppStore } from '../store/useAppStore';
+import { apiFetch } from '../services/api';
 
-type Tab = 'perfil' | 'fazenda' | 'seguranca' | 'privacidade' | 'notificacoes';
+type Tab = 'perfil' | 'fazenda' | 'seguranca' | 'privacidade' | 'notificacoes' | 'times';
 
 interface NotifPrefs {
   email: boolean;
@@ -787,6 +788,273 @@ function NotificacoesTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TAB: TIMES
+// ═══════════════════════════════════════════════════════════════════════════════
+interface TeamMember { id: string; name: string; email: string; role: 'admin' | 'editor' | 'viewer'; joined_at: string; }
+interface TeamInvite { id: string; email: string; role: string; status: string; created_at: string; }
+
+const ROLE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  admin:  { label: 'Admin',  color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
+  editor: { label: 'Editor', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
+  viewer: { label: 'Viewer', color: '#94a3b8', bg: 'rgba(148,163,184,0.10)' },
+};
+
+function TimesTab() {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [invites, setInvites] = useState<TeamInvite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [apiAvailable, setApiAvailable] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('editor');
+  const [inviting, setInviting] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  // Current user role (detect from members list)
+  const [myEmail, setMyEmail] = useState('');
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setMyEmail(data.user?.email ?? ''));
+  }, []);
+
+  const myRole = members.find(m => m.email === myEmail)?.role ?? 'viewer';
+  const isAdmin = myRole === 'admin';
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [membersData, invitesData] = await Promise.all([
+        apiFetch<TeamMember[]>('/api/team/members'),
+        apiFetch<TeamInvite[]>('/api/team/invites'),
+      ]);
+      setMembers(membersData);
+      setInvites(invitesData);
+      setApiAvailable(true);
+    } catch {
+      setApiAvailable(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    setInviteSuccess(null);
+    setToast(null);
+    try {
+      await apiFetch('/api/team/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      });
+      setInviteSuccess(inviteEmail.trim());
+      setInviteEmail('');
+      void loadData();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao enviar convite.', type: 'err' });
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleRemoveMember = async (member: TeamMember) => {
+    if (!window.confirm(`Remover ${member.name || member.email} da equipe?`)) return;
+    try {
+      await apiFetch(`/api/team/members/${member.id}`, { method: 'DELETE' });
+      setToast({ msg: 'Membro removido.', type: 'ok' });
+      void loadData();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao remover membro.', type: 'err' });
+    }
+  };
+
+  const handleCancelInvite = async (invite: TeamInvite) => {
+    try {
+      await apiFetch(`/api/team/invites/${invite.id}`, { method: 'DELETE' });
+      setToast({ msg: 'Convite cancelado.', type: 'ok' });
+      void loadData();
+    } catch (e) {
+      setToast({ msg: e instanceof Error ? e.message : 'Erro ao cancelar convite.', type: 'err' });
+    }
+  };
+
+  const fmtDate = (iso: string) => {
+    try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
+  };
+
+  const statusStyle = (status: string) => {
+    if (status === 'accepted') return { color: '#4ade80', bg: 'rgba(74,222,128,0.10)' };
+    if (status === 'expired')  return { color: '#f87171', bg: 'rgba(239,68,68,0.10)' };
+    return { color: '#fbbf24', bg: 'rgba(251,191,36,0.10)' };
+  };
+
+  const statusLabel = (s: string) => ({ pending: 'Pendente', accepted: 'Aceito', expired: 'Expirado' }[s] ?? s);
+
+  if (!apiAvailable && !loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col items-center gap-4 py-12 rounded-2xl border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(236,91,19,0.10)' }}>
+            <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--primary)' }}>group</span>
+          </div>
+          <div className="text-center px-6">
+            <p className="text-sm font-bold text-white mb-1">Em breve — sistema de equipes em desenvolvimento</p>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+              O módulo de times está sendo desenvolvido. Em breve você poderá convidar agrônomos,
+              técnicos e colaboradores para acessar sua fazenda na plataforma Tracto.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 px-6">
+            {['Controle de acesso por função', 'Convites por e-mail', 'Admin · Editor · Viewer'].map(f => (
+              <span key={f} className="text-xs px-3 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {toast && <Toast {...toast} />}
+
+      {/* Minha Equipe */}
+      <Section title="Minha Equipe">
+        {loading ? (
+          <div className="flex items-center gap-3 py-4">
+            <span className="material-symbols-outlined animate-spin" style={{ color: 'var(--primary)' }}>progress_activity</span>
+            <span className="text-sm" style={{ color: 'var(--muted)' }}>Carregando membros...</span>
+          </div>
+        ) : members.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Nenhum membro na equipe ainda.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {members.map(m => {
+              const rl = ROLE_LABELS[m.role] ?? ROLE_LABELS.viewer;
+              return (
+                <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0"
+                    style={{ background: 'var(--primary)', color: '#fff' }}
+                  >
+                    {(m.name || m.email).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{m.name || '—'}</p>
+                    <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>{m.email}</p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: rl.bg, color: rl.color }}>
+                    {rl.label}
+                  </span>
+                  <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--muted)' }}>desde {fmtDate(m.joined_at)}</span>
+                  {isAdmin && m.email !== myEmail && (
+                    <button
+                      onClick={() => void handleRemoveMember(m)}
+                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-red-500/10"
+                      style={{ color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* Convidar membro */}
+      <Section title="Convidar Membro">
+        {inviteSuccess && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold mb-2"
+            style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.2)', color: '#4ade80' }}>
+            <span className="material-symbols-outlined text-base">check_circle</span>
+            Convite enviado para {inviteSuccess}
+          </div>
+        )}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Field label="E-mail">
+            <input
+              className={inputCls}
+              style={inputStyle}
+              type="email"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              placeholder="email@exemplo.com"
+              onKeyDown={e => e.key === 'Enter' && void handleInvite()}
+            />
+          </Field>
+          <Field label="Função">
+            <select
+              className={inputCls}
+              style={{ ...inputStyle, minWidth: 120 }}
+              value={inviteRole}
+              onChange={e => setInviteRole(e.target.value as 'editor' | 'viewer')}
+            >
+              <option value="editor">Editor</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </Field>
+        </div>
+        <div className="flex justify-end mt-1">
+          <button
+            onClick={() => void handleInvite()}
+            disabled={inviting || !inviteEmail.trim()}
+            className={btnPrimary}
+            style={{ background: 'var(--primary)', color: '#fff' }}
+          >
+            {inviting && <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>}
+            <span className="material-symbols-outlined text-base">person_add</span>
+            Convidar
+          </button>
+        </div>
+      </Section>
+
+      {/* Convites pendentes */}
+      <Section title="Convites Enviados">
+        {loading ? (
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando...</p>
+        ) : invites.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Nenhum convite enviado ainda.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {invites.map(inv => {
+              const ss = statusStyle(inv.status);
+              return (
+                <div key={inv.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                  <span className="material-symbols-outlined text-base flex-shrink-0" style={{ color: 'var(--muted)' }}>mail</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{inv.email}</p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                      {ROLE_LABELS[inv.role]?.label ?? inv.role} · enviado em {fmtDate(inv.created_at)}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: ss.bg, color: ss.color }}>
+                    {statusLabel(inv.status)}
+                  </span>
+                  {inv.status === 'pending' && (
+                    <button
+                      onClick={() => void handleCancelInvite(inv)}
+                      className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-red-500/10"
+                      style={{ color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -795,6 +1063,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'seguranca', label: 'Segurança', icon: 'lock' },
   { id: 'privacidade', label: 'Privacidade', icon: 'policy' },
   { id: 'notificacoes', label: 'Notificações', icon: 'notifications' },
+  { id: 'times', label: 'Times', icon: 'group' },
 ];
 
 export default function Settings() {
@@ -839,6 +1108,7 @@ export default function Settings() {
         {activeTab === 'seguranca' && <SegurancaTab />}
         {activeTab === 'privacidade' && <PrivacidadeTab />}
         {activeTab === 'notificacoes' && <NotificacoesTab />}
+        {activeTab === 'times' && <TimesTab />}
       </div>
     </div>
   );

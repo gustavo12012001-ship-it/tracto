@@ -194,6 +194,16 @@ class WhatsAppWebhookPayload(BaseModel):
     ProfileName: str | None = None
 
 
+class FieldLogCreate(BaseModel):
+    logged_at: str | None = None  # ISO datetime, default = now() no banco
+    operation_type: str
+    product: str | None = None
+    dose: str | None = None
+    area_ha: float | None = None
+    cost: float | None = None
+    notes: str | None = None
+
+
 class SnapshotSourceStatus(BaseModel):
     status: Literal["ok", "fallback", "unavailable"]
     message: str

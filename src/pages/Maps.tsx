@@ -395,6 +395,110 @@ function IndexPendingPanel({ mt, activeFieldName, onViewRaw }: {
   );
 }
 
+// ── Comparador: um painel de mapa simplificado ────────────────────────────────
+interface CompareOverlay {
+  url: string | null;
+  bounds: L.LatLngBoundsExpression | null;
+  loading: boolean;
+  error: string | null;
+  sceneId: string | null;
+}
+
+function CompareSide({
+  label,
+  scenes,
+  scenesLoading,
+  overlay,
+  onSelectScene,
+  center,
+  fieldBoundaries,
+  selectedMap,
+}: {
+  label: string;
+  scenes: SentinelScene[];
+  scenesLoading: boolean;
+  overlay: CompareOverlay;
+  onSelectScene: (scene: SentinelScene) => void;
+  center: [number, number];
+  fieldBoundaries: [number, number][] | undefined;
+  selectedMap: MapType;
+}) {
+  const tileUrl = selectedMap.specialTile ?? 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+  const bounds = fieldBoundaries ? computeBounds(fieldBoundaries) : null;
+
+  return (
+    <div className="flex flex-col" style={{ flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: '0.75rem', overflow: 'hidden' }}>
+      {/* Label */}
+      <div className="flex-shrink-0 px-3 py-2 flex items-center gap-2" style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}>
+        <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>calendar_today</span>
+        <span className="text-xs font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{label}</span>
+        {overlay.loading && <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin ml-auto" />}
+      </div>
+
+      {/* Scene selector */}
+      <div className="flex-shrink-0 px-2 py-2 flex gap-1.5 overflow-x-auto scrollbar-thin" style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}>
+        {scenesLoading ? (
+          <p className="text-[10px] py-1" style={{ color: 'var(--muted)' }}>Carregando…</p>
+        ) : scenes.length === 0 ? (
+          <p className="text-[10px] py-1" style={{ color: 'var(--muted)' }}>Sem imagens</p>
+        ) : (
+          scenes.slice(0, 10).map((sc) => (
+            <button
+              key={sc.scene_id}
+              onClick={() => onSelectScene(sc)}
+              className="flex-shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold transition-all"
+              style={{
+                background: overlay.sceneId === sc.scene_id ? 'var(--primary)' : 'var(--surface)',
+                border: `1px solid ${overlay.sceneId === sc.scene_id ? 'var(--primary)' : 'var(--border)'}`,
+                color: overlay.sceneId === sc.scene_id ? '#fff' : 'var(--muted)',
+              }}
+            >
+              {sc.date_br}
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Map */}
+      <div className="flex-1 relative" style={{ minHeight: 200 }}>
+        <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+          <TileLayer
+            url={tileUrl}
+            subdomains={tileUrl.includes('google.com') ? ['0','1','2','3'] : ['a','b','c']}
+            maxZoom={21}
+            maxNativeZoom={20}
+            attribution={tileUrl.includes('google.com') ? '&copy; Google' : undefined}
+          />
+          <FlyToBounds boundaries={fieldBoundaries ?? null} />
+          {fieldBoundaries && fieldBoundaries.length > 0 && (
+            <Polygon
+              positions={fieldBoundaries}
+              pathOptions={{
+                color: overlay.url ? selectedMap.color : 'rgba(255,255,255,0.6)',
+                fillColor: selectedMap.color,
+                fillOpacity: overlay.url ? 0 : 0.07,
+                weight: 2,
+                dashArray: overlay.url ? undefined : '5 4',
+              }}
+            />
+          )}
+          {overlay.url && bounds && (
+            <ImageOverlay url={overlay.url} bounds={overlay.bounds ?? bounds} opacity={0.93} />
+          )}
+        </MapContainer>
+
+        {overlay.error && (
+          <div className="absolute bottom-2 left-2 right-2 z-[500] rounded-xl px-3 py-2 flex items-center gap-2"
+            style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)' }}>
+            <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>error</span>
+            <p className="text-[10px]" style={{ color: '#f87171' }}>{overlay.error}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function Maps() {
   const { fields, activeFieldId, activeFarmId, farms } = useAppStore();
@@ -404,6 +508,12 @@ export default function Maps() {
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
   // Modo "raw": para mapas sem backend ready, permite ver a imagem RGB bruta
   const [rawMode, setRawMode] = useState(false);
+  // ── Comparador ──────────────────────────────────────────────────────────────
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSceneLeft, setCompareSceneLeft] = useState<CompareOverlay>({ url: null, bounds: null, loading: false, error: null, sceneId: null });
+  const [compareSceneRight, setCompareSceneRight] = useState<CompareOverlay>({ url: null, bounds: null, loading: false, error: null, sceneId: null });
+  const prevCompareLeftRef = useRef<string | null>(null);
+  const prevCompareRightRef = useRef<string | null>(null);
   const prevUrlRef = useRef<string | null>(null);
   const loadingFieldRef = useRef<string | null>(null);
   const planetRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -518,6 +628,66 @@ export default function Maps() {
     if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
   }, []);
 
+  // ── Carregar overlay do comparador ─────────────────────────────────────────
+  const loadCompareOverlay = useCallback(async (
+    scene: SentinelScene,
+    side: 'left' | 'right',
+  ) => {
+    if (!activeField?.id || !fieldBoundaries || fieldBoundaries.length < 3) return;
+    const fieldId = activeField.id;
+    const band = selectedMap.backendReady ? selectedMap.band : 'RGB';
+    const bounds = computeBounds(fieldBoundaries);
+    const setter = side === 'left' ? setCompareSceneLeft : setCompareSceneRight;
+    const urlRef = side === 'left' ? prevCompareLeftRef : prevCompareRightRef;
+
+    setter({ url: null, bounds, loading: true, error: null, sceneId: scene.scene_id });
+    if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null; }
+
+    try {
+      const headers = await buildAuthHeaders();
+      if (scene.source === 'planet') {
+        const resp = await fetch(`${API_URL}/api/planet/overlay?field_id=${fieldId}&scene_id=${scene.scene_id}`, { headers });
+        if (!resp.ok) throw new Error(((await resp.json()) as { detail?: string }).detail || `Erro ${resp.status}`);
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        urlRef.current = objectUrl;
+        setter({ url: objectUrl, bounds, loading: false, error: null, sceneId: scene.scene_id });
+        return;
+      }
+      const bandToMode: Record<string, string> = {
+        'RGB': 'truecolor', 'SAR': 'truecolor', 'NDVI': 'ndvi', 'NDRE': 'ndre',
+        'EVI': 'evi', 'NDMI': 'ndmi', 'HEAT': 'truecolor',
+      };
+      const mode = bandToMode[band] ?? band.toLowerCase();
+      const params = new URLSearchParams({
+        field_id: fieldId, source: scene.source,
+        scene_date: scene.date, scene_id: scene.scene_id, mode,
+      });
+      if (typeof scene.cloud_coverage === 'number') params.set('cloud_coverage', String(scene.cloud_coverage));
+      const resp = await fetch(`${API_URL}/api/sentinel/overlay?${params}`, { headers });
+      if (!resp.ok) {
+        const ct = resp.headers.get('content-type') || '';
+        let msg = `Erro ${resp.status}`;
+        try { msg = ct.includes('json') ? (((await resp.json()) as { detail?: string }).detail || msg) : (await resp.text()).slice(0, 200) || msg; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      urlRef.current = objectUrl;
+      setter({ url: objectUrl, bounds, loading: false, error: null, sceneId: scene.scene_id });
+    } catch (err) {
+      setter({ url: null, bounds, loading: false, error: err instanceof Error ? err.message : 'Erro ao carregar.', sceneId: scene.scene_id });
+    }
+  }, [activeField?.id, fieldBoundaries, selectedMap.band, selectedMap.backendReady]);
+
+  const handleCloseCompare = () => {
+    setCompareMode(false);
+    if (prevCompareLeftRef.current) { URL.revokeObjectURL(prevCompareLeftRef.current); prevCompareLeftRef.current = null; }
+    if (prevCompareRightRef.current) { URL.revokeObjectURL(prevCompareRightRef.current); prevCompareRightRef.current = null; }
+    setCompareSceneLeft({ url: null, bounds: null, loading: false, error: null, sceneId: null });
+    setCompareSceneRight({ url: null, bounds: null, loading: false, error: null, sceneId: null });
+  };
+
   const tileUrl = selectedMap.specialTile
     ?? 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
 
@@ -563,7 +733,80 @@ export default function Maps() {
       </aside>
 
       {/* ── Mapa ── */}
-      <div className="flex-1 relative min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
+
+        {/* Toolbar: botão comparar datas */}
+        {activeField && (
+          <div
+            className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b"
+            style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
+          >
+            {compareMode ? (
+              <button
+                onClick={handleCloseCompare}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-80 transition-all"
+                style={{
+                  background: 'rgba(239,68,68,0.12)',
+                  border: '1px solid rgba(239,68,68,0.25)',
+                  color: '#f87171',
+                }}
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+                Fechar comparação
+              </button>
+            ) : (
+              <button
+                onClick={() => setCompareMode(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-80 transition-all"
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text, #e2e8f0)',
+                }}
+              >
+                <span className="material-symbols-outlined text-sm">compare</span>
+                Comparar datas
+              </button>
+            )}
+            {compareMode && (
+              <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                Selecione uma data em cada painel para comparar
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Compare mode: dois painéis lado a lado */}
+        {compareMode && activeField && (
+          <div
+            className="flex-1 flex flex-col md:flex-row gap-2 p-2 overflow-hidden"
+            style={{ minHeight: 0 }}
+          >
+            <CompareSide
+              label="Painel Esquerdo"
+              scenes={tabScenes}
+              scenesLoading={scenes.loading}
+              overlay={compareSceneLeft}
+              onSelectScene={(sc) => void loadCompareOverlay(sc, 'left')}
+              center={center}
+              fieldBoundaries={fieldBoundaries}
+              selectedMap={selectedMap}
+            />
+            <CompareSide
+              label="Painel Direito"
+              scenes={tabScenes}
+              scenesLoading={scenes.loading}
+              overlay={compareSceneRight}
+              onSelectScene={(sc) => void loadCompareOverlay(sc, 'right')}
+              center={center}
+              fieldBoundaries={fieldBoundaries}
+              selectedMap={selectedMap}
+            />
+          </div>
+        )}
+
+        {/* Normal map (hidden when in compare mode) */}
+        <div className={`flex-1 relative min-w-0 ${compareMode ? 'hidden' : ''}`}>
         {activeField ? (
           <MapContainer key={`${activeField.id}-${selectedMap.id}`} center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
             <TileLayer
@@ -621,7 +864,8 @@ export default function Maps() {
             </button>
           </div>
         )}
-      </div>
+        </div>{/* end normal map inner div */}
+      </div>{/* end map column outer div */}
 
       {/* ── Painel direito ── */}
       <div className="w-64 flex-shrink-0 flex flex-col border-l overflow-hidden" style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
