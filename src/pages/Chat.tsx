@@ -55,7 +55,7 @@ function relativeDate(iso: string): string {
 const INITIAL_MSG = (time: string, profile?: string | null): Message => ({
   role: 'assistant',
   text: profile === 'pesquisador'
-    ? 'Olá! Sou a **Tracto IA de Pesquisa**. Analiso seus experimentos, germoplasma e dados de melhoramento vegetal.\n\n🧬 **Capacidades:** ANOVA, interação GxE, seleção de linhagens, avaliação fenotípica e recomendações de avanço de geração.\n\nTodos os seus dados cadastrados já estão disponíveis como contexto. Como posso ajudar?'
+    ? 'Olá! Sou a **MelhorIA**, sua analista de melhoramento vegetal.\n\n🧬 **O que analiso:** experimentos, germoplasma, avaliações fenotípicas, interação GxE, seleção de linhagens e recomendações de avanço de geração.\n\n📸 **Envie fotos de parcelas** para análise visual de altura, sanidade, florescimento e uniformidade.\n\nTodos os dados cadastrados pela sua empresa já estão como meu contexto. Como posso ajudar?'
     : 'Olá! Sou a **Tracto IA**, sua analista agronômica. Posso ajudar com análise de solo, NDVI, irrigação, pragas, colheita e clima.\n\n📸 **Dica:** Envie uma foto da lavoura para análise visual de pragas e doenças.\n\nComo posso ajudar?',
   time,
 });
@@ -730,12 +730,12 @@ export default function Chat() {
             </div>
             <div>
               <h2 className="text-sm font-bold text-white">
-                {userProfile === 'pesquisador' ? 'Tracto IA de Pesquisa' : 'Tracto IA'}
+                {userProfile === 'pesquisador' ? 'MelhorIA' : 'Tracto IA'}
               </h2>
               <p className="text-[10px] flex items-center gap-1.5" style={{ color: '#64748b' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
                 {userProfile === 'pesquisador'
-                  ? 'Melhorista IA · Claude Sonnet · RAG ativo com seus dados'
+                  ? 'Melhorista IA · Claude Sonnet · RAG ativo · Envie fotos de parcelas'
                   : pendingImage
                     ? 'Analista Agronômica · Claude Sonnet · Visão ativa nesta mensagem'
                     : 'Analista Agronômica · Claude Sonnet · Sem imagem anexada'}

@@ -1738,8 +1738,512 @@ function GxETab() {
   );
 }
 
+// ── Avaliações Fenotípicas Tab ─────────────────────────────────────────────────
+
+const AV_KEY = 'tracto-avaliacoes-v1';
+
+interface TraitCustom { label: string; value: string }
+interface Avaliacao {
+  id: string;
+  genotipo: string;
+  experimento: string;
+  parcela: string;
+  data: string;
+  // Traits padrão
+  alt_planta: string;
+  alt_espiga: string;
+  cor_pendao: string;
+  largura_folha: string;
+  diam_colmo: string;
+  dias_florescimento_m: string;
+  dias_florescimento_f: string;
+  nota_visual: string;
+  nota_doencas: string;
+  acamamento: string;
+  quebramento: string;
+  fileiras_graos: string;
+  notas: string;
+  traits_custom: TraitCustom[];
+  fotos_analise: string;   // texto livre com resultado da análise IA das fotos
+  createdAt: string;
+}
+
+const loadAvaliacoes = (): Avaliacao[] => {
+  try { return JSON.parse(localStorage.getItem(AV_KEY) ?? '[]'); } catch { return []; }
+};
+const saveAvaliacoes = (d: Avaliacao[]) => {
+  try { localStorage.setItem(AV_KEY, JSON.stringify(d)); } catch { /**/ }
+};
+
+const COR_PENDAO = ['Amarelo claro','Amarelo','Amarelo escuro','Roxo claro','Roxo','Rosado','Branco'];
+const NOTAS_OPTIONS = ['1','2','3','4','5','6','7','8','9'];
+
+const AV_INP = 'w-full px-3 py-2 rounded-xl text-sm text-white bg-transparent border focus:outline-none focus:border-[var(--primary)] transition-colors';
+const AV_STYLE = { borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' };
+const AV_LBL = 'text-[10px] font-bold uppercase tracking-widest mb-1 block';
+
+function AvaliacaoTab() {
+  const [list, setList] = useState<Avaliacao[]>(loadAvaliacoes);
+  const [showForm, setShowForm] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [pendingPhotos, setPendingPhotos] = useState<{ base64: string; mime: string; name: string }[]>([]);
+  const [filterGeno, setFilterGeno] = useState('');
+  const [customKey, setCustomKey] = useState('');
+  const [customVal, setCustomVal] = useState('');
+
+  const genotypes: { id: string; name: string }[] = (() => {
+    try { return JSON.parse(localStorage.getItem('tracto-germoplasma-v1') ?? '[]'); } catch { return []; }
+  })();
+  const experiments: { id: string; name: string }[] = (() => {
+    try { return JSON.parse(localStorage.getItem('tracto-experiments-v1') ?? '[]'); } catch { return []; }
+  })();
+
+  const emptyForm = (): Omit<Avaliacao,'id'|'createdAt'|'fotos_analise'> => ({
+    genotipo:'', experimento:'', parcela:'', data: new Date().toISOString().split('T')[0],
+    alt_planta:'', alt_espiga:'', cor_pendao:'Amarelo', largura_folha:'',
+    diam_colmo:'', dias_florescimento_m:'', dias_florescimento_f:'',
+    nota_visual:'', nota_doencas:'', acamamento:'', quebramento:'',
+    fileiras_graos:'', notas:'', traits_custom:[],
+  });
+  const [form, setForm] = useState(emptyForm());
+  const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const addCustomTrait = () => {
+    if (!customKey.trim()) return;
+    setForm(p => ({ ...p, traits_custom: [...p.traits_custom, { label: customKey.trim(), value: customVal }] }));
+    setCustomKey(''); setCustomVal('');
+  };
+
+  const removeCustomTrait = (i: number) => {
+    setForm(p => ({ ...p, traits_custom: p.traits_custom.filter((_, idx) => idx !== i) }));
+  };
+
+  const handlePhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    const allowed = ['image/jpeg','image/png','image/webp'];
+    const valid = files.filter(f => allowed.includes(f.type) && f.size <= 8 * 1024 * 1024).slice(0, 10);
+    const results = await Promise.all(valid.map(file =>
+      new Promise<{ base64: string; mime: string; name: string }>((res, rej) => {
+        const r = new FileReader();
+        r.readAsDataURL(file);
+        r.onload = () => res({ base64: (r.result as string).split(',')[1], mime: file.type, name: file.name });
+        r.onerror = rej;
+      })
+    ));
+    setPendingPhotos(prev => [...prev, ...results].slice(0, 10));
+    e.target.value = '';
+  };
+
+  const save = () => {
+    if (!form.genotipo.trim()) return;
+    const newAv: Avaliacao = { ...form, id: crypto.randomUUID(), createdAt: new Date().toISOString(), fotos_analise: '' };
+    const updated = [newAv, ...list];
+    setList(updated); saveAvaliacoes(updated);
+    setForm(emptyForm()); setPendingPhotos([]); setShowForm(false);
+  };
+
+  const del = (id: string) => {
+    if (!window.confirm('Excluir esta avaliação?')) return;
+    const updated = list.filter(a => a.id !== id);
+    setList(updated); saveAvaliacoes(updated);
+  };
+
+  // Análise IA com fotos (envia para MelhorIA via /api/chat)
+  const analyzeWithAI = async (av: Avaliacao, photosToSend?: { base64: string; mime: string; name: string }[]) => {
+    setAnalyzingId(av.id);
+    try {
+      const { apiFetch } = await import('../services/api');
+      const traitText = [
+        `Genótipo: ${av.genotipo}`,
+        `Experimento: ${av.experimento || '—'}  |  Parcela: ${av.parcela || '—'}`,
+        `Data de avaliação: ${av.data}`,
+        av.alt_planta       ? `Altura de planta: ${av.alt_planta} cm` : '',
+        av.alt_espiga       ? `Altura de inserção de espiga: ${av.alt_espiga} cm` : '',
+        av.cor_pendao       ? `Cor de pendão: ${av.cor_pendao}` : '',
+        av.largura_folha    ? `Largura de folha: ${av.largura_folha} cm` : '',
+        av.diam_colmo       ? `Diâmetro de colmo: ${av.diam_colmo} mm` : '',
+        av.dias_florescimento_m ? `Florescimento masculino: ${av.dias_florescimento_m} DAE` : '',
+        av.dias_florescimento_f ? `Florescimento feminino (espigamento): ${av.dias_florescimento_f} DAE` : '',
+        av.nota_visual      ? `Nota visual geral: ${av.nota_visual}/9` : '',
+        av.nota_doencas     ? `Nota de doenças: ${av.nota_doencas}/9` : '',
+        av.acamamento       ? `Acamamento: ${av.acamamento}%` : '',
+        av.quebramento      ? `Quebramento: ${av.quebramento}%` : '',
+        av.fileiras_graos   ? `Fileiras de grãos: ${av.fileiras_graos}` : '',
+        ...av.traits_custom.map(t => `${t.label}: ${t.value}`),
+        av.notas            ? `Observações: ${av.notas}` : '',
+      ].filter(Boolean).join('\n');
+
+      // If photos provided, send first photo via existing vision endpoint
+      const photo = photosToSend?.[0];
+
+      // Get active field id (use first available or fallback)
+      const store = (await import('../store/useAppStore')).default.getState();
+      const fieldId = store.activeFieldId ?? store.fields[0]?.id ?? 'unknown';
+
+      interface ChatReply { reply: string }
+      const data = await apiFetch<ChatReply>('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          field_id: fieldId,
+          messages: [{
+            role: 'user',
+            text: `Analise a seguinte avaliação fenotípica de campo:\n\n${traitText}\n\n${photo ? 'Analise também a foto da parcela que está sendo enviada. ' : ''}Forneça: (1) avaliação do desempenho agronômico desta linhagem, (2) pontos de atenção ou destaques, (3) recomendação para seleção/descarte com base nos dados apresentados.`,
+          }],
+          farm_context: traitText,
+          image_base64: photo?.base64 ?? null,
+          image_mime_type: photo?.mime ?? 'image/jpeg',
+          user_profile: 'pesquisador',
+          research_context: localStorage.getItem('tracto-germoplasma-v1')
+            ? `Germoplasma da empresa:\n${localStorage.getItem('tracto-germoplasma-v1')}`
+            : null,
+        }),
+      });
+
+      // Save analysis result back to evaluation
+      const updated = list.map(a =>
+        a.id === av.id ? { ...a, fotos_analise: data.reply } : a
+      );
+      setList(updated); saveAvaliacoes(updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro na análise';
+      const updated = list.map(a => a.id === av.id ? { ...a, fotos_analise: `Erro: ${msg}` } : a);
+      setList(updated); saveAvaliacoes(updated);
+    } finally {
+      setAnalyzingId(null);
+    }
+  };
+
+  const filtered = filterGeno
+    ? list.filter(a => a.genotipo.toLowerCase().includes(filterGeno.toLowerCase()))
+    : list;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm font-bold text-white flex items-center gap-2">
+            <span className="material-symbols-outlined text-base" style={{ color: '#a78bfa' }}>biotech</span>
+            Avaliações Fenotípicas
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            Registre altura de planta, cor de pendão, inserção de espiga, sanidade, fotos e qualquer característica agronômica por parcela.
+          </p>
+        </div>
+        <button onClick={() => setShowForm(v => !v)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 flex-shrink-0"
+          style={{ background: showForm ? 'rgba(255,255,255,0.08)' : 'var(--primary)' }}>
+          <span className="material-symbols-outlined text-sm">{showForm ? 'close' : 'add'}</span>
+          {showForm ? 'Cancelar' : 'Nova Avaliação'}
+        </button>
+      </div>
+
+      {/* Form */}
+      {showForm && (
+        <div className="rounded-2xl border flex flex-col gap-5 p-5" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.09)' }}>
+          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--primary)' }}>Nova Avaliação de Campo</p>
+
+          {/* Identificação */}
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label className={AV_LBL} style={{ color: '#a78bfa' }}>Genótipo / Material *</label>
+              {genotypes.length > 0
+                ? <select className={AV_INP} style={{ ...AV_STYLE, background: '#1e293b' }} value={form.genotipo} onChange={e => f('genotipo', e.target.value)}>
+                    <option value="">— Selecione —</option>
+                    {genotypes.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                  </select>
+                : <input className={AV_INP} style={AV_STYLE} placeholder="Nome do genótipo" value={form.genotipo} onChange={e => f('genotipo', e.target.value)} />
+              }
+            </div>
+            <div>
+              <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Experimento</label>
+              {experiments.length > 0
+                ? <select className={AV_INP} style={{ ...AV_STYLE, background: '#1e293b' }} value={form.experimento} onChange={e => f('experimento', e.target.value)}>
+                    <option value="">— Selecione —</option>
+                    {experiments.map(x => <option key={x.id} value={x.name}>{x.name}</option>)}
+                  </select>
+                : <input className={AV_INP} style={AV_STYLE} placeholder="Nome do experimento" value={form.experimento} onChange={e => f('experimento', e.target.value)} />
+              }
+            </div>
+            <div>
+              <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Parcela / Bloco</label>
+              <input className={AV_INP} style={AV_STYLE} placeholder="Ex: Bloco 12 / Parcela 3A" value={form.parcela} onChange={e => f('parcela', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Data da Avaliação</label>
+              <input type="date" className={AV_INP} style={AV_STYLE} value={form.data} onChange={e => f('data', e.target.value)} />
+            </div>
+          </div>
+
+          {/* Traits morfológicos */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#60a5fa' }}>Características Morfológicas</p>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Altura de planta (cm)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Ex: 230" value={form.alt_planta} onChange={e => f('alt_planta', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Altura inserção espiga (cm)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Ex: 115" value={form.alt_espiga} onChange={e => f('alt_espiga', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: '#f472b6' }}>Cor do pendão</label>
+                <select className={AV_INP} style={{ ...AV_STYLE, background: '#1e293b' }} value={form.cor_pendao} onChange={e => f('cor_pendao', e.target.value)}>
+                  {COR_PENDAO.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Largura de folha (cm)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Ex: 9.5" step="0.1" value={form.largura_folha} onChange={e => f('largura_folha', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Diâmetro de colmo (mm)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Ex: 22" step="0.1" value={form.diam_colmo} onChange={e => f('diam_colmo', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Fileiras de grãos</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Ex: 16" value={form.fileiras_graos} onChange={e => f('fileiras_graos', e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* Florescimento */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#4ade80' }}>Florescimento</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Florescimento masculino (DAE)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Dias após emergência" value={form.dias_florescimento_m} onChange={e => f('dias_florescimento_m', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Espigamento / flor. feminino (DAE)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Dias após emergência" value={form.dias_florescimento_f} onChange={e => f('dias_florescimento_f', e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* Notas e sanidade */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#f59e0b' }}>Notas Agronômicas (1 = ruim → 9 = excelente)</p>
+            <div className="grid sm:grid-cols-4 gap-3">
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Nota visual</label>
+                <select className={AV_INP} style={{ ...AV_STYLE, background: '#1e293b' }} value={form.nota_visual} onChange={e => f('nota_visual', e.target.value)}>
+                  <option value="">—</option>
+                  {NOTAS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Nota doenças</label>
+                <select className={AV_INP} style={{ ...AV_STYLE, background: '#1e293b' }} value={form.nota_doencas} onChange={e => f('nota_doencas', e.target.value)}>
+                  <option value="">—</option>
+                  {NOTAS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Acamamento (%)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="0–100" min="0" max="100" value={form.acamamento} onChange={e => f('acamamento', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Quebramento (%)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="0–100" min="0" max="100" value={form.quebramento} onChange={e => f('quebramento', e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* Custom traits */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#94a3b8' }}>Características Personalizadas</p>
+            {form.traits_custom.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {form.traits_custom.map((t, i) => (
+                  <span key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+                    <strong>{t.label}:</strong> {t.value}
+                    <button onClick={() => removeCustomTrait(i)} className="ml-1 hover:opacity-60">✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2 flex-wrap">
+              <input className="flex-1 min-w-[140px] px-3 py-2 rounded-xl text-sm text-white border focus:outline-none focus:border-[var(--primary)]"
+                style={AV_STYLE} placeholder="Característica (ex: Cor do grão)" value={customKey} onChange={e => setCustomKey(e.target.value)} />
+              <input className="w-32 px-3 py-2 rounded-xl text-sm text-white border focus:outline-none focus:border-[var(--primary)]"
+                style={AV_STYLE} placeholder="Valor" value={customVal} onChange={e => setCustomVal(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCustomTrait()} />
+              <button onClick={addCustomTrait}
+                className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80"
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' }}>
+                + Adicionar
+              </button>
+            </div>
+          </div>
+
+          {/* Fotos */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#fb923c' }}>
+              Fotos da Parcela ({pendingPhotos.length}/10) — para análise visual IA
+            </p>
+            <label className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all hover:opacity-80 w-fit"
+              style={{ background: 'rgba(251,146,60,0.1)', border: '1px dashed rgba(251,146,60,0.4)', color: '#fb923c' }}>
+              <span className="material-symbols-outlined text-base">add_photo_alternate</span>
+              <span className="text-xs font-semibold">Selecionar fotos (JPG/PNG/WEBP, máx 8MB cada)</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handlePhotos} />
+            </label>
+            {pendingPhotos.length > 0 && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {pendingPhotos.map((p, i) => (
+                  <div key={i} className="relative">
+                    <img src={`data:${p.mime};base64,${p.base64}`} alt={p.name}
+                      className="w-16 h-16 rounded-lg object-cover"
+                      style={{ border: '1px solid rgba(255,255,255,0.12)' }} />
+                    <button onClick={() => setPendingPhotos(prev => prev.filter((_,idx) => idx !== i))}
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[10px]"
+                      style={{ background: '#ef4444', color: '#fff' }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Observações */}
+          <div>
+            <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Observações gerais</label>
+            <textarea className={AV_INP} style={{ ...AV_STYLE, resize: 'vertical' }} rows={2}
+              placeholder="Observações livres sobre a parcela..."
+              value={form.notas} onChange={e => f('notas', e.target.value)} />
+          </div>
+
+          <div className="flex gap-3 flex-wrap">
+            <button onClick={save}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
+              style={{ background: 'var(--primary)' }}>
+              <span className="material-symbols-outlined text-sm">save</span>
+              Salvar Avaliação
+            </button>
+            {pendingPhotos.length > 0 && (
+              <p className="text-xs flex items-center gap-1" style={{ color: '#f59e0b' }}>
+                <span className="material-symbols-outlined text-sm">info</span>
+                Salve primeiro, depois clique "Analisar com MelhorIA" no card.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Filter + list */}
+      {list.length > 0 && (
+        <div className="flex items-center gap-3">
+          <input
+            className="flex-1 min-w-[180px] px-3 py-2 rounded-xl text-sm text-white bg-transparent border focus:outline-none focus:border-[var(--primary)]"
+            style={AV_STYLE} placeholder="Filtrar por genótipo..."
+            value={filterGeno} onChange={e => setFilterGeno(e.target.value)}
+          />
+          <span className="text-xs flex-shrink-0" style={{ color: '#475569' }}>{filtered.length} avaliação{filtered.length !== 1 ? 'ões' : ''}</span>
+        </div>
+      )}
+
+      {filtered.length === 0 && (
+        <div className="flex flex-col items-center gap-4 py-16 rounded-2xl border"
+          style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.07)' }}>
+          <span className="material-symbols-outlined text-4xl" style={{ color: '#1e293b' }}>biotech</span>
+          <p className="text-sm font-bold text-white">Nenhuma avaliação registrada</p>
+          <p className="text-xs text-center px-8" style={{ color: 'var(--muted)' }}>
+            Registre altura de planta, cor de pendão, notas de doenças, fotos e muito mais por parcela. A MelhorIA analisa tudo.
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4">
+        {filtered.map(av => {
+          const isAnalyzing = analyzingId === av.id;
+          return (
+            <div key={av.id} className="rounded-2xl border overflow-hidden"
+              style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.08)' }}>
+              {/* Card header */}
+              <div className="flex items-start justify-between gap-4 px-4 py-3"
+                style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-white truncate">{av.genotipo}</p>
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    {av.experimento && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>{av.experimento}</span>}
+                    {av.parcela    && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}>{av.parcela}</span>}
+                    <span className="text-[10px]" style={{ color: '#475569' }}>{new Date(av.data + 'T12:00').toLocaleDateString('pt-BR')}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => void analyzeWithAI(av)}
+                    disabled={isAnalyzing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-80 disabled:opacity-50"
+                    style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa' }}>
+                    {isAnalyzing
+                      ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>Analisando...</>
+                      : <><span className="material-symbols-outlined text-sm">smart_toy</span>MelhorIA</>
+                    }
+                  </button>
+                  <button onClick={() => del(av.id)} className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#f87171' }}>
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Traits grid */}
+              <div className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { label: 'Alt. Planta', value: av.alt_planta ? `${av.alt_planta} cm` : null },
+                  { label: 'Alt. Espiga', value: av.alt_espiga ? `${av.alt_espiga} cm` : null },
+                  { label: 'Cor Pendão',  value: av.cor_pendao || null },
+                  { label: 'Largura Folha', value: av.largura_folha ? `${av.largura_folha} cm` : null },
+                  { label: 'Diâm. Colmo', value: av.diam_colmo ? `${av.diam_colmo} mm` : null },
+                  { label: 'Flor. ♂',    value: av.dias_florescimento_m ? `${av.dias_florescimento_m} DAE` : null },
+                  { label: 'Flor. ♀',    value: av.dias_florescimento_f ? `${av.dias_florescimento_f} DAE` : null },
+                  { label: 'Nota Visual', value: av.nota_visual ? `${av.nota_visual}/9` : null },
+                  { label: 'Nota Doenças', value: av.nota_doencas ? `${av.nota_doencas}/9` : null },
+                  { label: 'Acamamento', value: av.acamamento ? `${av.acamamento}%` : null },
+                  { label: 'Quebramento', value: av.quebramento ? `${av.quebramento}%` : null },
+                  { label: 'Fileiras',    value: av.fileiras_graos || null },
+                  ...av.traits_custom.map(t => ({ label: t.label, value: t.value })),
+                ].filter(t => t.value).map(t => (
+                  <div key={t.label} className="flex flex-col">
+                    <span className="text-[9px] uppercase tracking-wider" style={{ color: '#475569' }}>{t.label}</span>
+                    <span className="text-xs font-semibold text-white">{t.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {av.notas && (
+                <div className="px-4 pb-3">
+                  <p className="text-xs italic" style={{ color: '#64748b' }}>📝 {av.notas}</p>
+                </div>
+              )}
+
+              {/* AI Analysis result */}
+              {av.fotos_analise && (
+                <div className="mx-4 mb-4 p-4 rounded-xl"
+                  style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)' }}>
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#a78bfa' }}>
+                    🧬 Análise MelhorIA
+                  </p>
+                  <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: '#cbd5e1' }}>
+                    {av.fotos_analise}
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
-type ResearchTab = 'blocos' | 'experimentos' | 'gxe';
+type ResearchTab = 'blocos' | 'experimentos' | 'gxe' | 'avaliacoes';
 
 export default function Research() {
   const navigate = useNavigate();
@@ -1889,7 +2393,8 @@ export default function Research() {
           {([
             { id: 'blocos' as ResearchTab, label: 'Blocos / Parcelas', icon: 'grid_view' },
             { id: 'experimentos' as ResearchTab, label: 'Experimentos', icon: 'science' },
-            { id: 'gxe' as ResearchTab, label: 'Análise GxE', icon: 'hub', badge: 'NOVO' },
+            { id: 'gxe' as ResearchTab, label: 'Análise GxE', icon: 'hub' },
+            { id: 'avaliacoes' as ResearchTab, label: 'Avaliações Fenotípicas', icon: 'biotech', badge: 'NOVO' },
           ]).map(tab => (
             <button
               key={tab.id}
@@ -1913,6 +2418,9 @@ export default function Research() {
 
         {/* GxE tab */}
         {researchTab === 'gxe' && <GxETab />}
+
+        {/* Avaliações Fenotípicas tab */}
+        {researchTab === 'avaliacoes' && <AvaliacaoTab />}
 
         {/* Blocos tab content below */}
         {researchTab === 'blocos' && (<>

@@ -41,11 +41,12 @@ const NAV_PRODUTOR: NavItem[] = [
 
 const NAV_PESQUISADOR: NavItem[] = [
   { to: '/app/dashboard',    label: 'Mapa & Talhões',      icon: iconMap('map') },
+  { to: '/app/caderno',      label: 'Caderno de Pesquisa', icon: iconMap('menu_book') },
   { to: '/app/research',     label: 'Pesquisa Agronômica', icon: iconMap('biotech') },
-  { to: '/app/germoplasma',  label: 'Germoplasma',         icon: iconMap('genetics'), badge: 'NEW' },
+  { to: '/app/germoplasma',  label: 'Germoplasma',         icon: iconMap('genetics') },
   { to: '/app/weather',      label: 'Clima & Alertas',     icon: iconMap('wb_sunny') },
   { to: '/app/reports',      label: 'Relatórios',           icon: iconMap('bar_chart') },
-  { to: '/app/chat',         label: 'IA de Pesquisa',       icon: iconMap('smart_toy'), badge: 'IA' },
+  { to: '/app/chat',         label: 'MelhorIA',             icon: iconMap('smart_toy'), badge: 'IA' },
 ];
 
 // Fallback quando nenhum perfil selecionado — mostra tudo
