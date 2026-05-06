@@ -3,11 +3,15 @@ import { jsPDF } from 'jspdf';
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  Cell,
+  ReferenceLine,
 } from 'recharts';
 import useAppStore from '../store/useAppStore';
 import type { Location } from '../store/useAppStore';
@@ -16,6 +20,17 @@ import { apiFetch } from '../services/api';
 import { polygonAreaHa } from '../utils/geo';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface Season {
+  id: string;
+  name: string;
+  crop_type?: string;
+  planting_date?: string;
+  harvest_date?: string;
+  area_ha?: number;
+  productivity_sc_ha?: number;
+  productivity_kg_ha?: number;
+}
 
 interface AnalysisHistoryEntry {
   date: string;          // ISO date string
@@ -197,6 +212,10 @@ export default function Reports() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyData, setHistoryData] = useState<AnalysisHistoryEntry[]>([]);
 
+  // ── Safras ──
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [seasonsLoading, setSeasonsLoading] = useState(false);
+
   const snapshotToFieldAnalysisResult = (snapshot: FieldIntelligenceSnapshot): FieldAnalysisResult => {
     const satellite = (snapshot.satellite ?? {}) as Record<string, unknown>;
     const analysis = (snapshot.analysis ?? {}) as Record<string, unknown>;
@@ -358,6 +377,16 @@ export default function Reports() {
       .finally(() => {
         setHistoryLoading(false);
       });
+  }, [activeFieldId]);
+
+  // ── Buscar safras quando activeFieldId mudar ─────────────────────────────────
+  useEffect(() => {
+    if (!activeFieldId) { setSeasons([]); return; }
+    setSeasonsLoading(true);
+    apiFetch<Season[]>(`/api/fields/${activeFieldId}/seasons`)
+      .then(setSeasons)
+      .catch(() => setSeasons([]))
+      .finally(() => setSeasonsLoading(false));
   }, [activeFieldId]);
 
   const hasFields = fields.length > 0;
@@ -814,6 +843,105 @@ export default function Reports() {
           <span className="material-symbols-outlined text-blue-400">dataset</span>
           <span style={{ color: '#94a3b8' }}>Fonte principal: snapshot canônico do talhão ativo ({activeFieldId ? 'ativo' : 'selecione um talhão no mapa'}).</span>
         </div>
+
+        {/* ── Comparativo de Safras ── */}
+        {activeFieldId && (
+          <div className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="material-symbols-outlined" style={{ color: '#ec5b13' }}>grass</span>
+              <h2 className="text-lg font-black text-white">Comparativo de Safras</h2>
+            </div>
+
+            {seasonsLoading && (
+              <div className="flex items-center gap-2 py-4" style={{ color: '#64748b' }}>
+                <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: '#ec5b13', borderTopColor: 'transparent' }} />
+                <span className="text-sm">Carregando safras...</span>
+              </div>
+            )}
+
+            {!seasonsLoading && seasons.length === 0 && (
+              <div className="flex flex-col items-center gap-2 py-8 opacity-50">
+                <span className="material-symbols-outlined text-4xl" style={{ color: '#64748b' }}>agriculture</span>
+                <p className="text-sm" style={{ color: '#64748b' }}>Nenhuma safra cadastrada — acesse Safras &amp; Produtividade para adicionar.</p>
+              </div>
+            )}
+
+            {!seasonsLoading && seasons.length > 0 && (
+              <>
+                {/* Tabela */}
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        {['Safra', 'Cultura', 'Plantio', 'Colheita', 'Área (ha)', 'sc/ha', 'Total (sc)'].map(h => (
+                          <th key={h} className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-widest" style={{ color: '#64748b' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {seasons.map(s => {
+                        const total = s.productivity_sc_ha != null && s.area_ha != null
+                          ? (s.productivity_sc_ha * s.area_ha).toFixed(0) : '—';
+                        const fmtDate = (d?: string) => d ? d.split('-').reverse().join('/') : '—';
+                        return (
+                          <tr key={s.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td className="px-3 py-2 font-bold text-white">{s.name}</td>
+                            <td className="px-3 py-2" style={{ color: '#94a3b8' }}>{s.crop_type ?? '—'}</td>
+                            <td className="px-3 py-2" style={{ color: '#94a3b8' }}>{fmtDate(s.planting_date)}</td>
+                            <td className="px-3 py-2" style={{ color: '#94a3b8' }}>{fmtDate(s.harvest_date)}</td>
+                            <td className="px-3 py-2" style={{ color: '#94a3b8' }}>{s.area_ha ?? '—'}</td>
+                            <td className="px-3 py-2 font-bold" style={{ color: '#22c55e' }}>{s.productivity_sc_ha ?? '—'}</td>
+                            <td className="px-3 py-2" style={{ color: '#94a3b8' }}>{total}</td>
+                          </tr>
+                        );
+                      })}
+                      {/* Média */}
+                      {seasons.filter(s => s.productivity_sc_ha != null).length > 0 && (
+                        <tr style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                          <td colSpan={5} className="px-3 py-2 text-xs font-bold uppercase" style={{ color: '#64748b' }}>Média</td>
+                          <td className="px-3 py-2 font-black" style={{ color: '#f59e0b' }}>
+                            {(seasons.filter(s => s.productivity_sc_ha != null)
+                              .reduce((a, s) => a + (s.productivity_sc_ha ?? 0), 0) /
+                              seasons.filter(s => s.productivity_sc_ha != null).length).toFixed(1)}
+                          </td>
+                          <td />
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Gráfico de barras */}
+                {seasons.filter(s => s.productivity_sc_ha != null).length >= 2 && (() => {
+                  const chartData = [...seasons].filter(s => s.productivity_sc_ha != null)
+                    .reverse()
+                    .map(s => ({ name: s.name, value: s.productivity_sc_ha as number }));
+                  const avg = chartData.reduce((a, d) => a + d.value, 0) / chartData.length;
+                  const maxVal = Math.max(...chartData.map(d => d.value));
+                  return (
+                    <ResponsiveContainer width="100%" height={160}>
+                      <BarChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                        <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10 }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
+                        <Tooltip
+                          contentStyle={{ background: 'var(--surface,#1e293b)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
+                          formatter={(v) => [`${Number(v).toFixed(1)} sc/ha`, 'Produtividade']}
+                        />
+                        <ReferenceLine y={avg} stroke="#f59e0b" strokeDasharray="4 4" />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          {chartData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.value === maxVal ? '#22c55e' : '#ec5b13'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )}
 
       </div>
       )}

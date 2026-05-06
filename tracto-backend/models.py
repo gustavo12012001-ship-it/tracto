@@ -204,6 +204,39 @@ class FieldLogCreate(BaseModel):
     notes: str | None = None
 
 
+class SeasonCreate(BaseModel):
+    name: str
+    crop_type: str | None = None
+    planting_date: str | None = None
+    harvest_date: str | None = None
+    area_ha: float | None = None
+    productivity_sc_ha: float | None = None
+    productivity_kg_ha: float | None = None
+    notes: str | None = None
+
+
+class SeasonUpdate(SeasonCreate):
+    pass
+
+
+class SprayWindowRequest(BaseModel):
+    wind_speed: float | None = None
+    humidity: float | None = None
+    temperature: float | None = None
+    rain_next_6h: float | None = None
+    rain_next_24h: float | None = None
+    weather_code: int | None = None
+
+
+class AnovaRequest(BaseModel):
+    groups: dict[str, list[float]]
+
+
+class ParcelNdviRequest(BaseModel):
+    parcel_boundaries: list[list[float]]
+    scene_date: str | None = None
+
+
 class SnapshotSourceStatus(BaseModel):
     status: Literal["ok", "fallback", "unavailable"]
     message: str

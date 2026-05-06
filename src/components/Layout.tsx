@@ -114,17 +114,16 @@ const NAV_ITEMS = [
     ),
   },
   {
-    to: '/app/services',
-    label: 'Serviços',
+    to: '/app/seasons',
+    label: 'Safras',
     icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-      </svg>
+      <span className="material-symbols-outlined w-4 h-4" style={{ fontSize: 16 }}>grass</span>
     ),
   },
   {
     to: '/app/market',
     label: 'Mercado',
+    profile: 'produtor' as const,
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
@@ -145,8 +144,13 @@ function SidebarContent({
   theme: Theme;
   toggleTheme: () => void;
 }) {
-  const { alerts } = useAppStore();
+  const { alerts, userProfile } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!('profile' in item)) return true;
+    if (userProfile === 'pesquisador' && (item as { profile?: string }).profile === 'produtor') return false;
+    return true;
+  });
   const [userName, setUserName] = useState('Usuário');
 
   useEffect(() => {
@@ -179,7 +183,7 @@ function SidebarContent({
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
         <p className="px-3 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Navegação</p>
-        {NAV_ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

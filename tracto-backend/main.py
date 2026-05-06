@@ -40,6 +40,11 @@ from models import (
     FieldIntelligenceSnapshot,
     SentinelPreloadRequest,
     FieldLogCreate,
+    SeasonCreate,
+    SeasonUpdate,
+    SprayWindowRequest,
+    AnovaRequest,
+    ParcelNdviRequest,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -70,6 +75,9 @@ from services.field_intelligence_service import build_field_intelligence_snapsho
 from services.market_service import get_market_quotes
 from services.analysis_history_service import save_analysis, get_field_analyses
 from services.field_log_service import create_log, get_field_logs, delete_log
+from services.season_service import create_season, get_field_seasons, update_season, delete_season
+from services.spray_window_service import evaluate_spray_window
+from services.stats_service import run_anova_tukey
 from services.api_key_service import generate_api_key, verify_api_key, list_api_keys, revoke_api_key
 
 # --- Security & Rate Limiting ---
@@ -1268,6 +1276,239 @@ async def revoke_api_key_endpoint(
     except Exception as exc:
         logging.error("[/api/keys/%s DELETE] Erro: %s", key_id, exc)
         raise HTTPException(status_code=500, detail="Erro ao revogar API key.") from exc
+
+
+# ---------------------------------------------------------------------------
+# Safras — /api/fields/{field_id}/seasons
+# ---------------------------------------------------------------------------
+
+@app.post("/api/fields/{field_id}/seasons", status_code=201)
+@limiter.limit("30/minute")
+async def create_season_endpoint(
+    request: Request,
+    field_id: str,
+    body: SeasonCreate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cria uma safra para o talhão."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
+        season = await create_season(field_id=field_id, user_id=user.id, data=body.model_dump(exclude_none=True))
+        return season
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/seasons POST] %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao criar safra.") from exc
+
+
+@app.get("/api/fields/{field_id}/seasons")
+@limiter.limit("60/minute")
+async def get_seasons_endpoint(
+    request: Request,
+    field_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Lista safras do talhão."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
+        seasons = await get_field_seasons(field_id=field_id, user_id=user.id)
+        return seasons
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/seasons GET] %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar safras.") from exc
+
+
+@app.patch("/api/fields/{field_id}/seasons/{season_id}")
+@limiter.limit("30/minute")
+async def update_season_endpoint(
+    request: Request,
+    field_id: str,
+    season_id: str,
+    body: SeasonUpdate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Atualiza uma safra."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
+        updated = await update_season(season_id=season_id, user_id=user.id, data=body.model_dump(exclude_none=True))
+        if not updated:
+            raise HTTPException(status_code=404, detail="Safra não encontrada.")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/seasons/%s PATCH] %s", field_id, season_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao atualizar safra.") from exc
+
+
+@app.delete("/api/fields/{field_id}/seasons/{season_id}", status_code=204)
+@limiter.limit("20/minute")
+async def delete_season_endpoint(
+    request: Request,
+    field_id: str,
+    season_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Remove uma safra."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
+        await delete_season(season_id=season_id, user_id=user.id)
+        return None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/seasons/%s DELETE] %s", field_id, season_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao remover safra.") from exc
+
+
+# ---------------------------------------------------------------------------
+# Janela de Pulverização — /api/weather/spray-window
+# ---------------------------------------------------------------------------
+
+@app.post("/api/weather/spray-window")
+@limiter.limit("60/minute")
+async def spray_window_endpoint(
+    request: Request,
+    body: SprayWindowRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Avalia as condições meteorológicas para pulverização (go/no-go)."""
+    try:
+        result = evaluate_spray_window(body.model_dump())
+        return result
+    except Exception as exc:
+        logging.error("[/api/weather/spray-window] %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao avaliar janela de pulverização.") from exc
+
+
+# ---------------------------------------------------------------------------
+# ANOVA + Tukey — /api/stats/anova
+# ---------------------------------------------------------------------------
+
+@app.post("/api/stats/anova")
+@limiter.limit("30/minute")
+async def anova_endpoint(
+    request: Request,
+    body: AnovaRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Realiza ANOVA de uma via + Tukey HSD nos grupos fornecidos."""
+    try:
+        if len(body.groups) < 2:
+            raise HTTPException(status_code=400, detail="São necessários pelo menos 2 grupos.")
+        for name, values in body.groups.items():
+            if len(values) < 2:
+                raise HTTPException(status_code=400, detail=f"Grupo '{name}' precisa de pelo menos 2 observações.")
+        result = run_anova_tukey(body.groups)
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.error("[/api/stats/anova] %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao calcular ANOVA.") from exc
+
+
+# ---------------------------------------------------------------------------
+# NDVI por Parcela — /api/fields/{field_id}/parcels/ndvi
+# ---------------------------------------------------------------------------
+
+@app.post("/api/fields/{field_id}/parcels/ndvi")
+@limiter.limit("20/minute")
+async def parcel_ndvi_endpoint(
+    request: Request,
+    field_id: str,
+    body: ParcelNdviRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Calcula o NDVI médio de uma parcela usando suas boundaries."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
+
+        boundaries = body.parcel_boundaries
+        if not boundaries or len(boundaries) < 3:
+            raise HTTPException(status_code=400, detail="São necessários pelo menos 3 pontos para definir a parcela.")
+
+        lats = [p[0] for p in boundaries]
+        lngs = [p[1] for p in boundaries]
+        center_lat = sum(lats) / len(lats)
+        center_lng = sum(lngs) / len(lngs)
+
+        # Calcula área aproximada em ha
+        import math as _math
+        lat_span = (max(lats) - min(lats)) * 111320
+        lng_span = (max(lngs) - min(lngs)) * 111320 * _math.cos(_math.radians(center_lat))
+        area_ha = (lat_span * lng_span) / 10000
+
+        # Busca imagem NDVI para as boundaries da parcela
+        ndvi_result = await get_ndvi_image(
+            lat=center_lat,
+            lng=center_lng,
+            boundaries=boundaries,
+            lookback_days=21,
+        )
+
+        ndvi_image_b64 = ndvi_result.get("ndvi_image_base64") if isinstance(ndvi_result, dict) else None
+        date_acquired = ndvi_result.get("date_acquired") if isinstance(ndvi_result, dict) else None
+        ndvi_analysis = ndvi_result.get("ndvi_analysis", {}) if isinstance(ndvi_result, dict) else {}
+
+        ndvi_medio = None
+        for key in ("ndvi_medio", "ndvi_mean", "mean", "ndvi_avg"):
+            val = ndvi_analysis.get(key)
+            if val is not None:
+                try:
+                    ndvi_medio = float(val)
+                    break
+                except (TypeError, ValueError):
+                    pass
+
+        # Fallback: calcular da imagem base64 se disponível
+        if ndvi_medio is None and ndvi_image_b64:
+            try:
+                import base64
+                from PIL import Image
+                import io
+                img_bytes = base64.b64decode(ndvi_image_b64)
+                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                pixels = list(img.getdata())
+                # Paleta NDVI: vermelho=baixo, verde=alto
+                # Estima NDVI = (G - R) / (G + R + 1) por pixel
+                total = 0.0
+                count = 0
+                for r, g, b in pixels:
+                    if r + g > 10:  # ignora pixels escuros/transparentes
+                        ndvi_px = (g - r) / (g + r + 1)
+                        total += ndvi_px
+                        count += 1
+                ndvi_medio = round(total / count, 4) if count > 0 else None
+            except Exception as img_exc:
+                logging.warning("[parcel_ndvi] Falha ao calcular NDVI da imagem: %s", img_exc)
+
+        return {
+            "ndvi_medio": ndvi_medio,
+            "date": date_acquired,
+            "parcel_area_ha": round(area_ha, 3),
+            "field_id": field_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/parcels/ndvi] %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao calcular NDVI da parcela.") from exc
 
 
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)

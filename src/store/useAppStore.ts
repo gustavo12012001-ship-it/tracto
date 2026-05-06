@@ -197,8 +197,11 @@ interface AppState {
   entitlements: Entitlements | null;
   /** Última cena satelital visível no mapa (não persistida) */
   currentSatelliteScene: CurrentSatelliteScene | null;
+  /** Perfil de uso: produtor ou pesquisador */
+  userProfile: 'produtor' | 'pesquisador' | null;
 
   setFarms: (farms: Farm[]) => void;
+  setUserProfile: (p: 'produtor' | 'pesquisador') => void;
   setActiveFarm: (id: string | null) => void;
   setActiveField: (id: string | null) => void;
   focusActiveField: () => void;
@@ -251,8 +254,10 @@ export const useAppStore = create<AppState>()(
       syncError: null,
       entitlements: null,
       currentSatelliteScene: null,
+      userProfile: null,
 
       setCurrentSatelliteScene: (scene) => set({ currentSatelliteScene: scene }),
+      setUserProfile: (p) => set({ userProfile: p }),
 
       setFarms: (farms) => {
         set({ farms });

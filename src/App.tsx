@@ -18,6 +18,7 @@ import Research from './pages/Research';
 import SoilData from './pages/SoilData';
 import FieldLog from './pages/FieldLog';
 import Calculator from './pages/Calculator';
+import Seasons from './pages/Seasons';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -56,6 +57,7 @@ function App() {
           <Route path="soil" element={<SoilData />} />
           <Route path="field-log" element={<FieldLog />} />
           <Route path="calculator" element={<Calculator />} />
+          <Route path="seasons" element={<Seasons />} />
         </Route>
       </Routes>
     </BrowserRouter>

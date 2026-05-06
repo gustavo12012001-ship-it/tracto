@@ -106,6 +106,7 @@ function PerfilTab() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  const { userProfile, setUserProfile } = useAppStore();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -197,6 +198,56 @@ function PerfilTab() {
             Salvar Alterações
           </button>
         </div>
+      </Section>
+
+      {/* Tipo de uso */}
+      <Section title="Tipo de Uso">
+        <p className="text-sm mb-3" style={{ color: 'var(--muted)' }}>
+          O perfil selecionado adapta o menu de navegação ao seu fluxo de trabalho.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            {
+              id: 'produtor' as const,
+              icon: '👨‍🌾',
+              title: 'Produtor Rural',
+              desc: 'Gestão de safras, monitoramento e produtividade',
+              color: '#22c55e',
+            },
+            {
+              id: 'pesquisador' as const,
+              icon: '🔬',
+              title: 'Pesquisa Agronômica',
+              desc: 'Experimentos, ANOVA e análise estatística',
+              color: '#60a5fa',
+            },
+          ] as const).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setUserProfile(p.id)}
+              className="flex items-start gap-3 p-4 rounded-2xl text-left transition-all"
+              style={{
+                background: userProfile === p.id ? `${p.color}14` : 'var(--bg)',
+                border: `2px solid ${userProfile === p.id ? p.color : 'var(--border)'}`,
+              }}
+            >
+              <span className="text-2xl">{p.icon}</span>
+              <div>
+                <p className="font-bold text-white text-sm">{p.title}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{p.desc}</p>
+              </div>
+              {userProfile === p.id && (
+                <span className="material-symbols-outlined text-sm ml-auto flex-shrink-0" style={{ color: p.color }}>check_circle</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {userProfile && (
+          <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
+            Perfil ativo: <strong style={{ color: 'var(--text)' }}>{userProfile === 'produtor' ? '👨‍🌾 Produtor Rural' : '🔬 Pesquisa Agronômica'}</strong>
+            {' — '}o menu foi adaptado ao seu perfil.
+          </p>
+        )}
       </Section>
     </div>
   );

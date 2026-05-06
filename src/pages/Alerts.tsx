@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import useAppStore from '../store/useAppStore';
 import type { Alert } from '../store/useAppStore';
+import SprayWindow from '../components/SprayWindow';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -161,6 +162,9 @@ export default function Alerts() {
           </div>
         ) : (
         <div className="flex-1 overflow-y-auto alert-scrollbar p-10">
+
+          {/* ── Janela de Pulverização ── */}
+          <SprayWindow weatherCache={weatherCache} />
 
           {/* ── Header + Reload ── */}
           <div className="flex items-center justify-between mb-8">

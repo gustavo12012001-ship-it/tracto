@@ -14,3 +14,4 @@ Pillow
 rasterio
 yfinance
 pywebpush
+scipy>=1.11.0
