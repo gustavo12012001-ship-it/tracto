@@ -848,10 +848,10 @@ export default function FieldMap() {
 
   const finishDrawing = async () => {
     const targetFarmId = drawFarmId ?? activeFarmId;
-    if (!targetFarmId) { alert('Selecione uma fazenda antes de desenhar.'); return; }
-    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
+    if (!targetFarmId) { alert('Selecione uma fazenda antes de salvar.'); return; }
+    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos para fechar o polígono.'); return; }
     const areaHa = polygonAreaHa(drawPoints);
-    if (areaHa < 0.05) { alert('Área muito pequena. Mínimo 0.05 ha.'); return; }
+    if (areaHa < 0.001) { alert(`Área calculada muito pequena (${areaHa.toFixed(5)} ha). Verifique se os pontos estão no local correto.`); return; }
 
     const name = fieldName.trim() || `Talhão ${fields.length + 1}`;
     const centroid: [number, number] = [
@@ -875,7 +875,11 @@ export default function FieldMap() {
       });
       resetForm();
     } catch (err: unknown) {
-      alert(`Erro ao salvar: ${err instanceof Error ? err.message : 'desconhecido'}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      const hint = msg.includes('violates') ? '\n\nDica: verifique as permissões (RLS) da tabela fields no Supabase.'
+        : msg.includes('network') || msg.includes('fetch') ? '\n\nDica: verifique sua conexão com a internet.'
+        : '';
+      alert(`Erro ao salvar talhão:\n${msg}${hint}`);
     } finally {
       setIsSaving(false);
     }
@@ -987,6 +991,7 @@ export default function FieldMap() {
             key={`farm-${farm.id}`}
             positions={farm.boundaries}
             pathOptions={{ color: farm.id === activeFarmId ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)', fillColor: 'rgba(255,255,255,0.03)', fillOpacity: 1, weight: 2, dashArray: '8 5' }}
+            eventHandlers={{ click: (e) => { if (drawMode !== 'none') e.originalEvent.stopPropagation(); } }}
           >
             <Tooltip sticky direction="top">
               <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700 }}>🏡 {farm.name}</span>
@@ -1017,7 +1022,11 @@ export default function FieldMap() {
                 weight: isBlock ? (isActive ? 2.5 : 1.5) : (isActive ? 3 : 2),
                 dashArray: isBlock ? '3 3' : (isActive ? undefined : '4 2'),
               }}
-              eventHandlers={{ click: () => { if (loc.id) setActiveField(loc.id); } }}
+              eventHandlers={{ click: (e) => {
+                // During drawing, absorb the click so it doesn't also place a draw point
+                if (drawMode !== 'none') { e.originalEvent.stopPropagation(); return; }
+                if (loc.id) setActiveField(loc.id);
+              } }}
             >
               <Tooltip permanent direction="center" className="leaflet-field-label" offset={[0, 0]}>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontSize: isBlock ? 9 : 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
