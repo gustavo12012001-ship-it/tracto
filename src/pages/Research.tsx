@@ -540,11 +540,371 @@ function exportCSV(
   URL.revokeObjectURL(url);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPERIMENTS TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+interface Treatment {
+  label: string;
+  description: string;
+  product: string;
+  dose: string;
+}
+
+interface Experiment {
+  id: string;
+  name: string;
+  cultura: string;
+  objetivo: string;
+  treatments: Treatment[];
+  repetitions: number;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+}
+
+const EXP_KEY = 'tracto-experiments-v1';
+
+function loadExperiments(): Experiment[] {
+  try { return JSON.parse(localStorage.getItem(EXP_KEY) ?? '[]'); } catch { return []; }
+}
+
+function saveExperiments(exps: Experiment[]) {
+  try { localStorage.setItem(EXP_KEY, JSON.stringify(exps)); } catch { /* ignore */ }
+}
+
+const TREATMENT_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function statPower(nTreatments: number, nRep: number): { design: string; power: string; color: string } {
+  const design = nRep >= 3 ? 'Delineamento em blocos completos ao acaso (DBCA)' : 'Delineamento inteiramente casualizado (DIC)';
+  const score = nTreatments * nRep;
+  if (score >= 15) return { design, power: 'Alto poder estatístico', color: '#4ade80' };
+  if (score >= 9)  return { design, power: 'Poder estatístico moderado', color: '#fbbf24' };
+  return { design, power: 'Poder estatístico baixo — aumente repetições', color: '#f87171' };
+}
+
+const inpClsExp = 'w-full px-3 py-2 rounded-xl text-sm text-white bg-transparent border focus:outline-none focus:border-[var(--primary)] transition-colors';
+const inpStyleExp = { borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' };
+
+function ExperimentsTab() {
+  const [experiments, setExperiments] = useState<Experiment[]>(loadExperiments);
+  const [showForm, setShowForm] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Form state
+  const [name, setName] = useState('');
+  const [cultura, setCultura] = useState('');
+  const [objetivo, setObjetivo] = useState('');
+  const [treatments, setTreatments] = useState<Treatment[]>([
+    { label: 'A', description: '', product: '', dose: '' },
+    { label: 'B', description: '', product: '', dose: '' },
+  ]);
+  const [repetitions, setRepetitions] = useState(3);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const resetForm = () => {
+    setName(''); setCultura(''); setObjetivo('');
+    setTreatments([
+      { label: 'A', description: '', product: '', dose: '' },
+      { label: 'B', description: '', product: '', dose: '' },
+    ]);
+    setRepetitions(3); setStartDate(''); setEndDate('');
+    setShowForm(false);
+  };
+
+  const addTreatment = () => {
+    const nextLabel = TREATMENT_LABELS[treatments.length] ?? String(treatments.length + 1);
+    setTreatments(t => [...t, { label: nextLabel, description: '', product: '', dose: '' }]);
+  };
+
+  const updateTreatment = (idx: number, field: keyof Treatment, value: string) => {
+    setTreatments(t => t.map((tr, i) => i === idx ? { ...tr, [field]: value } : tr));
+  };
+
+  const removeTreatment = (idx: number) => {
+    setTreatments(t => {
+      const filtered = t.filter((_, i) => i !== idx);
+      return filtered.map((tr, i) => ({ ...tr, label: TREATMENT_LABELS[i] ?? String(i + 1) }));
+    });
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    const exp: Experiment = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      cultura: cultura.trim(),
+      objetivo: objetivo.trim(),
+      treatments,
+      repetitions,
+      startDate,
+      endDate,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [exp, ...experiments];
+    saveExperiments(updated);
+    setExperiments(updated);
+    resetForm();
+  };
+
+  const handleDelete = (id: string) => {
+    if (!window.confirm('Excluir este experimento?')) return;
+    const updated = experiments.filter(e => e.id !== id);
+    saveExperiments(updated);
+    setExperiments(updated);
+    if (expandedId === id) setExpandedId(null);
+  };
+
+  const fmtDateBr = (iso: string) => {
+    if (!iso) return '—';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-white">Experimentos</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            Planeje ensaios comparativos com tratamentos e repetições.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowForm(v => !v)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+          style={{ background: 'var(--primary)', color: '#fff' }}
+        >
+          <span className="material-symbols-outlined text-base">{showForm ? 'close' : 'add'}</span>
+          {showForm ? 'Cancelar' : 'Novo Experimento'}
+        </button>
+      </div>
+
+      {/* Form */}
+      {showForm && (
+        <div className="rounded-2xl border p-5 flex flex-col gap-5" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.09)' }}>
+          <p className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--primary)' }}>Novo Experimento</p>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Nome do Experimento *</label>
+              <input className={inpClsExp} style={inpStyleExp} value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Comparativo de fungicidas" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Cultura</label>
+              <input className={inpClsExp} style={inpStyleExp} value={cultura} onChange={e => setCultura(e.target.value)} placeholder="Ex: Soja" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Objetivo</label>
+            <textarea
+              className={inpClsExp + ' resize-none'}
+              style={{ ...inpStyleExp, minHeight: 64 }}
+              value={objetivo}
+              onChange={e => setObjetivo(e.target.value)}
+              placeholder="Descreva o objetivo do experimento..."
+            />
+          </div>
+
+          {/* Treatments */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-black uppercase tracking-widest" style={{ color: '#60a5fa' }}>Tratamentos</p>
+              <button
+                onClick={addTreatment}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-white/5"
+                style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                Adicionar tratamento
+              </button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {treatments.map((tr, idx) => (
+                <div key={idx} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.12)' }}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5"
+                    style={{ background: 'rgba(96,165,250,0.2)', color: '#60a5fa' }}>
+                    {tr.label}
+                  </div>
+                  <div className="flex-1 grid sm:grid-cols-3 gap-2">
+                    <input className={inpClsExp} style={inpStyleExp} value={tr.description} onChange={e => updateTreatment(idx, 'description', e.target.value)} placeholder="Descrição" />
+                    <input className={inpClsExp} style={inpStyleExp} value={tr.product} onChange={e => updateTreatment(idx, 'product', e.target.value)} placeholder="Produto" />
+                    <input className={inpClsExp} style={inpStyleExp} value={tr.dose} onChange={e => updateTreatment(idx, 'dose', e.target.value)} placeholder="Dose (ex: 1 L/ha)" />
+                  </div>
+                  {treatments.length > 2 && (
+                    <button onClick={() => removeTreatment(idx)} className="p-1.5 rounded-lg hover:bg-red-500/10 flex-shrink-0 mt-0.5" style={{ color: '#f87171' }}>
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Repetitions + Dates */}
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Repetições / Blocos</label>
+              <input
+                className={inpClsExp} style={inpStyleExp}
+                type="number" min={1} max={20}
+                value={repetitions}
+                onChange={e => setRepetitions(Math.max(1, parseInt(e.target.value) || 1))}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Data Início</label>
+              <input type="date" className={inpClsExp} style={inpStyleExp} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Data Fim Prevista</label>
+              <input type="date" className={inpClsExp} style={inpStyleExp} value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Statistical power preview */}
+          {treatments.length >= 2 && (
+            <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              {(() => {
+                const sp = statPower(treatments.length, repetitions);
+                return (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs font-bold" style={{ color: sp.color }}>{sp.power}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--muted)' }}>{sp.design}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                      {treatments.length} tratamentos × {repetitions} repetições = {treatments.length * repetitions} parcelas
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5" style={{ color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)' }}>
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!name.trim()}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
+              style={{ background: 'var(--primary)' }}
+            >
+              <span className="material-symbols-outlined text-base">save</span>
+              Salvar Experimento
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {experiments.length === 0 ? (
+        <div className="flex flex-col items-center gap-4 py-12 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.07)' }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(236,91,19,0.10)' }}>
+            <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--primary)' }}>science</span>
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-bold text-white mb-1">Nenhum experimento cadastrado</p>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>Clique em "+ Novo Experimento" para começar a planejar seus ensaios comparativos.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {experiments.map(exp => {
+            const sp = statPower(exp.treatments.length, exp.repetitions);
+            const isExpanded = expandedId === exp.id;
+            return (
+              <div key={exp.id} className="rounded-2xl border overflow-hidden transition-all" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.07)' }}>
+                {/* Card header */}
+                <div className="flex items-start gap-3 p-4">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(236,91,19,0.12)' }}>
+                    <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>science</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white">{exp.name}</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {exp.cultura && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--muted)' }}>{exp.cultura}</span>}
+                      <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(96,165,250,0.10)', color: '#60a5fa' }}>{exp.treatments.length} tratamentos</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--muted)' }}>{exp.repetitions} rep.</span>
+                      <span className="text-[11px] font-semibold" style={{ color: sp.color }}>{sp.power.split(' — ')[0]}</span>
+                    </div>
+                    {(exp.startDate || exp.endDate) && (
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
+                        {fmtDateBr(exp.startDate)} {exp.endDate ? `→ ${fmtDateBr(exp.endDate)}` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => setExpandedId(isExpanded ? null : exp.id)}
+                      className="p-2 rounded-xl hover:bg-white/5 transition-all"
+                      style={{ color: '#60a5fa' }}
+                    >
+                      <span className="material-symbols-outlined text-base">{isExpanded ? 'expand_less' : 'expand_more'}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exp.id)}
+                      className="p-2 rounded-xl hover:bg-red-500/10 transition-all"
+                      style={{ color: '#f87171' }}
+                    >
+                      <span className="material-symbols-outlined text-base">delete</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded details */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 flex flex-col gap-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    {exp.objetivo && (
+                      <div className="pt-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: 'var(--muted)' }}>Objetivo</p>
+                        <p className="text-sm" style={{ color: '#94a3b8' }}>{exp.objetivo}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#60a5fa' }}>Tratamentos</p>
+                      <div className="flex flex-col gap-1.5">
+                        {exp.treatments.map((tr, idx) => (
+                          <div key={idx} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.10)' }}>
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
+                              style={{ background: 'rgba(96,165,250,0.2)', color: '#60a5fa' }}>
+                              {tr.label}
+                            </div>
+                            <span className="text-xs font-semibold text-white flex-1">{tr.description || '—'}</span>
+                            {tr.product && <span className="text-[11px]" style={{ color: 'var(--muted)' }}>{tr.product}</span>}
+                            {tr.dose && <span className="text-[11px] px-2 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--muted)' }}>{tr.dose}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <p className="text-xs font-bold" style={{ color: sp.color }}>{sp.power}</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>{sp.design}</p>
+                      <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                        {exp.treatments.length} × {exp.repetitions} = {exp.treatments.length * exp.repetitions} parcelas
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
+type ResearchTab = 'blocos' | 'experimentos';
+
 export default function Research() {
   const navigate = useNavigate();
   const { farms, fields } = useAppStore();
 
+  const [researchTab, setResearchTab] = useState<ResearchTab>('blocos');
   const [entries, setEntries] = useState<Record<string, ResearchEntry>>(loadAll);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'todos' | 'crescendo' | 'floresceu' | 'previsto'>('todos');
@@ -656,28 +1016,56 @@ export default function Research() {
               <h1 className="text-2xl font-black text-white">Pesquisa Agronômica</h1>
             </div>
             <p className="text-sm" style={{ color: 'var(--muted)' }}>
-              Estande de planta, florescimento e soma térmica por bloco/parcela.
+              Estande de planta, florescimento, soma térmica e experimentos comparativos.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode(v => v === 'cards' ? 'timeline' : 'cards')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
-              style={{ color: '#94a3b8', border: '1px solid var(--border)' }}
-            >
-              <span className="material-symbols-outlined text-base">{viewMode === 'cards' ? 'timeline' : 'grid_view'}</span>
-              {viewMode === 'cards' ? 'Ver Timeline' : 'Ver Blocos'}
-            </button>
-            <button
-              onClick={() => exportCSV(allFields, farms, entries)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-              style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
-            >
-              <span className="material-symbols-outlined text-base">download</span>
-              Exportar CSV
-            </button>
-          </div>
+          {researchTab === 'blocos' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode(v => v === 'cards' ? 'timeline' : 'cards')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
+                style={{ color: '#94a3b8', border: '1px solid var(--border)' }}
+              >
+                <span className="material-symbols-outlined text-base">{viewMode === 'cards' ? 'timeline' : 'grid_view'}</span>
+                {viewMode === 'cards' ? 'Ver Timeline' : 'Ver Blocos'}
+              </button>
+              <button
+                onClick={() => exportCSV(allFields, farms, entries)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+              >
+                <span className="material-symbols-outlined text-base">download</span>
+                Exportar CSV
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          {([
+            { id: 'blocos' as ResearchTab, label: 'Blocos / Parcelas', icon: 'grid_view' },
+            { id: 'experimentos' as ResearchTab, label: 'Experimentos', icon: 'science' },
+          ]).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setResearchTab(tab.id)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all"
+              style={researchTab === tab.id
+                ? { background: 'var(--primary-dim)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }
+                : { color: 'var(--muted)', border: '1px solid transparent' }}
+            >
+              <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Experimentos tab */}
+        {researchTab === 'experimentos' && <ExperimentsTab />}
+
+        {/* Blocos tab content below */}
+        {researchTab === 'blocos' && (<>
 
         {/* Auto-analysis status banner */}
         {isGddLoading ? (
@@ -818,6 +1206,9 @@ export default function Research() {
             )}
           </>
         )}
+
+        {/* End blocos tab */}
+        </>)}
       </div>
     </div>
   );

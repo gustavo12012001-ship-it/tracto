@@ -39,6 +39,7 @@ from models import (
     PlaceItem,
     FieldIntelligenceSnapshot,
     SentinelPreloadRequest,
+    FieldLogCreate,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -68,6 +69,8 @@ from services.agronomic_engine import AgronomicEngine
 from services.field_intelligence_service import build_field_intelligence_snapshot
 from services.market_service import get_market_quotes
 from services.analysis_history_service import save_analysis, get_field_analyses
+from services.field_log_service import create_log, get_field_logs, delete_log
+from services.api_key_service import generate_api_key, verify_api_key, list_api_keys, revoke_api_key
 
 # --- Security & Rate Limiting ---
 
@@ -153,6 +156,92 @@ def health_check():
     }
 
 
+# ---------------------------------------------------------------------------
+# Auth helpers — JWT Bearer OR X-API-Key
+# ---------------------------------------------------------------------------
+
+async def get_current_user_or_api_key(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+) -> AuthenticatedUser:
+    """
+    Dependency que aceita autenticação via:
+      1. Header Authorization: Bearer <JWT>  (via Supabase)
+      2. Header X-API-Key: tracto_live_<hex> (via api_key_service)
+
+    Lança 401 se nenhum método de autenticação for válido.
+    """
+    # Tenta API Key primeiro (mais barata computacionalmente quando JWT não presente)
+    if x_api_key:
+        try:
+            user_id = verify_api_key(x_api_key)
+            if user_id:
+                return AuthenticatedUser(id=user_id)
+        except Exception as exc:
+            logging.warning("[auth] Erro ao verificar X-API-Key: %s", exc)
+
+    # Fallback para JWT Bearer
+    if authorization:
+        try:
+            from services.auth_service import _extract_bearer_token, verify_access_token
+            token = _extract_bearer_token(authorization)
+            return verify_access_token(token)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logging.warning("[auth] Erro ao verificar JWT: %s", exc)
+
+    raise HTTPException(
+        status_code=401,
+        detail="Autenticação obrigatória. Use Authorization: Bearer <token> ou X-API-Key: <chave>.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp via Z-API — helper de envio
+# ---------------------------------------------------------------------------
+
+async def send_whatsapp_reply(phone: str, message: str) -> bool:
+    """
+    Envia uma mensagem de resposta via Z-API.
+
+    Requer as env vars:
+      - ZAPI_INSTANCE_ID
+      - ZAPI_TOKEN
+      - ZAPI_CLIENT_TOKEN
+
+    Returns
+    -------
+    True se enviado com sucesso, False caso contrário.
+    """
+    instance_id = os.getenv("ZAPI_INSTANCE_ID")
+    zapi_token = os.getenv("ZAPI_TOKEN")
+    client_token = os.getenv("ZAPI_CLIENT_TOKEN")
+
+    if not instance_id or not zapi_token or not client_token:
+        logging.warning(
+            "[whatsapp] Env vars Z-API ausentes (ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN) "
+            "— resposta não enviada para %s.",
+            phone,
+        )
+        return False
+
+    url = f"https://api.z-api.io/instances/{instance_id}/token/{zapi_token}/send-text"
+    payload = {"phone": phone, "message": message}
+    headers = {"client-token": client_token, "Content-Type": "application/json"}
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            logging.info("[whatsapp] Mensagem enviada via Z-API para %s", phone)
+            return True
+    except Exception as exc:
+        logging.warning("[whatsapp] Falha ao enviar mensagem Z-API para %s: %s", phone, exc)
+        return False
+
+
 
 # --- Stage 3: Commercial, Push & WhatsApp ---
 
@@ -230,42 +319,99 @@ async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = 
 
 @app.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request):
-    # Base estrutural para recebimento via Twilio / Meta API
-    # Twilio envia via form-urlencoded
-    form_data = await request.form()
-    phone = form_data.get("From", "")
-    body = form_data.get("Body", "")
-    
-    if not phone:
-        return {"status": "ignored", "reason": "No sender phone number"}
-        
-    # Consultar o user_id pelo telefone
-    contact_res = billing_service.supabase.table("whatsapp_contacts").select("user_id").eq("phone_number", phone).execute()
-    if not contact_res.data:
-        return {"status": "ok", "message": "Telefone nao registrado na Tracto. Resposta automatica ignorada."}
-        
-    user_id = contact_res.data[0]["user_id"]
-    
-    # Buscar contexto agronÃ´mico do usuÃ¡rio
-    farms_res = billing_service.supabase.table("farms").select("id, name").eq("user_id", user_id).execute()
-    farm_context = f"Fazendas do produtor: {[f['name'] for f in (farms_res.data or [])]}"
-    
-    # Repassar para ai_service passando o contexto
-    # Neste mock completo, a resposta seria enviada de volta Ã  API do WhatsApp/Twilio
+    """
+    Webhook Z-API para mensagens WhatsApp recebidas.
+    Suporta JSON (Z-API) e form-urlencoded (Twilio legado).
+    """
+    phone = ""
+    body = ""
     try:
-        reply = generate_chat_response(
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            payload_json = await request.json()
+            phone = str(payload_json.get("phone", "")).strip()
+            text_obj = payload_json.get("text") or {}
+            body = str(text_obj.get("message", "") if isinstance(text_obj, dict) else text_obj).strip()
+        else:
+            form_data = await request.form()
+            phone = str(form_data.get("From", "") or form_data.get("phone", "")).strip()
+            body = str(form_data.get("Body", "") or form_data.get("message", "")).strip()
+    except Exception as exc:
+        logging.warning("[whatsapp] Erro ao parsear payload: %s", exc)
+        return {"status": "ignored", "reason": "Payload inválido"}
+
+    if not phone:
+        return {"status": "ignored", "reason": "Número de remetente ausente"}
+
+    if not body:
+        return {"status": "ignored", "reason": "Mensagem vazia"}
+
+    # Verifica se o número está cadastrado na tabela profiles
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    user_id: str | None = None
+
+    if supabase_url and supabase_key:
+        try:
+            import requests as _req
+            profiles_resp = _req.get(
+                f"{supabase_url}/rest/v1/profiles",
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                },
+                params={
+                    "phone": f"eq.{phone}",
+                    "select": "id",
+                    "limit": "1",
+                },
+                timeout=8,
+            )
+            profiles_resp.raise_for_status()
+            profiles = profiles_resp.json()
+            if isinstance(profiles, list) and profiles:
+                user_id = profiles[0].get("id")
+        except Exception as exc:
+            logging.warning("[whatsapp] Erro ao buscar perfil phone=%s: %s", phone, exc)
+
+    if not user_id:
+        logging.info("[whatsapp] Número %s não registrado na Tracto — ignorando.", phone)
+        return {"status": "ok", "message": "Número não registrado. Mensagem ignorada."}
+
+    # Busca contexto agronômico da fazenda do usuário
+    farm_context_str = "Fazenda sem dados disponíveis no momento."
+    try:
+        farms = farm_service.get_farms(user_id)
+        if farms:
+            farm_names = [f.get("name", "") for f in farms if f.get("name")]
+            farm_context_str = f"Fazendas do produtor: {', '.join(farm_names)}."
+    except Exception as exc:
+        logging.warning("[whatsapp] Erro ao buscar fazendas user_id=%s: %s", user_id, exc)
+    
+    # Gera resposta com Tracto AI e envia via Z-API
+    reply_text = ""
+    # [Z-API send below] Ã  API do WhatsApp/Twilio
+    try:
+        reply_text = await asyncio.to_thread(
+            generate_chat_response,
             message=body,
-            context=f"Origem: WhatsApp. {farm_context}. Responda de forma concisa como Tracto AI via WhatsApp.",
-            history=[]
+            context=(
+                f"Origem: WhatsApp. {farm_context_str} "
+                "Responda de forma concisa e prática como Tracto AI via WhatsApp."
+            ),
+            history=[],
         )
-    except Exception as e:
-        reply = f"Erro na Tracto AI: {str(e)}"
+    except Exception as exc:
+        logging.warning("[whatsapp] Erro ao gerar resposta AI user_id=%s: %s", user_id, exc)
+        reply_text = "Olá! Recebi sua mensagem. No momento estou com dificuldade de processar sua solicitação. Tente novamente em instantes."
     # MOCK ESTRUTURAL DE SAÃDA:
     # A Tracto AI roda perfeitamente o contexto, mas a resposta NÃƒO Ã© devolvida
     # pois nÃ£o temos a API do WhatsApp/Twilio configurada e tokenizada.
     # O despache morre em um logger seguro.
-    print(f"[WHATSAPP OUT] (MOCK DE ENVIO) Para: {phone} | Msg: {reply}")
-    return {"status": "ok", "message": "Recebido e processado no backend Tracto AI. Retorno para Meta bloqueado intencionalmente (Sem Provedor)."}
+    # Envia resposta via Z-API
+    sent = await send_whatsapp_reply(phone=phone, message=reply_text)
+    logging.info("[whatsapp] phone=%s user_id=%s enviado=%s", phone, user_id, sent)
+    return {"status": "ok", "sent": sent}
 
 # --- /Stage 3 ---
 
@@ -968,6 +1114,148 @@ async def places_search_endpoint(
         raise HTTPException(status_code=500, detail="Erro interno ao buscar lugares.") from exc
 
 
+# ---------------------------------------------------------------------------
+# Feature 1: Caderno de Campo — /api/fields/{field_id}/logs
+# ---------------------------------------------------------------------------
+
+@app.post("/api/fields/{field_id}/logs", status_code=201)
+async def create_field_log_endpoint(
+    field_id: str,
+    body: FieldLogCreate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cria um novo registro no caderno de campo para o talhão."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
+
+        log = await create_log(
+            field_id=field_id,
+            user_id=user.id,
+            data=body.model_dump(exclude_none=True),
+        )
+        return log
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        logging.error("[/api/fields/%s/logs POST] Configuração inválida: %s", field_id, exc)
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível.") from exc
+    except Exception as exc:
+        logging.error("[/api/fields/%s/logs POST] Erro: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao criar registro no caderno de campo.") from exc
+
+
+@app.get("/api/fields/{field_id}/logs")
+async def get_field_logs_endpoint(
+    field_id: str,
+    limit: int = 50,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Retorna o caderno de campo do talhão (logs ordenados por data desc)."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
+
+        logs = await get_field_logs(
+            field_id=field_id,
+            user_id=user.id,
+            limit=min(limit, 200),
+        )
+        return logs
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/logs GET] Erro: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar caderno de campo.") from exc
+
+
+@app.delete("/api/fields/{field_id}/logs/{log_id}", status_code=204)
+async def delete_field_log_endpoint(
+    field_id: str,
+    log_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Deleta um registro do caderno de campo verificando pertencimento ao usuário."""
+    try:
+        # Verifica que o talhão pertence ao usuário
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
+
+        deleted = await delete_log(log_id=log_id, user_id=user.id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Registro não encontrado ou sem permissão para deletar.")
+        return None  # 204 No Content
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/fields/%s/logs/%s DELETE] Erro: %s", field_id, log_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao deletar registro do caderno de campo.") from exc
+
+
+# ---------------------------------------------------------------------------
+# Feature 3: API Keys — /api/keys
+# ---------------------------------------------------------------------------
+
+@app.post("/api/keys", status_code=201)
+async def create_api_key_endpoint(
+    body: dict,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Gera uma nova API key para o usuário.
+    A chave em plain text é retornada APENAS nesta resposta — guarde-a com segurança.
+    """
+    try:
+        name = str(body.get("name", "")).strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="O campo 'name' é obrigatório.")
+
+        result = generate_api_key(user_id=user.id, name=name)
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        logging.error("[/api/keys POST] Configuração inválida: %s", exc)
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível.") from exc
+    except Exception as exc:
+        logging.error("[/api/keys POST] Erro: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao gerar API key.") from exc
+
+
+@app.get("/api/keys")
+async def list_api_keys_endpoint(
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Lista as API keys do usuário (sem retornar a chave em plain text)."""
+    try:
+        keys = list_api_keys(user_id=user.id)
+        return keys
+    except Exception as exc:
+        logging.error("[/api/keys GET] Erro: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao listar API keys.") from exc
+
+
+@app.delete("/api/keys/{key_id}", status_code=204)
+async def revoke_api_key_endpoint(
+    key_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Revoga (desativa) uma API key do usuário."""
+    try:
+        revoked = revoke_api_key(key_id=key_id, user_id=user.id)
+        if not revoked:
+            raise HTTPException(status_code=404, detail="API key não encontrada ou sem permissão para revogar.")
+        return None  # 204 No Content
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/keys/%s DELETE] Erro: %s", key_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao revogar API key.") from exc
+
+
 @app.post("/api/analyze-field", response_model=FieldAnalysisResponse)
 @limiter.limit("3/minute")
 async def analyze_field_endpoint(request: Request, field_req: FieldAnalysisRequest, _user: AuthenticatedUser = Depends(get_current_user)):
@@ -1397,7 +1685,7 @@ async def delete_field_endpoint(field_id: str, user: AuthenticatedUser = Depends
 @limiter.limit("10/minute")
 async def market_quotes_endpoint(
     request: Request,
-    _user: AuthenticatedUser = Depends(get_current_user),
+    _user: AuthenticatedUser = Depends(get_current_user_or_api_key),
 ):
     """
     Retorna cotações de commodities em tempo real (yfinance + awesomeapi).
@@ -1415,7 +1703,7 @@ async def market_quotes_endpoint(
 async def get_field_analyses_endpoint(
     field_id: str,
     limit: int = 30,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(get_current_user_or_api_key),
 ):
     """
     Retorna o histórico de análises do talhão (até 30 registros, mais recente primeiro).
