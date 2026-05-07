@@ -1761,6 +1761,8 @@ interface Avaliacao {
   nota_doencas: string;
   acamamento: string;
   quebramento: string;
+  stand_plantas: string;    // plantas por metro linear
+  dominadas: string;        // % plantas dominadas/atrasadas
   fileiras_graos: string;
   notas: string;
   traits_custom: TraitCustom[];
@@ -1790,6 +1792,8 @@ function AvaliacaoTab() {
   const [filterGeno, setFilterGeno] = useState('');
   const [customKey, setCustomKey] = useState('');
   const [customVal, setCustomVal] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  const [detectNote, setDetectNote] = useState<string | null>(null);
 
   const genotypes: { id: string; name: string }[] = (() => {
     try { return JSON.parse(localStorage.getItem('tracto-germoplasma-v1') ?? '[]'); } catch { return []; }
@@ -1803,6 +1807,7 @@ function AvaliacaoTab() {
     alt_planta:'', alt_espiga:'', cor_pendao:'Amarelo', largura_folha:'',
     diam_colmo:'', dias_florescimento_m:'', dias_florescimento_f:'',
     nota_visual:'', nota_doencas:'', acamamento:'', quebramento:'',
+    stand_plantas:'', dominadas:'',
     fileiras_graos:'', notas:'', traits_custom:[],
   });
   const [form, setForm] = useState(emptyForm());
@@ -1848,6 +1853,84 @@ function AvaliacaoTab() {
     setList(updated); saveAvaliacoes(updated);
   };
 
+  // Detecção automática de traits por foto (preenche o formulário automaticamente)
+  const detectTraitsFromPhoto = async () => {
+    if (pendingPhotos.length === 0) return;
+    setDetecting(true);
+    setDetectNote(null);
+    const photo = pendingPhotos[0];
+    try {
+      const { apiFetch } = await import('../services/api');
+      interface ChatReply { reply: string }
+      const res = await apiFetch<ChatReply>('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          field_id: 'phenotype-detection',
+          messages: [{
+            role: 'user',
+            text: `Você é um especialista em avaliação fenotípica de milho, sorgo e cereais. Analise esta foto de parcela experimental e estime os parâmetros abaixo. Responda SOMENTE com um objeto JSON válido, sem nenhum texto antes ou depois:
+
+{
+  "alt_planta_cm": <altura da planta até o final do pendão em cm, ou null>,
+  "alt_espiga_cm": <altura de inserção da espiga em cm, ou null>,
+  "cor_pendao": <"Amarelo" | "Roxo" | "Amarelo-Roxo" | "Branco" | null>,
+  "acamamento_pct": <% plantas com colmo deitado no solo, 0-100, ou null>,
+  "quebramento_pct": <% colmos quebrados abaixo da espiga, 0-100, ou null>,
+  "stand_plantas_metro": <número médio de plantas por metro linear visível, ou null>,
+  "dominadas_pct": <% plantas visivelmente menores/atrasadas em relação à média da parcela, 0-100, ou null>,
+  "nota_visual": <nota geral de aspecto da parcela de 1 a 9 sendo 9 excelente, ou null>,
+  "nota_doencas": <nota de sanidade foliar de 1 a 9 sendo 9 sem doenças, ou null>,
+  "obs": "<observações importantes: uniformidade, sintomas visíveis, estágio fenológico, presença de referência de escala na foto>"
+}
+
+IMPORTANTE: se não houver referência de escala visível (pessoa, régua, bitola), estime a altura com base na proporção visual e mencione isso em obs. Seja conservador — prefira null a um número muito incerto.`,
+          }],
+          image_base64: photo.base64,
+          image_mime_type: photo.mime,
+          user_profile: 'pesquisador',
+        }),
+      });
+
+      // Extrai JSON da resposta
+      const jsonMatch = res.reply.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('resposta sem JSON');
+      const d = JSON.parse(jsonMatch[0]);
+
+      // Preenche o formulário com os valores detectados (preserva o que o usuário já digitou)
+      setForm(prev => {
+        const next = { ...prev };
+        if (d.alt_planta_cm != null)      next.alt_planta  = String(d.alt_planta_cm);
+        if (d.alt_espiga_cm != null)      next.alt_espiga  = String(d.alt_espiga_cm);
+        if (d.cor_pendao)                 next.cor_pendao  = d.cor_pendao;
+        if (d.acamamento_pct != null)     next.acamamento  = String(d.acamamento_pct);
+        if (d.quebramento_pct != null)    next.quebramento = String(d.quebramento_pct);
+        if (d.stand_plantas_metro != null) next.stand_plantas = String(d.stand_plantas_metro);
+        if (d.dominadas_pct != null)      next.dominadas   = String(d.dominadas_pct);
+        if (d.nota_visual != null)        next.nota_visual  = String(d.nota_visual);
+        if (d.nota_doencas != null)       next.nota_doencas = String(d.nota_doencas);
+        return next;
+      });
+
+      const filled = [
+        d.alt_planta_cm   != null && 'alt. planta',
+        d.alt_espiga_cm   != null && 'inserção espiga',
+        d.cor_pendao               && 'cor pendão',
+        d.acamamento_pct  != null && 'acamamento',
+        d.quebramento_pct != null && 'quebramento',
+        d.stand_plantas_metro != null && 'stand',
+        d.dominadas_pct   != null && 'dominadas',
+        d.nota_visual     != null && 'nota visual',
+        d.nota_doencas    != null && 'nota doenças',
+      ].filter(Boolean).join(', ');
+
+      setDetectNote(`✅ Preenchido automaticamente: ${filled || 'nenhum campo detectado'}${d.obs ? `\n📷 ${d.obs}` : ''}`);
+    } catch {
+      setDetectNote('⚠️ Não foi possível extrair dados estruturados. Tente uma foto mais clara com boa iluminação e visibilidade das plantas.');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   // Análise IA com fotos (envia para MelhorIA via /api/chat)
   const analyzeWithAI = async (av: Avaliacao, photosToSend?: { base64: string; mime: string; name: string }[]) => {
     setAnalyzingId(av.id);
@@ -1868,6 +1951,8 @@ function AvaliacaoTab() {
         av.nota_doencas     ? `Nota de doenças: ${av.nota_doencas}/9` : '',
         av.acamamento       ? `Acamamento: ${av.acamamento}%` : '',
         av.quebramento      ? `Quebramento: ${av.quebramento}%` : '',
+        av.stand_plantas    ? `Stand de plantas: ${av.stand_plantas} plantas/metro` : '',
+        av.dominadas        ? `Plantas dominadas: ${av.dominadas}%` : '',
         av.fileiras_graos   ? `Fileiras de grãos: ${av.fileiras_graos}` : '',
         ...av.traits_custom.map(t => `${t.label}: ${t.value}`),
         av.notas            ? `Observações: ${av.notas}` : '',
@@ -2029,7 +2114,7 @@ function AvaliacaoTab() {
           {/* Notas e sanidade */}
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: '#f59e0b' }}>Notas Agronômicas (1 = ruim → 9 = excelente)</p>
-            <div className="grid sm:grid-cols-4 gap-3">
+            <div className="grid sm:grid-cols-3 gap-3">
               <div>
                 <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Nota visual</label>
                 <select className={AV_INP} style={{ ...AV_STYLE, background: '#1e293b' }} value={form.nota_visual} onChange={e => f('nota_visual', e.target.value)}>
@@ -2045,12 +2130,20 @@ function AvaliacaoTab() {
                 </select>
               </div>
               <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Stand de plantas (plantas/metro)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="Ex: 4.5" step="0.1" min="0" value={form.stand_plantas} onChange={e => f('stand_plantas', e.target.value)} />
+              </div>
+              <div>
                 <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Acamamento (%)</label>
                 <input type="number" className={AV_INP} style={AV_STYLE} placeholder="0–100" min="0" max="100" value={form.acamamento} onChange={e => f('acamamento', e.target.value)} />
               </div>
               <div>
                 <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Quebramento (%)</label>
                 <input type="number" className={AV_INP} style={AV_STYLE} placeholder="0–100" min="0" max="100" value={form.quebramento} onChange={e => f('quebramento', e.target.value)} />
+              </div>
+              <div>
+                <label className={AV_LBL} style={{ color: 'var(--muted)' }}>Plantas dominadas (%)</label>
+                <input type="number" className={AV_INP} style={AV_STYLE} placeholder="0–100" min="0" max="100" value={form.dominadas} onChange={e => f('dominadas', e.target.value)} />
               </div>
             </div>
           </div>
@@ -2083,29 +2176,64 @@ function AvaliacaoTab() {
             </div>
           </div>
 
-          {/* Fotos */}
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#fb923c' }}>
-              Fotos da Parcela ({pendingPhotos.length}/10) — para análise visual IA
-            </p>
+          {/* Fotos + Detecção Automática */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#fb923c' }}>
+                Fotos da Parcela ({pendingPhotos.length}/10)
+              </p>
+              {pendingPhotos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={detectTraitsFromPhoto}
+                  disabled={detecting}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50 hover:opacity-90 transition-all"
+                  style={{ background: detecting ? 'rgba(167,139,250,0.3)' : 'linear-gradient(135deg,#a78bfa,#7c3aed)' }}
+                >
+                  {detecting
+                    ? <><span className="inline-block w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin" />Detectando campos...</>
+                    : <><span className="material-symbols-outlined text-sm">auto_awesome</span>Detectar campos automaticamente</>
+                  }
+                </button>
+              )}
+            </div>
+
             <label className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all hover:opacity-80 w-fit"
               style={{ background: 'rgba(251,146,60,0.1)', border: '1px dashed rgba(251,146,60,0.4)', color: '#fb923c' }}>
               <span className="material-symbols-outlined text-base">add_photo_alternate</span>
               <span className="text-xs font-semibold">Selecionar fotos (JPG/PNG/WEBP, máx 8MB cada)</span>
               <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handlePhotos} />
             </label>
+
             {pendingPhotos.length > 0 && (
-              <div className="flex gap-2 mt-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap">
                 {pendingPhotos.map((p, i) => (
                   <div key={i} className="relative">
                     <img src={`data:${p.mime};base64,${p.base64}`} alt={p.name}
-                      className="w-16 h-16 rounded-lg object-cover"
-                      style={{ border: '1px solid rgba(255,255,255,0.12)' }} />
+                      className="w-20 h-20 rounded-xl object-cover"
+                      style={{ border: i === 0 ? '2px solid #a78bfa' : '1px solid rgba(255,255,255,0.12)' }} />
+                    {i === 0 && (
+                      <span className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-bold rounded-b-xl py-0.5" style={{ background: 'rgba(124,58,237,0.8)', color: '#fff' }}>
+                        detecção
+                      </span>
+                    )}
                     <button onClick={() => setPendingPhotos(prev => prev.filter((_,idx) => idx !== i))}
                       className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[10px]"
                       style={{ background: '#ef4444', color: '#fff' }}>✕</button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Resultado da detecção */}
+            {detectNote && (
+              <div className="p-3 rounded-xl text-xs leading-relaxed whitespace-pre-wrap"
+                style={{
+                  background: detectNote.startsWith('✅') ? 'rgba(74,222,128,0.08)' : 'rgba(245,158,11,0.08)',
+                  border: `1px solid ${detectNote.startsWith('✅') ? 'rgba(74,222,128,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                  color: detectNote.startsWith('✅') ? '#4ade80' : '#f59e0b',
+                }}>
+                {detectNote}
               </div>
             )}
           </div>

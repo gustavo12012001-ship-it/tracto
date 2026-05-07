@@ -119,31 +119,13 @@ function SidebarContent({
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
 
-        {/* Profile badge or prompt */}
-        {profileLabel ? (
-          <div className="flex items-center justify-between px-3 pt-2 pb-1">
+        {/* Profile badge — apenas exibe o perfil, sem botão de troca */}
+        {profileLabel && (
+          <div className="px-3 pt-2 pb-1">
             <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
               {profileLabel}
             </span>
-            <button
-              onClick={() => { navigate('/app/settings'); onNavClick?.(); }}
-              className="text-[9px] hover:opacity-70 transition-opacity"
-              style={{ color: 'var(--primary)' }}
-              title="Trocar perfil"
-            >
-              trocar
-            </button>
           </div>
-        ) : (
-          <button
-            onClick={() => { navigate('/app/settings'); onNavClick?.(); }}
-            className="w-full flex items-center gap-2 mx-0 mb-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition-all hover:opacity-90"
-            style={{ background: 'rgba(236,91,19,0.10)', border: '1px solid rgba(236,91,19,0.25)', color: '#ec5b13' }}
-          >
-            <span className="material-symbols-outlined text-sm">person_pin</span>
-            <span className="flex-1">Selecione seu perfil</span>
-            <span className="material-symbols-outlined text-sm">arrow_forward</span>
-          </button>
         )}
 
         {navItems.map((item) => (
