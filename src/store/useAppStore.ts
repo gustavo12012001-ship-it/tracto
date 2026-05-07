@@ -254,7 +254,7 @@ export const useAppStore = create<AppState>()(
       syncError: null,
       entitlements: null,
       currentSatelliteScene: null,
-      userProfile: null,
+      userProfile: 'pesquisador',
 
       setCurrentSatelliteScene: (scene) => set({ currentSatelliteScene: scene }),
       setUserProfile: (p) => set({ userProfile: p }),
@@ -690,6 +690,7 @@ export const useAppStore = create<AppState>()(
         currentLocation: state.currentLocation,
         locationStatus: state.locationStatus,
         weatherCache: state.weatherCache,
+        userProfile: state.userProfile,
         // fields NÃO é persistido — vem sempre do Supabase via syncFields()
       }),
     }

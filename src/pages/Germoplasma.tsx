@@ -49,6 +49,18 @@ interface Generation {
 
 type GermoTab = 'germoplasma' | 'cruzamentos' | 'geracoes';
 
+// Avaliação fenotípica resumida (lida do localStorage tracto-avaliacoes-v1)
+interface AvaliacaoGermo {
+  id: string; genotipo: string; experimento: string; parcela: string; data: string;
+  alt_planta: string; alt_espiga: string; cor_pendao: string;
+  largura_folha: string; diam_colmo: string;
+  dias_florescimento_m: string; dias_florescimento_f: string;
+  nota_visual: string; nota_doencas: string; acamamento: string; quebramento: string;
+  fileiras_graos: string; notas: string;
+  traits_custom: { label: string; value: string }[];
+  fotos_analise: string; createdAt: string;
+}
+
 // ── localStorage helpers ───────────────────────────────────────────────────────
 const G_KEY = 'tracto-germoplasma-v1';
 const C_KEY = 'tracto-crosses-v1';
@@ -237,6 +249,9 @@ function GermoplasmaTab() {
   const [list, setList]     = useState<Genotype[]>(loadGenotypes);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [fichaResults, setFichaResults] = useState<Record<string, string>>({});
 
   // Load from API on mount, update localStorage as cache
   useEffect(() => {
@@ -247,6 +262,72 @@ function GermoplasmaTab() {
       }
     }).catch(() => { /* offline — use localStorage */ });
   }, []);
+
+  const loadAvaliacoes = (genoName: string): AvaliacaoGermo[] => {
+    try {
+      const all: AvaliacaoGermo[] = JSON.parse(localStorage.getItem('tracto-avaliacoes-v1') ?? '[]');
+      return all.filter(a => a.genotipo === genoName);
+    } catch { return []; }
+  };
+
+  const analyzeConsolidated = async (geno: Genotype) => {
+    setAnalyzingId(geno.id);
+    const avaliacoes = loadAvaliacoes(geno.name);
+    try {
+      const avalText = avaliacoes.map((a, i) =>
+        `Avaliação ${i + 1} — Parcela: ${a.parcela || '—'} | Data: ${a.data}\n` +
+        [
+          a.alt_planta       ? `  Altura de planta: ${a.alt_planta} cm` : '',
+          a.alt_espiga       ? `  Inserção de espiga: ${a.alt_espiga} cm` : '',
+          a.cor_pendao       ? `  Pendão: ${a.cor_pendao}` : '',
+          a.largura_folha    ? `  Folha: ${a.largura_folha} cm` : '',
+          a.diam_colmo       ? `  Colmo: ${a.diam_colmo} mm` : '',
+          a.nota_visual      ? `  Nota visual: ${a.nota_visual}/9` : '',
+          a.nota_doencas     ? `  Doenças: ${a.nota_doencas}/9` : '',
+          a.acamamento       ? `  Acamamento: ${a.acamamento}%` : '',
+          ...(a.traits_custom ?? []).map(t => `  ${t.label}: ${t.value}`),
+          a.fotos_analise    ? `  Análise anterior: ${a.fotos_analise.slice(0, 200)}...` : '',
+        ].filter(Boolean).join('\n')
+      ).join('\n\n');
+
+      const prompt = `Você é a MelhorIA, analista de melhoramento vegetal.
+
+MATERIAL: ${geno.name}
+Espécie: ${geno.species || '—'} | Geração: ${geno.generation} | Status atual: ${geno.status}
+Genealogia: ♀ ${geno.female_parent || '—'} × ♂ ${geno.male_parent || '—'}
+Características cadastradas: ${geno.traits || '—'}
+Origem: ${geno.origin || '—'}
+
+AVALIAÇÕES DE CAMPO (${avaliacoes.length} avaliação${avaliacoes.length !== 1 ? 'ões' : ''}):
+${avalText || 'Nenhuma avaliação fenotípica registrada ainda.'}
+
+Com base em todos esses dados, forneça:
+1. RESUMO AGRONÔMICO: desempenho geral desta linhagem
+2. PONTOS FORTES: características que se destacaram positivamente
+3. PONTOS DE ATENÇÃO: limitações ou inconsistências observadas
+4. RECOMENDAÇÃO: avançar geração, manter em avaliação, cruzar ou descartar? Justifique.
+5. PRÓXIMOS PASSOS: o que ainda seria importante avaliar ou confirmar.`;
+
+      const { apiFetch: api } = await import('../services/api');
+      interface ChatReply { reply: string }
+      const res = await api<ChatReply>('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          field_id: 'germoplasma',
+          messages: [{ role: 'user', text: prompt }],
+          user_profile: 'pesquisador',
+          research_context: `Germoplasma: ${JSON.stringify(geno)}\nAvaliacoes: ${JSON.stringify(avaliacoes)}`,
+        }),
+      });
+      setFichaResults(prev => ({ ...prev, [geno.id]: res.reply }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro';
+      setFichaResults(prev => ({ ...prev, [geno.id]: `Erro: ${msg}` }));
+    } finally {
+      setAnalyzingId(null);
+    }
+  };
+
   const [filterStatus, setFilterStatus] = useState<GenoStatus | 'Todos'>('Todos');
 
   const emptyForm = { name:'', species:'', generation:'F1', status:'Em desenvolvimento' as GenoStatus,
@@ -377,51 +458,141 @@ function GermoplasmaTab() {
           <p className="text-xs text-center px-8" style={{ color: 'var(--muted)' }}>Cadastre as linhagens do seu programa de melhoramento.</p>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           {filtered.map(g => {
             const sc = STATUS_COLORS[g.status];
+            const avaliacoes = loadAvaliacoes(g.name);
+            const avCount = avaliacoes.length;
+            const isExpanded = expandedId === g.id;
+            const fichaResult = fichaResults[g.id];
             return (
-              <div key={g.id} className="rounded-2xl border p-4 flex flex-col gap-3" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.07)' }}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>{g.generation}</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: sc.bg, color: sc.color }}>{g.status}</span>
+              <div key={g.id} className="rounded-2xl border flex flex-col" style={{ background: 'rgba(255,255,255,0.02)', borderColor: isExpanded ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.07)', transition: 'border-color 0.2s' }}>
+                {/* Card header */}
+                <div className="p-4 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>{g.generation}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: sc.bg, color: sc.color }}>{g.status}</span>
+                        {avCount > 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa' }}>
+                            {avCount} avaliação{avCount !== 1 ? 'ões' : ''}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-black text-white">{g.name}</p>
+                      {g.species && <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{g.species}</p>}
                     </div>
-                    <p className="text-sm font-black text-white">{g.name}</p>
-                    {g.species && <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{g.species}</p>}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : g.id)}
+                        className="p-1.5 rounded-lg transition-all"
+                        style={{ color: isExpanded ? '#a78bfa' : '#64748b', background: isExpanded ? 'rgba(167,139,250,0.12)' : 'transparent' }}
+                        title="Ver Ficha Consolidada"
+                      >
+                        <span className="material-symbols-outlined text-sm">lab_research</span>
+                      </button>
+                      <button
+                        onClick={() => exportPassport(g)}
+                        className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-all"
+                        style={{ color: '#60a5fa' }}
+                        title="Exportar Passaporte PDF"
+                      >
+                        <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                      </button>
+                      <button onClick={() => del(g.id)} className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#f87171' }}>
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => exportPassport(g)}
-                    className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-all"
-                    style={{ color: '#60a5fa', flexShrink: 0 }}
-                    title="Exportar Passaporte PDF"
-                  >
-                    <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                  </button>
-                  <button onClick={() => del(g.id)} className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#f87171', flexShrink: 0 }}>
-                    <span className="material-symbols-outlined text-sm">delete</span>
-                  </button>
+                  {(g.female_parent || g.male_parent) && (
+                    <div className="flex items-center gap-2 text-xs p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ color: '#f472b6' }}>♀ {g.female_parent || '—'}</span>
+                      <span style={{ color: 'var(--muted)' }}>×</span>
+                      <span style={{ color: '#818cf8' }}>♂ {g.male_parent || '—'}</span>
+                    </div>
+                  )}
+                  {g.traits && (
+                    <div className="flex gap-1 flex-wrap">
+                      {g.traits.split(',').map(t => t.trim()).filter(Boolean).map(t => (
+                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.08)', color: '#34d399', border: '1px solid rgba(52,211,153,0.15)' }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  {g.notes && <p className="text-xs italic" style={{ color: 'var(--muted)' }}>{g.notes}</p>}
+                  <div className="flex items-center gap-3 text-[10px]" style={{ color: '#334155' }}>
+                    {g.year_obtained && <span>📅 {g.year_obtained}</span>}
+                    {g.origin && <span>🏛️ {g.origin}</span>}
+                  </div>
                 </div>
-                {(g.female_parent || g.male_parent) && (
-                  <div className="flex items-center gap-2 text-xs p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ color: '#f472b6' }}>♀ {g.female_parent || '—'}</span>
-                    <span style={{ color: 'var(--muted)' }}>×</span>
-                    <span style={{ color: '#818cf8' }}>♂ {g.male_parent || '—'}</span>
+
+                {/* Ficha Consolidada — expandida */}
+                {isExpanded && (
+                  <div className="border-t flex flex-col gap-4 p-4" style={{ borderColor: 'rgba(167,139,250,0.2)', background: 'rgba(167,139,250,0.03)' }}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#a78bfa' }}>
+                        🔬 Ficha Consolidada — {g.name}
+                      </p>
+                      <button
+                        onClick={() => analyzeConsolidated(g)}
+                        disabled={analyzingId === g.id}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-white disabled:opacity-50 hover:opacity-90 transition-all"
+                        style={{ background: 'linear-gradient(135deg, #a78bfa, #7c3aed)' }}
+                      >
+                        {analyzingId === g.id
+                          ? <><span className="inline-block w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin" />Analisando...</>
+                          : <><span className="material-symbols-outlined text-xs">smart_toy</span>Análise MelhorIA</>
+                        }
+                      </button>
+                    </div>
+
+                    {/* Avaliações registradas */}
+                    {avCount === 0 ? (
+                      <div className="flex items-center gap-2 p-3 rounded-xl text-xs" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#64748b' }}>
+                        <span className="material-symbols-outlined text-sm">info</span>
+                        Nenhuma avaliação fenotípica registrada para este material.
+                        Acesse <strong style={{ color: '#a78bfa' }}>Pesquisa Agronômica → Avaliações Fenotípicas</strong> para depositar os dados de campo.
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>Dados coletados em campo</p>
+                        {avaliacoes.map((av, i) => (
+                          <div key={av.id} className="p-3 rounded-xl flex flex-col gap-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold text-white">Avaliação {i + 1}</span>
+                              {av.parcela && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(96,165,250,0.1)', color: '#60a5fa' }}>Parcela {av.parcela}</span>}
+                              {av.experimento && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399' }}>{av.experimento}</span>}
+                              <span className="text-[10px]" style={{ color: '#475569' }}>{av.data}</span>
+                            </div>
+                            <div className="flex gap-3 flex-wrap text-[10px]" style={{ color: '#94a3b8' }}>
+                              {av.alt_planta    && <span>🌱 {av.alt_planta} cm</span>}
+                              {av.alt_espiga    && <span>🌽 Esp. {av.alt_espiga} cm</span>}
+                              {av.cor_pendao    && <span>🌸 {av.cor_pendao}</span>}
+                              {av.nota_visual   && <span>👁 Visual {av.nota_visual}/9</span>}
+                              {av.nota_doencas  && <span>🦠 Doenças {av.nota_doencas}/9</span>}
+                              {av.acamamento    && <span>💨 Acam. {av.acamamento}%</span>}
+                            </div>
+                            {av.fotos_analise && (
+                              <p className="text-[10px] italic leading-relaxed mt-0.5" style={{ color: '#7c3aed' }}>
+                                MelhorIA: {av.fotos_analise.slice(0, 180)}{av.fotos_analise.length > 180 ? '...' : ''}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Resultado da análise consolidada */}
+                    {fichaResult && (
+                      <div className="p-4 rounded-xl flex flex-col gap-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
+                        <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#a78bfa' }}>
+                          🧬 Análise Consolidada MelhorIA
+                        </p>
+                        <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: '#cbd5e1' }}>{fichaResult}</p>
+                      </div>
+                    )}
                   </div>
                 )}
-                {g.traits && (
-                  <div className="flex gap-1 flex-wrap">
-                    {g.traits.split(',').map(t => t.trim()).filter(Boolean).map(t => (
-                      <span key={t} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.08)', color: '#34d399', border: '1px solid rgba(52,211,153,0.15)' }}>{t}</span>
-                    ))}
-                  </div>
-                )}
-                {g.notes && <p className="text-xs italic" style={{ color: 'var(--muted)' }}>{g.notes}</p>}
-                <div className="flex items-center gap-3 text-[10px]" style={{ color: '#334155' }}>
-                  {g.year_obtained && <span>📅 {g.year_obtained}</span>}
-                  {g.origin && <span>🏛️ {g.origin}</span>}
-                </div>
               </div>
             );
           })}
