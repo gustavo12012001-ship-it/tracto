@@ -36,7 +36,9 @@ interface SentinelScene {
   date: string;
   date_br: string;
   cloud_coverage: number | null;
-  source: 's1' | 's2' | 'planet';
+  source: 's1' | 's2' | 'up42';
+  provider?: string;
+  resolution_m?: number | null;
   collection: string;
   thumbnail_url: string | null;
   orbit?: string;
@@ -45,7 +47,7 @@ interface SentinelScene {
 interface ScenesState {
   s2: SentinelScene[];
   s1: SentinelScene[];
-  planet: SentinelScene[];
+  up42: SentinelScene[];
   loading: boolean;
   error: string | null;
   fieldId: string | null;
@@ -298,13 +300,14 @@ function SceneCard({
   onClick: () => void;
 }) {
   const isS2 = scene.source === 's2';
-  const isPlanet = scene.source === 'planet';
+  const isUp42 = scene.source === 'up42';
   const cloudOk = scene.cloud_coverage !== null && scene.cloud_coverage <= 30;
   const cloudMid = scene.cloud_coverage !== null && scene.cloud_coverage > 30 && scene.cloud_coverage <= 60;
 
-  const iconName = isS2 ? 'satellite_alt' : isPlanet ? 'public' : 'radar';
-  const iconColor = isS2 ? '#60a5fa' : isPlanet ? '#34d399' : '#a78bfa';
-  const iconBg = isS2 ? 'rgba(96,165,250,0.15)' : isPlanet ? 'rgba(52,211,153,0.15)' : 'rgba(167,139,250,0.15)';
+  const iconName = isS2 ? 'satellite_alt' : isUp42 ? 'satellite_alt' : 'radar';
+  const iconColor = isS2 ? '#60a5fa' : isUp42 ? '#34d399' : '#a78bfa';
+  const iconBg = isS2 ? 'rgba(96,165,250,0.15)' : isUp42 ? 'rgba(52,211,153,0.15)' : 'rgba(167,139,250,0.15)';
+  const resLabel = scene.resolution_m ? `≈${scene.resolution_m}m` : null;
 
   return (
     <button
@@ -320,10 +323,10 @@ function SceneCard({
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-bold text-white leading-tight">{scene.date_br}</p>
-        <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>
+        <p className="text-[10px] mt-0.5 truncate" style={{ color: '#64748b' }}>
           {isS2
             ? scene.cloud_coverage !== null ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens` : 'Cobertura N/D'
-            : isPlanet ? 'PlanetScope · resolução aprox. 3m'
+            : isUp42 ? `${scene.provider || 'Up42'} · preview`
             : scene.orbit ? `Órbita ${scene.orbit}` : 'SAR · Radar'}
         </p>
       </div>
@@ -336,9 +339,9 @@ function SceneCard({
           {cloudOk ? 'LIMPO' : cloudMid ? 'PARCIAL' : 'NUBLADO'}
         </span>
       )}
-      {isPlanet && (
+      {isUp42 && resLabel && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-          style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>≈3m</span>
+          style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>{resLabel}</span>
       )}
       {isLoading && <div className="w-3 h-3 border-2 border-orange-500/40 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />}
     </button>
@@ -358,8 +361,8 @@ function ScenesPanel({
   onClose: () => void;
   onSelectScene: (scene: SentinelScene) => void;
 }) {
-  const [tab, setTab] = useState<'s2' | 's1' | 'planet'>('s2');
-  const currentScenes = tab === 's2' ? scenes.s2 : tab === 's1' ? scenes.s1 : scenes.planet;
+  const [tab, setTab] = useState<'s2' | 's1' | 'up42'>('s2');
+  const currentScenes = tab === 's2' ? scenes.s2 : tab === 's1' ? scenes.s1 : scenes.up42;
 
   return (
     <div className="absolute top-4 right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
@@ -377,7 +380,7 @@ function ScenesPanel({
         {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
           { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
-          { key: 'planet', label: 'Planet', icon: 'public', color: '#34d399', desc: 'Alta Res · 3m' },
+          { key: 'up42', label: 'Up42', icon: 'satellite_alt', color: '#34d399', desc: 'Alta Res · pay/uso' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button key={key} onClick={() => setTab(key)} className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl transition-all"
             style={{ background: tab === key ? `${color}18` : 'rgba(255,255,255,0.03)', border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}` }}>
@@ -405,7 +408,7 @@ function ScenesPanel({
               {tab === 's2' ? 'cloud_off' : tab === 's1' ? 'signal_disconnected' : 'public_off'}
             </span>
             <p className="text-[10px]" style={{ color: '#64748b' }}>
-              {tab === 'planet' ? 'Nenhuma imagem Planet nos últimos 90 dias.' : `Nenhuma imagem ${tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.`}
+              {tab === 'up42' ? 'Nenhuma imagem Up42 disponível nos últimos 90 dias.' : `Nenhuma imagem ${tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.`}
             </p>
           </div>
         ) : (
@@ -420,9 +423,13 @@ function ScenesPanel({
       </div>
       <div className="px-4 py-2.5 flex flex-col gap-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          {tab === 'planet' ? 'Fonte: Planet Labs · Cena PlanetScope' : 'Catálogo: Copernicus · Earth Search STAC (gratuito)'}
+          {tab === 'up42' ? 'Up42 Marketplace · Pléiades · SPOT · Satellogic' : 'Catálogo: Copernicus · Earth Search STAC (gratuito)'}
         </p>
-        {tab !== 'planet' && (
+        {tab === 'up42' ? (
+          <p className="text-[9px] text-center" style={{ color: '#1e3a5f' }}>
+            Preview gratuito · imagem completa por pedido (pay/uso)
+          </p>
+        ) : (
           <p className="text-[9px] text-center" style={{ color: '#1e3a5f' }}>
             Renderização: Sentinel Hub Processing API (requer credenciais)
           </p>
@@ -562,10 +569,10 @@ export default function FieldMap() {
 
   // ── Cenas e overlay ───────────────────────────────────────────────────────
   const [showScenesPanel, setShowScenesPanel] = useState(false);
-  const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], planet: [], loading: false, error: null, fieldId: null });
+  const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], up42: [], loading: false, error: null, fieldId: null });
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
-  const [planetActivating, setPlanetActivating] = useState(false);
 
+  // Ref de timer não é mais usado para Up42 (não tem asset activation), mantido por compatibilidade
   const planetRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevUrlRef = useRef<string | null>(null);
   const loadingScenesFieldRef = useRef<string | null>(null);
@@ -579,23 +586,23 @@ export default function FieldMap() {
     if (loadingScenesFieldRef.current === activeFieldId) return;
 
     loadingScenesFieldRef.current = activeFieldId;
-    setScenes({ s2: [], s1: [], planet: [], loading: true, error: null, fieldId: activeFieldId });
+    setScenes({ s2: [], s1: [], up42: [], loading: true, error: null, fieldId: activeFieldId });
 
     const fetchScenes = async () => {
       try {
         const headers = await buildAuthHeaders();
-        const [sentinelResp, planetResp] = await Promise.allSettled([
+        const [sentinelResp, up42Resp] = await Promise.allSettled([
           fetch(`${API_URL}/api/sentinel/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
-          fetch(`${API_URL}/api/planet/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
+          fetch(`${API_URL}/api/up42/scenes?field_id=${activeFieldId}&lookback_days=90`, { headers }),
         ]);
         const sentinelData = sentinelResp.status === 'fulfilled' && sentinelResp.value.ok
           ? await sentinelResp.value.json() : { s2: [], s1: [] };
-        const planetData = planetResp.status === 'fulfilled' && planetResp.value.ok
-          ? await planetResp.value.json() : { scenes: [] };
-        setScenes({ s2: sentinelData.s2 || [], s1: sentinelData.s1 || [], planet: planetData.scenes || [], loading: false, error: null, fieldId: activeFieldId });
+        const up42Data = up42Resp.status === 'fulfilled' && up42Resp.value.ok
+          ? await up42Resp.value.json() : { scenes: [] };
+        setScenes({ s2: sentinelData.s2 || [], s1: sentinelData.s1 || [], up42: up42Data.scenes || [], loading: false, error: null, fieldId: activeFieldId });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erro ao buscar cenas.';
-        setScenes({ s2: [], s1: [], planet: [], loading: false, error: msg, fieldId: activeFieldId });
+        setScenes({ s2: [], s1: [], up42: [], loading: false, error: msg, fieldId: activeFieldId });
       } finally {
         if (loadingScenesFieldRef.current === activeFieldId) loadingScenesFieldRef.current = null;
       }
@@ -621,12 +628,9 @@ export default function FieldMap() {
     try {
       const headers = await buildAuthHeaders();
 
-      if (source === 'planet') {
+      if (source === 'up42') {
         if (!sceneId) return;
-        if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
-        setPlanetActivating(false);
-
-        const resp = await fetch(`${API_URL}/api/planet/overlay?field_id=${activeFieldId}&scene_id=${sceneId}`, { headers });
+        const resp = await fetch(`${API_URL}/api/up42/overlay?field_id=${activeFieldId}&scene_id=${sceneId}`, { headers });
         if (!resp.ok) {
           let errorMsg = `Erro ${resp.status}`;
           try { const payload = await resp.json() as { detail?: string }; errorMsg = payload.detail || errorMsg; } catch { errorMsg = await resp.text().catch(() => errorMsg); }
@@ -644,16 +648,6 @@ export default function FieldMap() {
         const objectUrl = URL.createObjectURL(blob);
         prevUrlRef.current = objectUrl;
         setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey, cacheStatus: null, sceneDate: null });
-
-        const assetStatus = resp.headers.get('X-Asset-Status');
-        if (assetStatus === 'activating') {
-          setPlanetActivating(true);
-          planetRetryTimerRef.current = setTimeout(() => {
-            setPlanetActivating(false);
-            planetRetryTimerRef.current = null;
-            handleSelectScene(scene);
-          }, 30000);
-        }
         return;
       }
 
@@ -697,7 +691,6 @@ export default function FieldMap() {
 
   useEffect(() => {
     if (planetRetryTimerRef.current) { clearTimeout(planetRetryTimerRef.current); planetRetryTimerRef.current = null; }
-    setPlanetActivating(false);
     if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
     setCurrentSatelliteScene(null);
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
@@ -1115,7 +1108,7 @@ export default function FieldMap() {
       )}
 
       {/* Badge loading/erro do overlay */}
-      {(overlay.loading || overlay.error || planetActivating) && (
+      {(overlay.loading || overlay.error) && (
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           {overlay.loading && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white"
@@ -1124,14 +1117,7 @@ export default function FieldMap() {
               Carregando imagem...
             </div>
           )}
-          {planetActivating && !overlay.loading && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
-              style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(234,179,8,0.4)', color: '#fbbf24' }}>
-              <div className="w-3 h-3 border-2 border-yellow-500/40 border-t-yellow-400 rounded-full animate-spin" />
-              Processando imagem de alta resolução... (30s)
-            </div>
-          )}
-          {!overlay.loading && !planetActivating && overlay.error && (
+          {!overlay.loading && overlay.error && (
             <div className="px-3 py-2.5 rounded-xl text-[10px] font-medium flex flex-col gap-1"
               style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', maxWidth: 320 }}>
               <span className="font-bold flex items-center gap-1.5"><span>⚠</span><span>Imagem satelital indisponível</span></span>
@@ -1146,7 +1132,7 @@ export default function FieldMap() {
         <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold"
             style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
-            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|planet|') ? 'Planet · Cena PlanetScope (≈3m)' : 'Sentinel-2 · Cor Natural'}
+            🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|up42|') ? 'Up42 · Imagem Alta Resolução' : 'Sentinel-2 · Cor Natural'}
             {overlay.cacheStatus === 'HIT' && ' · Cache'}
             {overlay.cacheStatus === 'MISS' && ' · Gerado agora'}
           </div>

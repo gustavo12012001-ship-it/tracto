@@ -73,6 +73,10 @@ from services.planet_service import (
     get_planet_overlay,
     get_bbox_from_boundaries,
 )
+from services.up42_service import (
+    search_up42_scenes,
+    get_up42_overlay,
+)
 from services.geo_service import GeoProviderError, search_location, search_places_nearby
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
 from services.agronomic_engine import AgronomicEngine
@@ -174,7 +178,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key", "Accept", "Origin", "X-Request-ID"],
-    expose_headers=["X-Scene-Bounds", "X-Scene-Id", "X-Cache", "X-Cache-Source", "X-Source", "X-Scene-Date", "X-Mode", "X-Request-ID"],
+    expose_headers=["X-Scene-Bounds", "X-Scene-Id", "X-Cache", "X-Cache-Source", "X-Source", "X-Scene-Date", "X-Mode", "X-Request-ID", "X-Provider", "X-Resolution", "X-Asset-Status"],
 )
 
 
@@ -1095,6 +1099,89 @@ async def _planet_overlay_response(
         media_type=str(overlay_data.get("content_type") or "image/png"),
         headers=headers,
     )
+
+
+@app.get("/api/up42/scenes")
+@limiter.limit("20/minute")
+async def up42_scenes_endpoint(
+    request: Request,
+    field_id: str,
+    lookback_days: int = 90,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Busca cenas disponíveis no marketplace Up42 para o talhão."""
+    try:
+        lookback_days = min(max(lookback_days, 7), 180)
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+        scenes = await asyncio.to_thread(
+            search_up42_scenes,
+            lat=lat, lng=lng, boundaries=boundaries, lookback_days=lookback_days,
+        )
+        return {"field_id": field_id, "scenes": scenes, "total": len(scenes)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/up42/scenes] Erro field_id=%s: %s", field_id, exc)
+        raise HTTPException(status_code=500, detail="Erro ao buscar cenas Up42.") from exc
+
+
+@app.get("/api/up42/overlay")
+@limiter.limit("15/minute")
+async def up42_overlay_endpoint(
+    request: Request,
+    field_id: str,
+    scene_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Retorna preview/thumbnail da cena Up42 como PNG, recortada ao talhão."""
+    try:
+        field_data = farm_service.get_field_by_id(user.id, field_id)
+        if not field_data:
+            raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+        lat = float(field_data.get("latitude", 0))
+        lng = float(field_data.get("longitude", 0))
+        boundaries = field_data.get("boundaries")
+
+        overlay_data = await asyncio.to_thread(
+            get_up42_overlay,
+            scene_id, boundaries, lat, lng,
+        )
+
+        if not overlay_data or not overlay_data.get("image_bytes"):
+            raise HTTPException(
+                status_code=503,
+                detail="Preview Up42 não disponível para esta cena.",
+            )
+
+        bounds = overlay_data["bounds"]  # [s, w, n, e]
+        bounds_header = ",".join(f"{v:.6f}" for v in bounds)
+
+        return Response(
+            content=overlay_data["image_bytes"],
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "X-Field-ID": field_id,
+                "X-Scene-Id": scene_id,
+                "X-Scene-Bounds": bounds_header,
+                "X-Provider": str(overlay_data.get("provider", "Up42")),
+                "X-Resolution": str(overlay_data.get("resolution_m", "")),
+                "X-Source": "up42",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.error("[/api/up42/overlay] Erro field_id=%s scene_id=%s: %s", field_id, scene_id, exc)
+        raise HTTPException(
+            status_code=503,
+            detail=f"Erro ao carregar overlay Up42: {exc}",
+        ) from exc
 
 
 @app.post("/api/geo/search")
