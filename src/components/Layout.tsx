@@ -33,6 +33,7 @@ const iconMap = (name: string) => (
 const NAV_PRODUTOR: NavItem[] = [
   { to: '/app/dashboard', label: 'Mapa & Talhões',      icon: iconMap('map') },
   { to: '/app/caderno',   label: 'Caderno de Campo',    icon: iconMap('menu_book') },
+  { to: '/app/images',    label: 'Imagens',             icon: iconMap('photo_library') },
   { to: '/app/weather',   label: 'Clima',               icon: iconMap('wb_sunny') },
   { to: '/app/alerts',    label: 'Alertas',             icon: iconMap('notifications_active') },
   { to: '/app/reports',   label: 'Relatórios',           icon: iconMap('bar_chart') },
@@ -57,6 +58,7 @@ const NAV_DEFAULT: NavItem[] = [
   { to: '/app/caderno',     label: 'Caderno de Campo',    icon: iconMap('menu_book') },
   { to: '/app/research',    label: 'Pesquisa',             icon: iconMap('biotech') },
   { to: '/app/germoplasma', label: 'Germoplasma',          icon: iconMap('genetics') },
+  { to: '/app/images',      label: 'Imagens',             icon: iconMap('photo_library') },
   { to: '/app/weather',     label: 'Clima',               icon: iconMap('wb_sunny') },
   { to: '/app/alerts',      label: 'Alertas',             icon: iconMap('notifications_active') },
   { to: '/app/reports',     label: 'Relatórios',           icon: iconMap('bar_chart') },

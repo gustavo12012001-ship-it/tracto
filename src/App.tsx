@@ -21,6 +21,7 @@ import Calculator from './pages/Calculator';
 import Seasons from './pages/Seasons';
 import Caderno from './pages/Caderno';
 import Germoplasma from './pages/Germoplasma';
+import Images from './pages/Images';
 import ProtectedRoute from './components/ProtectedRoute';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -62,6 +63,7 @@ function App() {
           <Route path="seasons" element={<Seasons />} />
           <Route path="caderno" element={<Caderno />} />
           <Route path="germoplasma" element={<Germoplasma />} />
+          <Route path="images" element={<Images />} />
         </Route>
       </Routes>
     </BrowserRouter>
