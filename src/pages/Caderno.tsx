@@ -249,7 +249,7 @@ function FitossanitarioTab() {
                 <span className="text-[10px]" style={{ color: '#64748b' }}>{fmtDate(e.occurred_at)}</span>
               </div>
               <p className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{e.title}</p>
-              {e.data?.infestation_level && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>Infestação: {String(e.data.infestation_level)}</p>}
+              {e.data?.infestation_level != null && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>Infestação: {String(e.data.infestation_level)}</p>}
             </div>
           );
         })}
@@ -449,7 +449,7 @@ function AplicacoesTab() {
               <span className="text-[10px]" style={{ color: '#64748b' }}>{fmtDate(e.occurred_at)}</span>
             </div>
             <p className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{e.title}</p>
-            {e.data?.dose_l_ha && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>Dose: {String(e.data.dose_l_ha)}</p>}
+            {e.data?.dose_l_ha != null && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>Dose: {String(e.data.dose_l_ha)}</p>}
           </div>
         ))}
       </div>

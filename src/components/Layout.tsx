@@ -76,7 +76,6 @@ function SidebarContent({
   theme: Theme;
   toggleTheme: () => void;
 }) {
-  const navigate = useNavigate();
   const { alerts, userProfile } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
 
