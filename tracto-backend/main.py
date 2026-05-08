@@ -162,9 +162,12 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    # Remove headers that reveal server info
-    response.headers.pop("server", None)
-    response.headers.pop("x-powered-by", None)
+    # Remove headers that reveal server info (MutableHeaders não tem .pop())
+    for _h in ("server", "x-powered-by"):
+        try:
+            del response.headers[_h]
+        except (KeyError, AttributeError):
+            pass
     return response
 
 
