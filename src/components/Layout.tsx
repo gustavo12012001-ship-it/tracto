@@ -33,10 +33,11 @@ const iconMap = (name: string) => (
 const NAV_PRODUTOR: NavItem[] = [
   { to: '/app/dashboard', label: 'Mapa & Talhões',      icon: iconMap('map') },
   { to: '/app/caderno',   label: 'Caderno de Campo',    icon: iconMap('menu_book') },
-  { to: '/app/weather',   label: 'Clima & Alertas',     icon: iconMap('wb_sunny') },
+  { to: '/app/weather',   label: 'Clima',               icon: iconMap('wb_sunny') },
+  { to: '/app/alerts',    label: 'Alertas',             icon: iconMap('notifications_active') },
   { to: '/app/reports',   label: 'Relatórios',           icon: iconMap('bar_chart') },
   { to: '/app/market',    label: 'Mercado',              icon: iconMap('trending_up') },
-  { to: '/app/chat',      label: 'IA Agronômica',        icon: iconMap('smart_toy'), badge: 'IA' },
+  { to: '/app/chat',      label: 'Tracto IA',           icon: iconMap('smart_toy'), badge: 'IA' },
 ];
 
 const NAV_PESQUISADOR: NavItem[] = [
@@ -44,7 +45,8 @@ const NAV_PESQUISADOR: NavItem[] = [
   { to: '/app/caderno',      label: 'Caderno de Pesquisa', icon: iconMap('menu_book') },
   { to: '/app/research',     label: 'Pesquisa Agronômica', icon: iconMap('biotech') },
   { to: '/app/germoplasma',  label: 'Germoplasma',         icon: iconMap('genetics') },
-  { to: '/app/weather',      label: 'Clima & Alertas',     icon: iconMap('wb_sunny') },
+  { to: '/app/weather',      label: 'Clima',               icon: iconMap('wb_sunny') },
+  { to: '/app/alerts',       label: 'Alertas',             icon: iconMap('notifications_active') },
   { to: '/app/reports',      label: 'Relatórios',           icon: iconMap('bar_chart') },
   { to: '/app/chat',         label: 'MelhorIA',             icon: iconMap('smart_toy'), badge: 'IA' },
 ];
@@ -55,10 +57,11 @@ const NAV_DEFAULT: NavItem[] = [
   { to: '/app/caderno',     label: 'Caderno de Campo',    icon: iconMap('menu_book') },
   { to: '/app/research',    label: 'Pesquisa',             icon: iconMap('biotech') },
   { to: '/app/germoplasma', label: 'Germoplasma',          icon: iconMap('genetics') },
-  { to: '/app/weather',     label: 'Clima & Alertas',     icon: iconMap('wb_sunny') },
+  { to: '/app/weather',     label: 'Clima',               icon: iconMap('wb_sunny') },
+  { to: '/app/alerts',      label: 'Alertas',             icon: iconMap('notifications_active') },
   { to: '/app/reports',     label: 'Relatórios',           icon: iconMap('bar_chart') },
   { to: '/app/market',      label: 'Mercado',              icon: iconMap('trending_up') },
-  { to: '/app/chat',        label: 'IA Agronômica',        icon: iconMap('smart_toy'), badge: 'IA' },
+  { to: '/app/chat',        label: 'Tracto IA',           icon: iconMap('smart_toy'), badge: 'IA' },
 ];
 
 // ── Sidebar content (shared between desktop & mobile drawer) ──────────────────
@@ -137,7 +140,7 @@ function SidebarContent({
           >
             {item.icon}
             <span className="flex-1">{item.label}</span>
-            {item.to === '/app/weather' && activeAlertCount > 0 && (
+            {item.to === '/app/alerts' && activeAlertCount > 0 && (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                 style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
                 {activeAlertCount}

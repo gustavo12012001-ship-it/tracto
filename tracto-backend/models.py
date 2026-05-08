@@ -336,3 +336,47 @@ class GxERequest(BaseModel):
     data: { "Genótipo A": { "Ambiente1": 52.3, "Ambiente2": 48.1 }, ... }
     """
     data: dict[str, dict[str, float]]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARCELAS / MICROTALHÕES
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PlotCreate(BaseModel):
+    name: str
+    description: str | None = None
+    area_ha: float | None = None
+    boundaries: list[list[float]] | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
+
+class PlotUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    area_ha: float | None = None
+    boundaries: list[list[float]] | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CADERNO DE CAMPO — EVENTOS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class NotebookEventCreate(BaseModel):
+    category: str                        # veja notebook_service._VALID_CATEGORIES
+    title: str | None = None
+    occurred_at: str | None = None       # ISO datetime
+    plot_id: str | None = None
+    data: dict[str, Any] | None = None   # payload específico por categoria
+    photos: list[str] | None = None      # lista de URLs
+    ai_analysis: str | None = None
+
+
+class NotebookEventUpdate(BaseModel):
+    title: str | None = None
+    occurred_at: str | None = None
+    data: dict[str, Any] | None = None
+    photos: list[str] | None = None
+    ai_analysis: str | None = None

@@ -50,6 +50,10 @@ from models import (
     CrossCreate,
     BreedingGenerationCreate,
     GxERequest,
+    PlotCreate,
+    PlotUpdate,
+    NotebookEventCreate,
+    NotebookEventUpdate,
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service
@@ -76,6 +80,21 @@ from services.planet_service import (
 from services.up42_service import (
     search_up42_scenes,
     get_up42_overlay,
+)
+from services.plots_service import (
+    create_plot,
+    get_plots_by_field,
+    update_plot,
+    delete_plot,
+)
+from services.notebook_service import (
+    create_event as create_notebook_event,
+    get_events as get_notebook_events,
+    update_event as update_notebook_event,
+    delete_event as delete_notebook_event,
+)
+from services.satellite_history_service import (
+    get_satellite_history,
 )
 from services.geo_service import GeoProviderError, search_location, search_places_nearby
 from services.weather_service import extract_weather_snapshot, fetch_weather_snapshot
@@ -1160,9 +1179,28 @@ async def up42_overlay_endpoint(
 
         bounds = overlay_data["bounds"]  # [s, w, n, e]
         bounds_header = ",".join(f"{v:.6f}" for v in bounds)
+        image_bytes = overlay_data["image_bytes"]
+
+        # Salvar no histórico de artefatos (fire-and-forget)
+        try:
+            import hashlib
+            bbox_hash = hashlib.md5(bounds_header.encode()).hexdigest()[:16]
+            from services.satellite_history_service import save_satellite_artifact
+            asyncio.create_task(asyncio.to_thread(
+                save_satellite_artifact,
+                user.id, field_id, "up42", "preview",
+                scene_id, None, None, bbox_hash,
+                f"up42/{field_id}/{scene_id}.png",
+                overlay_data.get("provider"),
+                None,  # plot_id
+                field_data.get("farm_id"),
+                len(image_bytes),
+            ))
+        except Exception:
+            pass  # Nunca falha a resposta por causa do histórico
 
         return Response(
-            content=overlay_data["image_bytes"],
+            content=image_bytes,
             media_type="image/png",
             headers={
                 "Cache-Control": "public, max-age=3600",
@@ -1182,6 +1220,162 @@ async def up42_overlay_endpoint(
             status_code=503,
             detail=f"Erro ao carregar overlay Up42: {exc}",
         ) from exc
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PARCELAS / MICROTALHÕES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/fields/{field_id}/plots")
+@limiter.limit("30/minute")
+async def list_plots(
+    request: Request,
+    field_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Lista parcelas do talhão."""
+    field = farm_service.get_field_by_id(user.id, field_id)
+    if not field:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+    plots = get_plots_by_field(field_id, user.id)
+    return {"field_id": field_id, "plots": plots, "total": len(plots)}
+
+
+@app.post("/api/fields/{field_id}/plots")
+@limiter.limit("20/minute")
+async def create_plot_endpoint(
+    request: Request,
+    field_id: str,
+    body: PlotCreate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cria uma parcela/microtalhão."""
+    field = farm_service.get_field_by_id(user.id, field_id)
+    if not field:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+    try:
+        plot = create_plot(field_id, user.id, body.model_dump())
+        return plot
+    except Exception as exc:
+        logging.error("[/api/plots] create error: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao criar parcela.") from exc
+
+
+@app.patch("/api/plots/{plot_id}")
+@limiter.limit("20/minute")
+async def update_plot_endpoint(
+    request: Request,
+    plot_id: str,
+    body: PlotUpdate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    result = update_plot(plot_id, user.id, data)
+    return result
+
+
+@app.delete("/api/plots/{plot_id}")
+@limiter.limit("20/minute")
+async def delete_plot_endpoint(
+    request: Request,
+    plot_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    ok = delete_plot(plot_id, user.id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Parcela não encontrada.")
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CADERNO DE CAMPO — EVENTOS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/fields/{field_id}/notebook")
+@limiter.limit("30/minute")
+async def list_notebook_events(
+    request: Request,
+    field_id: str,
+    category: str | None = None,
+    plot_id: str | None = None,
+    limit: int = 100,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Lista eventos do caderno de campo."""
+    field = farm_service.get_field_by_id(user.id, field_id)
+    if not field:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+    events = await get_notebook_events(field_id, user.id, category=category, plot_id=plot_id, limit=limit)
+    return {"field_id": field_id, "events": events, "total": len(events)}
+
+
+@app.post("/api/fields/{field_id}/notebook")
+@limiter.limit("30/minute")
+async def create_notebook_event_endpoint(
+    request: Request,
+    field_id: str,
+    body: NotebookEventCreate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cria um evento no caderno de campo."""
+    field = farm_service.get_field_by_id(user.id, field_id)
+    if not field:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+    try:
+        event = await create_notebook_event(field_id, user.id, body.model_dump())
+        return event
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.error("[/api/notebook] create error: %s", exc)
+        raise HTTPException(status_code=500, detail="Erro ao registrar evento.") from exc
+
+
+@app.patch("/api/notebook/{event_id}")
+@limiter.limit("20/minute")
+async def update_notebook_event_endpoint(
+    request: Request,
+    event_id: str,
+    body: NotebookEventUpdate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    result = await update_notebook_event(event_id, user.id, data)
+    return result
+
+
+@app.delete("/api/notebook/{event_id}")
+@limiter.limit("20/minute")
+async def delete_notebook_event_endpoint(
+    request: Request,
+    event_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    ok = await delete_notebook_event(event_id, user.id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Evento não encontrado.")
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HISTÓRICO DE IMAGENS DE SATÉLITE
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/fields/{field_id}/satellite-history")
+@limiter.limit("30/minute")
+async def satellite_history_endpoint(
+    request: Request,
+    field_id: str,
+    source: str | None = None,
+    limit: int = 50,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Retorna histórico de imagens de satélite cacheadas para o talhão."""
+    field = farm_service.get_field_by_id(user.id, field_id)
+    if not field:
+        raise HTTPException(status_code=404, detail="Talhão não encontrado.")
+    history = get_satellite_history(field_id, user.id, source=source, limit=limit)
+    return {"field_id": field_id, "history": history, "total": len(history)}
 
 
 @app.post("/api/geo/search")
