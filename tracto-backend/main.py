@@ -1378,6 +1378,45 @@ async def satellite_history_endpoint(
     return {"field_id": field_id, "history": history, "total": len(history)}
 
 
+@app.get("/api/satellite-artifacts/{artifact_id}/image")
+@limiter.limit("60/minute")
+async def get_cached_satellite_image(
+    request: Request,
+    artifact_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Serve a imagem PNG cacheada de um artefato de satélite (sem custo de API externo)."""
+    import requests as _req
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/satellite_artifacts"
+    resp = _req.get(
+        url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"id": f"eq.{artifact_id}", "user_id": f"eq.{user.id}", "select": "id,image_path,source,mode,scene_date"},
+        timeout=8,
+    )
+    if not resp.ok or not resp.json():
+        raise HTTPException(status_code=404, detail="Artefato não encontrado.")
+    artifact = resp.json()[0]
+    image_path = artifact.get("image_path")
+    if not image_path:
+        raise HTTPException(status_code=404, detail="Imagem não disponível.")
+
+    bucket = os.getenv("SATELLITE_CACHE_BUCKET", "satellite-cache")
+    img_bytes = supabase_service.download_storage_object(bucket, image_path)
+    if not img_bytes:
+        raise HTTPException(status_code=404, detail="Arquivo de imagem não encontrado no Storage.")
+
+    headers_out = {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+        "X-Source": artifact.get("source", ""),
+        "X-Mode": artifact.get("mode", ""),
+        "X-Scene-Date": artifact.get("scene_date") or "",
+    }
+    return Response(content=img_bytes, media_type="image/png", headers=headers_out)
+
+
 @app.post("/api/geo/search")
 @limiter.limit("10/minute")
 async def geo_search_endpoint(

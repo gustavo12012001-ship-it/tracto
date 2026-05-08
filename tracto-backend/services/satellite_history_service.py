@@ -47,7 +47,7 @@ def get_satellite_history(
             "limit": str(min(limit, 200)),
             "select": (
                 "id,source,mode,scene_id,scene_date,cloud_coverage,"
-                "generated_at,updated_at,provider,bytes_size"
+                "generated_at,updated_at,provider,bytes_size,image_path"
             ),
         }
         if source:

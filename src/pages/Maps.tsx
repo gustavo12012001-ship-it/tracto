@@ -510,6 +510,8 @@ export default function Maps() {
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
   // Modo "raw": para mapas sem backend ready, permite ver a imagem RGB bruta
   const [rawMode, setRawMode] = useState(false);
+  // Aba do painel direito: imagens novas ou histórico cacheado
+  const [rightPanelTab, setRightPanelTab] = useState<'scenes' | 'history'>('scenes');
   // ── Comparador ──────────────────────────────────────────────────────────────
   const [compareMode, setCompareMode] = useState(false);
   const [compareSceneLeft, setCompareSceneLeft] = useState<CompareOverlay>({ url: null, bounds: null, loading: false, error: null, sceneId: null });
@@ -692,7 +694,27 @@ export default function Maps() {
 
   // Mostra painel de cenas? Sim para mapas prontos ou no modo raw
   const showScenesPanel = selectedMap.backendReady || rawMode;
-  const [showHistory, setShowHistory] = useState(false);
+
+  // ── Recarregar imagem do cache (sem custo de API externa) ──────────────────
+  const handleLoadFromHistory = useCallback(async (artifactId: string, fieldBounds?: L.LatLngBoundsExpression) => {
+    const bounds = fieldBounds ?? computeBounds(fieldBoundaries ?? []);
+    const sceneKey = `history|${artifactId}`;
+    if (overlay.sceneKey === sceneKey && overlay.url) return;
+    setOverlay({ url: null, bounds, loading: true, error: null, sceneKey });
+    if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; }
+    try {
+      const headers = await buildAuthHeaders();
+      const resp = await fetch(`${API_URL}/api/satellite-artifacts/${artifactId}/image`, { headers });
+      if (!resp.ok) throw new Error(`Erro ${resp.status}`);
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      prevUrlRef.current = objectUrl;
+      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+      setRightPanelTab('scenes'); // volta para cenas após carregar
+    } catch (err) {
+      setOverlay({ url: null, bounds, loading: false, error: err instanceof Error ? err.message : 'Erro ao carregar cache.', sceneKey });
+    }
+  }, [overlay.sceneKey, overlay.url, fieldBoundaries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex-1 flex overflow-hidden min-h-0 h-full">
@@ -730,17 +752,17 @@ export default function Maps() {
             <MapNavBtn key={mt.id} mt={mt} isActive={selectedMap.id === mt.id} onClick={() => handleSelectMap(mt)} />
           ))}
 
-          {/* Histórico de imagens */}
+          {/* Atalho para histórico */}
           {activeField && (
             <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-              <button onClick={() => setShowHistory(v => !v)}
+              <button onClick={() => setRightPanelTab('history')}
                 className="w-full text-left px-2.5 py-2 rounded-xl flex items-center gap-2 transition-all"
-                style={showHistory
+                style={rightPanelTab === 'history'
                   ? { background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)' }
                   : { background: 'transparent', border: '1px solid transparent' }}>
-                <span className="material-symbols-outlined text-lg" style={{ color: showHistory ? '#34d399' : '#64748b' }}>history</span>
+                <span className="material-symbols-outlined text-lg" style={{ color: rightPanelTab === 'history' ? '#34d399' : '#64748b' }}>history</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-bold" style={{ color: showHistory ? '#34d399' : 'var(--text, #e2e8f0)' }}>Histórico</p>
+                  <p className="text-[13px] font-bold" style={{ color: rightPanelTab === 'history' ? '#34d399' : 'var(--text, #e2e8f0)' }}>Histórico</p>
                   <p className="text-[9px]" style={{ color: 'var(--muted)' }}>Imagens armazenadas</p>
                 </div>
               </button>
@@ -881,11 +903,6 @@ export default function Maps() {
             </button>
           </div>
         )}
-        {/* Painel de histórico de satélite */}
-        {showHistory && activeField?.id && (
-          <SatelliteHistoryPanel fieldId={activeField.id} onClose={() => setShowHistory(false)} />
-        )}
-
         </div>{/* end normal map inner div */}
       </div>{/* end map column outer div */}
 
@@ -912,8 +929,28 @@ export default function Maps() {
           <div><p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Revisita</p><p className="text-[11px] font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{selectedMap.updateFreq}</p></div>
         </div>
 
-        {/* Tabs S1/S2/Up42 — apenas para mapas com imagens */}
-        {showScenesPanel && selectedMap.specialMode !== 'topo' && selectedMap.specialMode !== 'request' && (
+        {/* Tabs do painel: [Imagens] [Histórico] */}
+        <div className="flex border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={() => setRightPanelTab('scenes')}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold transition-all"
+            style={rightPanelTab === 'scenes'
+              ? { color: 'var(--primary)', borderBottom: '2px solid var(--primary)', background: 'var(--primary-dim)' }
+              : { color: 'var(--muted)', borderBottom: '2px solid transparent' }}>
+            <span className="material-symbols-outlined text-sm">satellite_alt</span>Imagens
+          </button>
+          <button
+            onClick={() => setRightPanelTab('history')}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-bold transition-all"
+            style={rightPanelTab === 'history'
+              ? { color: '#34d399', borderBottom: '2px solid #34d399', background: 'rgba(52,211,153,0.08)' }
+              : { color: 'var(--muted)', borderBottom: '2px solid transparent' }}>
+            <span className="material-symbols-outlined text-sm">history</span>Histórico
+          </button>
+        </div>
+
+        {/* Tabs S1/S2/Up42 — apenas na aba Imagens */}
+        {rightPanelTab === 'scenes' && showScenesPanel && selectedMap.specialMode !== 'topo' && selectedMap.specialMode !== 'request' && (
           <div className="flex gap-1 p-2 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
             {(['s2', 's1', 'up42'] as SatSource[]).map((src) => {
               const info = SAT_INFO[src];
@@ -926,7 +963,7 @@ export default function Maps() {
                   style={{ background: isActive ? info.color + '18' : 'rgba(255,255,255,0.03)', border: `1px solid ${isActive ? info.color + '44' : 'var(--border)'}`, opacity: !isCompat ? 0.4 : 1 }}
                   title={!isCompat ? `${info.label} não disponível para ${selectedMap.name}` : info.label}>
                   <span className="material-symbols-outlined text-base" style={{ color: isActive ? info.color : 'var(--muted)' }}>{info.icon}</span>
-                  <span className="text-[9px] font-bold" style={{ color: isActive ? info.color : 'var(--muted)' }}>{src === 's2' ? 'S-2' : src === 's1' ? 'S-1' : 'Planet'}</span>
+                  <span className="text-[9px] font-bold" style={{ color: isActive ? info.color : 'var(--muted)' }}>{src === 's2' ? 'S-2' : src === 's1' ? 'S-1' : 'Up42'}</span>
                   {scenes.fieldId && count > 0 && <span className="text-[8px]" style={{ color: 'var(--muted)' }}>{count}</span>}
                 </button>
               );
@@ -936,6 +973,24 @@ export default function Maps() {
 
         {/* Conteúdo do painel */}
         <div className="flex-1 overflow-y-auto scrollbar-thin">
+
+          {/* ── Aba Histórico ──────────────────────────────────────────── */}
+          {rightPanelTab === 'history' ? (
+            activeField
+              ? <HistoryPanel
+                  fieldId={activeField.id ?? ''}
+                  onLoad={(id) => void handleLoadFromHistory(id, computeBounds(fieldBoundaries ?? []))}
+                  activeSceneKey={overlay.sceneKey}
+                  loadingSceneKey={overlay.loading ? overlay.sceneKey : null}
+                />
+              : <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--muted)' }}>map</span>
+                  <p className="text-[11px]" style={{ color: 'var(--muted)' }}>Selecione um talhão.</p>
+                </div>
+
+          ) : (
+          /* ── Aba Imagens ──────────────────────────────────────────── */
+          <>
           {/* Modo topografia */}
           {selectedMap.specialMode === 'topo' ? (
             <div className="p-4 text-center flex flex-col items-center gap-3 pt-6">
@@ -954,14 +1009,12 @@ export default function Maps() {
               )}
             </div>
           ) : !showScenesPanel ? (
-            /* Índice não pronto no backend */
             <IndexPendingPanel
               mt={selectedMap}
               activeFieldName={activeField?.name ?? null}
               onViewRaw={() => setRawMode(true)}
             />
           ) : (
-            /* Lista de cenas */
             <div className="p-2">
               {rawMode && !selectedMap.backendReady && (
                 <div className="mb-2 mx-1 px-2.5 py-2 rounded-xl flex items-center gap-2" style={{ background: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.2)' }}>
@@ -1001,26 +1054,30 @@ export default function Maps() {
               )}
             </div>
           )}
+          </>
+          )}
         </div>
 
-        {/* Legenda */}
-        <div className="p-3 border-t flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-          <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--muted)' }}>Legenda</p>
-          <div className="space-y-1.5">
-            {selectedMap.legend.map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded flex-shrink-0" style={{ background: item.color, border: '1px solid rgba(255,255,255,0.1)' }} />
-                <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{item.label}</span>
-              </div>
-            ))}
+        {/* Legenda — só na aba Imagens */}
+        {rightPanelTab === 'scenes' && (
+          <div className="p-3 border-t flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--muted)' }}>Legenda</p>
+            <div className="space-y-1.5">
+              {selectedMap.legend.map((item, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded flex-shrink-0" style={{ background: item.color, border: '1px solid rgba(255,255,255,0.1)' }} />
+                  <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{item.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Painel de Histórico de Imagens ────────────────────────────────────────────
+// ── Painel de Histórico de Imagens (inline no painel direito) ─────────────────
 
 interface SatHistoryEntry {
   id: string;
@@ -1032,6 +1089,7 @@ interface SatHistoryEntry {
   generated_at: string;
   provider: string | null;
   bytes_size: number | null;
+  image_path: string | null;
 }
 
 const SRC_LABEL: Record<string, { label: string; color: string }> = {
@@ -1040,7 +1098,17 @@ const SRC_LABEL: Record<string, { label: string; color: string }> = {
   up42: { label: 'Up42', color: '#34d399' },
 };
 
-export function SatelliteHistoryPanel({ fieldId, onClose }: { fieldId: string; onClose: () => void }) {
+function HistoryPanel({
+  fieldId,
+  onLoad,
+  activeSceneKey,
+  loadingSceneKey,
+}: {
+  fieldId: string;
+  onLoad: (artifactId: string) => void;
+  activeSceneKey: string | null;
+  loadingSceneKey: string | null;
+}) {
   const [history, setHistory] = useState<SatHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [srcFilter, setSrcFilter] = useState<string>('all');
@@ -1049,8 +1117,8 @@ export function SatelliteHistoryPanel({ fieldId, onClose }: { fieldId: string; o
     setLoading(true);
     buildAuthHeaders().then(headers =>
       fetch(`${API_URL}/api/fields/${fieldId}/satellite-history?limit=80`, { headers })
-        .then(r => r.json())
-        .then((d: { history?: SatHistoryEntry[] }) => { setHistory(d.history ?? []); setLoading(false); })
+        .then(r => r.json() as Promise<{ history?: SatHistoryEntry[] }>)
+        .then(d => { setHistory(d.history ?? []); setLoading(false); })
         .catch(() => setLoading(false))
     );
   }, [fieldId]);
@@ -1059,80 +1127,96 @@ export function SatelliteHistoryPanel({ fieldId, onClose }: { fieldId: string; o
 
   function fmtDate(s: string | null) {
     if (!s) return '—';
-    try { return new Date(s).toLocaleDateString('pt-BR'); } catch { return s; }
+    try { return new Date(s).toLocaleDateString('pt-BR'); } catch { return s ?? '—'; }
   }
 
   return (
-    <div className="absolute top-4 left-4 z-[500] rounded-2xl overflow-hidden flex flex-col pointer-events-auto"
-      style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 300, maxHeight: 'calc(100vh - 80px)' }}>
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-        <div>
-          <p className="text-xs font-bold text-white">Histórico de Imagens</p>
-          <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>{history.length} imagens armazenadas</p>
-        </div>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10" style={{ color: '#64748b' }}>
-          <span className="material-symbols-outlined text-sm">close</span>
-        </button>
-      </div>
-
-      {/* Filtro por fonte */}
-      <div className="flex gap-1 p-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="flex flex-col h-full">
+      {/* Sub-filtro por fonte */}
+      <div className="flex gap-1 p-2 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
         {(['all', 's2', 's1', 'up42'] as const).map(src => {
           const info = src === 'all' ? { label: 'Todas', color: '#94a3b8' } : SRC_LABEL[src];
+          const cnt = src === 'all' ? history.length : history.filter(h => h.source === src).length;
           return (
             <button key={src} onClick={() => setSrcFilter(src)}
               className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
               style={srcFilter === src
                 ? { background: `${info.color}20`, color: info.color, border: `1px solid ${info.color}40` }
-                : { color: '#475569', border: '1px solid transparent' }}>
-              {info.label}
+                : { color: 'var(--muted)', border: '1px solid transparent' }}>
+              {info.label}{cnt > 0 ? ` (${cnt})` : ''}
             </button>
           );
         })}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-2 flex flex-col gap-1.5">
         {loading && (
           <div className="flex justify-center py-6">
             <div className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
           </div>
         )}
         {!loading && filtered.length === 0 && (
-          <div className="py-6 text-center">
-            <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#334155' }}>history</span>
-            <p className="text-[10px]" style={{ color: '#475569' }}>Nenhuma imagem armazenada ainda.</p>
-            <p className="text-[10px] mt-1" style={{ color: '#334155' }}>Selecione uma cena no painel de imagens para que ela seja salva aqui.</p>
+          <div className="py-8 text-center flex flex-col items-center gap-2">
+            <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--muted)' }}>history</span>
+            <p className="text-[10px] font-semibold" style={{ color: 'var(--muted)' }}>Nenhuma imagem armazenada.</p>
+            <p className="text-[10px] leading-relaxed mx-4" style={{ color: '#334155' }}>
+              Selecione uma cena na aba <strong style={{ color: 'var(--primary)' }}>Imagens</strong> para gerar e salvar automaticamente.
+            </p>
           </div>
         )}
         {filtered.map(entry => {
           const src = SRC_LABEL[entry.source] ?? { label: entry.source, color: '#94a3b8' };
+          const isActive = activeSceneKey === `history|${entry.id}`;
+          const isLoading = loadingSceneKey === `history|${entry.id}`;
           return (
-            <div key={entry.id} className="rounded-xl p-3 flex items-start gap-3"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: `${src.color}18` }}>
-                <span className="material-symbols-outlined text-sm" style={{ color: src.color }}>satellite_alt</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${src.color}18`, color: src.color }}>{src.label}</span>
-                  {entry.provider && <span className="text-[10px]" style={{ color: '#64748b' }}>{entry.provider}</span>}
+            <div key={entry.id}
+              className="rounded-xl p-2.5"
+              style={{
+                background: isActive ? `${src.color}12` : 'var(--surface)',
+                border: `1px solid ${isActive ? src.color + '44' : 'var(--border)'}`,
+              }}>
+              <div className="flex items-start gap-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                  style={{ background: `${src.color}18` }}>
+                  <span className="material-symbols-outlined text-sm" style={{ color: src.color }}>satellite_alt</span>
                 </div>
-                <p className="text-xs font-bold text-white">{fmtDate(entry.scene_date ?? entry.generated_at)}</p>
-                <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>
-                  {entry.mode.toUpperCase()}
-                  {entry.cloud_coverage != null && ` · ☁ ${entry.cloud_coverage.toFixed(0)}%`}
-                  {entry.bytes_size && ` · ${(entry.bytes_size / 1024).toFixed(0)} KB`}
-                </p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 mb-0.5 flex-wrap">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${src.color}18`, color: src.color }}>{src.label}</span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--muted)' }}>{entry.mode.toUpperCase()}</span>
+                    {entry.provider && <span className="text-[9px]" style={{ color: '#64748b' }}>{entry.provider}</span>}
+                  </div>
+                  <p className="text-[11px] font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{fmtDate(entry.scene_date ?? entry.generated_at)}</p>
+                  <p className="text-[9px] mt-0.5" style={{ color: '#64748b' }}>
+                    {entry.cloud_coverage != null && `☁ ${entry.cloud_coverage.toFixed(0)}%  · `}
+                    {entry.bytes_size ? `${(entry.bytes_size / 1024).toFixed(0)} KB` : ''}
+                  </p>
+                </div>
               </div>
+              {/* Botão Recarregar — busca do Storage sem regerar */}
+              <button
+                onClick={() => onLoad(entry.id)}
+                disabled={isLoading}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                style={isActive
+                  ? { background: `${src.color}20`, color: src.color, border: `1px solid ${src.color}40` }
+                  : { background: 'rgba(255,255,255,0.05)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+                title="Recarregar do cache — sem custo de API">
+                {isLoading
+                  ? <><div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> Carregando…</>
+                  : isActive
+                    ? <><span className="material-symbols-outlined text-sm">check_circle</span> Ativo no mapa</>
+                    : <><span className="material-symbols-outlined text-sm">replay</span> Recarregar do cache</>
+                }
+              </button>
             </div>
           );
         })}
       </div>
 
-      <div className="px-3 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="px-3 py-2 border-t flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
         <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          Imagens geradas são armazenadas para reutilização · Supabase Storage
+          💾 Armazenadas no Supabase Storage · sem custo de regeneração
         </p>
       </div>
     </div>
