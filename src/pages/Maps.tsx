@@ -262,6 +262,35 @@ const SAT_INFO: Record<SatSource, { label: string; icon: string; color: string }
   up42: { label: 'Up42', icon: 'satellite_alt', color: '#34d399' },
 };
 
+// ── Mapas base disponíveis ─────────────────────────────────────────────────────
+const BASEMAPS = {
+  google: {
+    label: 'Google',
+    icon: 'travel_explore',
+    url: 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'] as string[],
+    attribution: '&copy; Google',
+    maxNativeZoom: 20,
+  },
+  esri: {
+    label: 'Esri',
+    icon: 'public',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    subdomains: [] as string[],
+    attribution: 'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics',
+    maxNativeZoom: 19,
+  },
+  osm: {
+    label: 'Mapa',
+    icon: 'map',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'] as string[],
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxNativeZoom: 19,
+  },
+} as const;
+type BasemapKey = keyof typeof BASEMAPS;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function buildAuthHeaders(): Promise<HeadersInit> {
   const { supabase } = await import('../services/supabase');
@@ -415,6 +444,7 @@ function CompareSide({
   center,
   fieldBoundaries,
   selectedMap,
+  basemap,
 }: {
   label: string;
   scenes: SentinelScene[];
@@ -424,8 +454,12 @@ function CompareSide({
   center: [number, number];
   fieldBoundaries: [number, number][] | undefined;
   selectedMap: MapType;
+  basemap: BasemapKey;
 }) {
-  const tileUrl = selectedMap.specialTile ?? 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+  const activeBmC = BASEMAPS[basemap];
+  const tileUrl = selectedMap.specialTile ?? activeBmC.url;
+  const tileSubdomainsC = selectedMap.specialTile ? ['a', 'b', 'c'] : activeBmC.subdomains;
+  const tileMaxNativeZoomC = selectedMap.specialTile ? 20 : activeBmC.maxNativeZoom;
   const bounds = fieldBoundaries ? computeBounds(fieldBoundaries) : null;
 
   return (
@@ -466,10 +500,10 @@ function CompareSide({
         <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
           <TileLayer
             url={tileUrl}
-            subdomains={tileUrl.includes('google.com') ? ['0','1','2','3'] : ['a','b','c']}
+            subdomains={tileSubdomainsC}
             maxZoom={21}
-            maxNativeZoom={20}
-            attribution={tileUrl.includes('google.com') ? '&copy; Google' : undefined}
+            maxNativeZoom={tileMaxNativeZoomC}
+            attribution={selectedMap.specialTile ? undefined : activeBmC.attribution}
           />
           <FlyToBounds boundaries={fieldBoundaries ?? null} />
           {fieldBoundaries && fieldBoundaries.length > 0 && (
@@ -505,6 +539,7 @@ function CompareSide({
 export default function Maps() {
   const { fields, activeFieldId, activeFarmId, farms } = useAppStore();
   const [selectedMap, setSelectedMap] = useState<MapType>(MAP_TYPES[0]);
+  const [basemap, setBasemap] = useState<BasemapKey>('google');
   const [satTab, setSatTab] = useState<SatSource>('s2');
   const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], up42: [], loading: false, error: null, fieldId: null });
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
@@ -689,8 +724,11 @@ export default function Maps() {
     setCompareSceneRight({ url: null, bounds: null, loading: false, error: null, sceneId: null });
   };
 
-  const tileUrl = selectedMap.specialTile
-    ?? 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+  const activeBm = BASEMAPS[basemap];
+  const tileUrl = selectedMap.specialTile ?? activeBm.url;
+  const tileSubdomains = selectedMap.specialTile ? ['a', 'b', 'c'] : activeBm.subdomains;
+  const tileAttribution = selectedMap.specialTile ? undefined : activeBm.attribution;
+  const tileMaxNativeZoom = selectedMap.specialTile ? 20 : activeBm.maxNativeZoom;
 
   // Mostra painel de cenas? Sim para mapas prontos ou no modo raw
   const showScenesPanel = selectedMap.backendReady || rawMode;
@@ -830,6 +868,7 @@ export default function Maps() {
               center={center}
               fieldBoundaries={fieldBoundaries}
               selectedMap={selectedMap}
+              basemap={basemap}
             />
             <CompareSide
               label="Painel Direito"
@@ -840,6 +879,7 @@ export default function Maps() {
               center={center}
               fieldBoundaries={fieldBoundaries}
               selectedMap={selectedMap}
+              basemap={basemap}
             />
           </div>
         )}
@@ -850,10 +890,10 @@ export default function Maps() {
           <MapContainer key={`${activeField.id}-${selectedMap.id}`} center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
             <TileLayer
               url={tileUrl}
-              subdomains={tileUrl.includes('google.com') ? ['0','1','2','3'] : ['a','b','c']}
+              subdomains={tileSubdomains}
               maxZoom={21}
-              maxNativeZoom={20}
-              attribution={tileUrl.includes('google.com') ? '&copy; Google' : undefined}
+              maxNativeZoom={tileMaxNativeZoom}
+              attribution={tileAttribution}
             />
             <FlyToBounds boundaries={fieldBoundaries ?? null} />
             {fieldBoundaries && fieldBoundaries.length > 0 && (
@@ -901,6 +941,26 @@ export default function Maps() {
             <button onClick={() => { if (prevUrlRef.current) { URL.revokeObjectURL(prevUrlRef.current); prevUrlRef.current = null; } setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null }); }} style={{ color: '#64748b' }}>
               <span className="material-symbols-outlined text-sm">close</span>
             </button>
+          </div>
+        )}
+
+        {/* Seletor de mapa base — canto inferior direito */}
+        {!selectedMap.specialTile && (
+          <div className="absolute bottom-4 right-3 z-[500] flex flex-col gap-1" style={{ pointerEvents: 'all' }}>
+            <p className="text-[9px] font-semibold text-center mb-0.5" style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}>MAPA BASE</p>
+            {(Object.entries(BASEMAPS) as [BasemapKey, typeof BASEMAPS[BasemapKey]][]).map(([key, bm]) => (
+              <button
+                key={key}
+                onClick={() => setBasemap(key)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold transition-all"
+                style={basemap === key
+                  ? { background: 'var(--primary)', color: '#fff', border: '1px solid var(--primary)', backdropFilter: 'blur(8px)' }
+                  : { background: 'rgba(8,8,9,0.85)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(8px)' }}
+              >
+                <span className="material-symbols-outlined text-sm">{bm.icon}</span>
+                {bm.label}
+              </button>
+            ))}
           </div>
         )}
         </div>{/* end normal map inner div */}
