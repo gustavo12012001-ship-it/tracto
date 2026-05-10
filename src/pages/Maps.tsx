@@ -802,7 +802,7 @@ export default function Maps() {
                 <span className="material-symbols-outlined text-lg" style={{ color: rightPanelTab === 'history' ? '#34d399' : '#64748b' }}>history</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-bold" style={{ color: rightPanelTab === 'history' ? '#34d399' : 'var(--text, #e2e8f0)' }}>Histórico</p>
-                  <p className="text-[9px]" style={{ color: 'var(--muted)' }}>Imagens armazenadas</p>
+                  <p className="text-[9px]" style={{ color: 'var(--muted)' }}>Cache armazenado</p>
                 </div>
               </button>
             </div>
@@ -1007,7 +1007,7 @@ export default function Maps() {
           <div><p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Revisita</p><p className="text-[11px] font-bold" style={{ color: 'var(--text, #e2e8f0)' }}>{selectedMap.updateFreq}</p></div>
         </div>
 
-        {/* Tabs do painel: [Imagens] [Histórico] */}
+        {/* Tabs do painel: [Cenas] [Histórico] */}
         <div className="flex border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
           <button
             onClick={() => setRightPanelTab('scenes')}
@@ -1015,7 +1015,7 @@ export default function Maps() {
             style={rightPanelTab === 'scenes'
               ? { color: 'var(--primary)', borderBottom: '2px solid var(--primary)', background: 'var(--primary-dim)' }
               : { color: 'var(--muted)', borderBottom: '2px solid transparent' }}>
-            <span className="material-symbols-outlined text-sm">satellite_alt</span>Imagens
+            <span className="material-symbols-outlined text-sm">satellite_alt</span>Cenas
           </button>
           <button
             onClick={() => setRightPanelTab('history')}
@@ -1027,7 +1027,7 @@ export default function Maps() {
           </button>
         </div>
 
-        {/* Tabs S1/S2/Up42 — apenas na aba Imagens */}
+        {/* Tabs S1/S2/Up42 — apenas na aba Cenas */}
         {rightPanelTab === 'scenes' && showScenesPanel && selectedMap.specialMode !== 'topo' && selectedMap.specialMode !== 'request' && (
           <div className="flex gap-1 p-2 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
             {(['s2', 's1', 'up42'] as SatSource[]).map((src) => {
@@ -1067,7 +1067,7 @@ export default function Maps() {
                 </div>
 
           ) : (
-          /* ── Aba Imagens ──────────────────────────────────────────── */
+          /* ── Aba Cenas ──────────────────────────────────────────── */
           <>
           {/* Modo topografia */}
           {selectedMap.specialMode === 'topo' ? (
@@ -1103,7 +1103,7 @@ export default function Maps() {
                   </button>
                 </div>
               )}
-              <p className="px-1 pt-1 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Imagens disponíveis</p>
+              <p className="px-1 pt-1 pb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Cenas disponíveis</p>
               {!activeField ? (
                 <p className="text-[11px] py-4 text-center" style={{ color: 'var(--muted)' }}>Selecione um talhão.</p>
               ) : scenes.loading ? (
@@ -1238,7 +1238,7 @@ function HistoryPanel({
             <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--muted)' }}>history</span>
             <p className="text-[10px] font-semibold" style={{ color: 'var(--muted)' }}>Nenhuma imagem armazenada.</p>
             <p className="text-[10px] leading-relaxed mx-4" style={{ color: '#334155' }}>
-              Selecione uma cena na aba <strong style={{ color: 'var(--primary)' }}>Imagens</strong> para gerar e salvar automaticamente.
+              Selecione uma cena na aba <strong style={{ color: 'var(--primary)' }}>Cenas</strong> para gerar e salvar automaticamente.
             </p>
           </div>
         )}
