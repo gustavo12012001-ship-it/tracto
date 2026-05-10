@@ -29,7 +29,7 @@ L.Icon.Default.mergeOptions({
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 type DrawMode = 'none' | 'drawing' | 'drawing_block' | 'drawing_farm';
-type MapLayer = 'osm' | 'esri';
+type MapLayer = 'osm' | 'google' | 'esri';
 
 interface SentinelScene {
   scene_id: string;
@@ -508,7 +508,8 @@ export default function FieldMap() {
   } = useAppStore();
 
 
-  const [mapLayer, setMapLayer] = useState<MapLayer>('esri');
+  const [mapLayer, setMapLayer] = useState<MapLayer>('google');
+  const [layerDropdownOpen, setLayerDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -952,7 +953,7 @@ export default function FieldMap() {
             maxZoom={19}
           />
         )}
-        {mapLayer === 'esri' && (
+        {mapLayer === 'google' && (
           <>
             {/* Google Satellite — cobertura total do Brasil */}
             <TileLayer
@@ -972,6 +973,14 @@ export default function FieldMap() {
               opacity={0.7}
             />
           </>
+        )}
+        {mapLayer === 'esri' && (
+          <TileLayer
+            attribution="Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={21}
+            maxNativeZoom={19}
+          />
         )}
 
         {overlay.url && overlay.bounds && <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.9} zIndex={400} />}
@@ -1162,15 +1171,48 @@ export default function FieldMap() {
         </div>
       )}
 
-      {/* Seletor de camadas */}
+      {/* Seletor de camadas — dropdown */}
       {drawMode === 'none' && !editingField && (
-        <div className="absolute top-4 left-4 z-[500] flex gap-1.5 pointer-events-auto">
-          {([{ key: 'osm', label: 'OpenStreetMap' }, { key: 'esri', label: 'Satélite HD' }] as { key: MapLayer; label: string }[]).map(({ key, label }) => (
-            <button key={key} onClick={() => setMapLayer(key)} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-              style={{ background: mapLayer === key ? 'rgba(236,91,19,0.9)' : 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: mapLayer === key ? '#fff' : '#94a3b8' }}>
-              {label}
-            </button>
-          ))}
+        <div className="absolute top-4 left-4 z-[500] pointer-events-auto">
+          {/* Botão principal */}
+          <button
+            onClick={() => setLayerDropdownOpen((v) => !v)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+            style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+          >
+            <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>
+              {mapLayer === 'osm' ? 'map' : mapLayer === 'esri' ? 'public' : 'travel_explore'}
+            </span>
+            {mapLayer === 'osm' ? 'Mapa' : mapLayer === 'esri' ? 'Esri' : 'Satélite HD'}
+            <span className="material-symbols-outlined text-sm transition-transform duration-150"
+              style={{ transform: layerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', color: '#94a3b8' }}>
+              expand_more
+            </span>
+          </button>
+
+          {/* Dropdown de opções */}
+          {layerDropdownOpen && (
+            <div className="mt-1 flex flex-col gap-0.5 rounded-xl overflow-hidden"
+              style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 140 }}>
+              {([
+                { key: 'google', label: 'Satélite HD', sub: 'Google', icon: 'travel_explore' },
+                { key: 'esri',   label: 'Esri',        sub: 'Melhor rural', icon: 'public' },
+                { key: 'osm',    label: 'Mapa',        sub: 'OpenStreetMap', icon: 'map' },
+              ] as { key: MapLayer; label: string; sub: string; icon: string }[]).map(({ key, label, sub, icon }) => (
+                <button key={key}
+                  onClick={() => { setMapLayer(key); setLayerDropdownOpen(false); }}
+                  className="flex items-center gap-2 px-3 py-2 text-left transition-all hover:bg-white/5"
+                  style={{ background: mapLayer === key ? 'rgba(236,91,19,0.15)' : 'transparent', borderLeft: mapLayer === key ? '2px solid #ec5b13' : '2px solid transparent' }}>
+                  <span className="material-symbols-outlined text-base" style={{ color: mapLayer === key ? '#ec5b13' : '#64748b' }}>{icon}</span>
+                  <div>
+                    <p className="text-[11px] font-bold" style={{ color: mapLayer === key ? '#fff' : '#94a3b8' }}>{label}</p>
+                    <p className="text-[9px]" style={{ color: '#475569' }}>{sub}</p>
+                  </div>
+                  {mapLayer === key && <span className="material-symbols-outlined text-sm ml-auto" style={{ color: '#ec5b13' }}>check</span>}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

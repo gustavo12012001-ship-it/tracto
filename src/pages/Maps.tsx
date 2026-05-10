@@ -540,6 +540,7 @@ export default function Maps() {
   const { fields, activeFieldId, activeFarmId, farms } = useAppStore();
   const [selectedMap, setSelectedMap] = useState<MapType>(MAP_TYPES[0]);
   const [basemap, setBasemap] = useState<BasemapKey>('google');
+  const [basemapDropdownOpen, setBasemapDropdownOpen] = useState(false);
   const [satTab, setSatTab] = useState<SatSource>('s2');
   const [scenes, setScenes] = useState<ScenesState>({ s2: [], s1: [], up42: [], loading: false, error: null, fieldId: null });
   const [overlay, setOverlay] = useState<OverlayState>({ url: null, bounds: null, loading: false, error: null, sceneKey: null });
@@ -944,23 +945,40 @@ export default function Maps() {
           </div>
         )}
 
-        {/* Seletor de mapa base — canto inferior direito */}
+        {/* Seletor de mapa base — dropdown, canto inferior direito */}
         {!selectedMap.specialTile && (
-          <div className="absolute bottom-4 right-3 z-[500] flex flex-col gap-1" style={{ pointerEvents: 'all' }}>
-            <p className="text-[9px] font-semibold text-center mb-0.5" style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}>MAPA BASE</p>
-            {(Object.entries(BASEMAPS) as [BasemapKey, typeof BASEMAPS[BasemapKey]][]).map(([key, bm]) => (
-              <button
-                key={key}
-                onClick={() => setBasemap(key)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold transition-all"
-                style={basemap === key
-                  ? { background: 'var(--primary)', color: '#fff', border: '1px solid var(--primary)', backdropFilter: 'blur(8px)' }
-                  : { background: 'rgba(8,8,9,0.85)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(8px)' }}
-              >
-                <span className="material-symbols-outlined text-sm">{bm.icon}</span>
-                {bm.label}
-              </button>
-            ))}
+          <div className="absolute bottom-4 right-3 z-[500]" style={{ pointerEvents: 'all' }}>
+            {/* Dropdown de opções — abre para cima */}
+            {basemapDropdownOpen && (
+              <div className="mb-1 flex flex-col gap-0.5 rounded-xl overflow-hidden"
+                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 148 }}>
+                {(Object.entries(BASEMAPS) as [BasemapKey, typeof BASEMAPS[BasemapKey]][]).map(([key, bm]) => (
+                  <button key={key}
+                    onClick={() => { setBasemap(key); setBasemapDropdownOpen(false); }}
+                    className="flex items-center gap-2 px-3 py-2 text-left transition-all hover:bg-white/5"
+                    style={{ background: basemap === key ? 'rgba(236,91,19,0.15)' : 'transparent', borderLeft: basemap === key ? '2px solid #ec5b13' : '2px solid transparent' }}>
+                    <span className="material-symbols-outlined text-base" style={{ color: basemap === key ? '#ec5b13' : '#64748b' }}>{bm.icon}</span>
+                    <div className="flex-1">
+                      <p className="text-[11px] font-bold" style={{ color: basemap === key ? '#fff' : '#94a3b8' }}>{bm.label}</p>
+                    </div>
+                    {basemap === key && <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>check</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Botão principal */}
+            <button
+              onClick={() => setBasemapDropdownOpen((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+              style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+            >
+              <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>{activeBm.icon}</span>
+              {activeBm.label}
+              <span className="material-symbols-outlined text-sm transition-transform duration-150"
+                style={{ transform: basemapDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', color: '#94a3b8' }}>
+                expand_more
+              </span>
+            </button>
           </div>
         )}
         </div>{/* end normal map inner div */}
