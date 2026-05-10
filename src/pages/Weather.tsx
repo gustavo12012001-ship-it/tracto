@@ -2,7 +2,27 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../store/useAppStore';
 import { SkeletonCard } from '../components/Skeleton';
-import { fetchOpenMeteo } from '../services/api';
+import { fetchOpenMeteo, apiFetch } from '../services/api';
+
+// ── Graus-Dia: config por cultura ─────────────────────────────────────────────
+interface SeasonItem { id: string; name: string; crop_type?: string; planting_date?: string; harvest_date?: string; }
+
+const GDD_CONFIG: Record<string, { base: number; target: number; label: string; color: string }> = {
+  soja:      { base: 10, target: 1850, label: 'Soja',     color: '#4ade80' },
+  milho:     { base: 10, target: 1600, label: 'Milho',    color: '#fbbf24' },
+  trigo:     { base: 0,  target: 1500, label: 'Trigo',    color: '#d4a574' },
+  algodao:   { base: 15, target: 2200, label: 'Algodão',  color: '#e2e8f0' },
+  sorgo:     { base: 10, target: 1400, label: 'Sorgo',    color: '#f97316' },
+  feijao:    { base: 10, target: 1200, label: 'Feijão',   color: '#a78bfa' },
+  cana:      { base: 18, target: 3000, label: 'Cana',     color: '#34d399' },
+  default:   { base: 10, target: 1800, label: 'Cultivo',  color: '#94a3b8' },
+};
+
+function gddKey(cropType?: string) {
+  if (!cropType) return 'default';
+  const k = cropType.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+  return GDD_CONFIG[k] ? k : 'default';
+}
 
 // ── WMO Weather Code → icon + label ──────────────────────────────────────────
 const WMO_CODES: Record<number, { icon: string; label: string }> = {
@@ -43,6 +63,12 @@ export default function Weather() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windyOverlay, setWindyOverlay] = useState<'temp' | 'rain' | 'humidity' | 'wind' | 'clouds'>('temp');
+
+  // ── Graus-dia acumulados ───────────────────────────────────────────────────
+  const [activeSeason, setActiveSeason] = useState<SeasonItem | null>(null);
+  const [gddAccum, setGddAccum] = useState<number | null>(null);
+  const [precipAccum, setPrecipAccum] = useState<number | null>(null);
+  const [gddLoading, setGddLoading] = useState(false);
 
   const activeField = activeFieldId
     ? fields.find((field) => field.id === activeFieldId) ?? null
@@ -90,6 +116,50 @@ export default function Weather() {
       mounted = false;
     };
   }, [loc.lat, loc.lng, weatherCache, setWeatherCache]);
+
+  // Busca safra ativa do talhão
+  useEffect(() => {
+    if (!activeFieldId) { setActiveSeason(null); setGddAccum(null); setPrecipAccum(null); return; }
+    apiFetch<SeasonItem[]>(`/api/fields/${activeFieldId}/seasons`)
+      .then(seasons => {
+        const today = new Date().toISOString().slice(0, 10);
+        const active = seasons.find(s =>
+          s.planting_date && s.planting_date <= today &&
+          (!s.harvest_date || s.harvest_date > today)
+        ) ?? seasons.find(s => s.planting_date && s.planting_date <= today) ?? null;
+        setActiveSeason(active ?? null);
+      })
+      .catch(() => setActiveSeason(null));
+  }, [activeFieldId]);
+
+  // Calcula GDD acumulado desde o plantio (Open-Meteo histórico — gratuito)
+  useEffect(() => {
+    if (!activeSeason?.planting_date) { setGddAccum(null); setPrecipAccum(null); return; }
+    const plantDate = activeSeason.planting_date;
+    const today = new Date().toISOString().slice(0, 10);
+    if (plantDate > today) { setGddAccum(0); return; }
+    const cfg = GDD_CONFIG[gddKey(activeSeason.crop_type)];
+    setGddLoading(true);
+    fetch(
+      `https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lng}` +
+      `&start_date=${plantDate}&end_date=${today}` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=America/Sao_Paulo`
+    )
+      .then(r => r.json())
+      .then((data: { daily?: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_sum: number[] } }) => {
+        let gdd = 0; let precip = 0;
+        (data.daily?.time ?? []).forEach((_, i) => {
+          const tmax = data.daily!.temperature_2m_max[i] ?? 0;
+          const tmin = data.daily!.temperature_2m_min[i] ?? 0;
+          gdd += Math.max(0, (tmax + tmin) / 2 - cfg.base);
+          precip += data.daily!.precipitation_sum[i] ?? 0;
+        });
+        setGddAccum(Math.round(gdd));
+        setPrecipAccum(Math.round(precip * 10) / 10);
+      })
+      .catch(() => {})
+      .finally(() => setGddLoading(false));
+  }, [activeSeason, loc.lat, loc.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const w = weatherCache;
   const snapshotWeather = snapshot?.weather as Record<string, unknown> | undefined;
@@ -378,6 +448,81 @@ export default function Weather() {
             </div>
           </div>
         )}
+
+        {/* ── Graus-Dia Acumulados ── */}
+        {activeField && activeSeason && (() => {
+          const cfg = GDD_CONFIG[gddKey(activeSeason.crop_type)];
+          const pct = gddAccum !== null ? Math.min(100, Math.round((gddAccum / cfg.target) * 100)) : 0;
+          const daysActive = activeSeason.planting_date
+            ? Math.round((Date.now() - new Date(activeSeason.planting_date).getTime()) / 86400000)
+            : 0;
+          return (
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}>
+              <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+                <span className="material-symbols-outlined text-xl" style={{ color: cfg.color }}>device_thermostat</span>
+                <h2 className="text-sm font-bold text-white">Graus-Dia Acumulados</h2>
+                <span className="text-[10px] ml-auto font-medium px-2 py-0.5 rounded-full" style={{ background: cfg.color + '18', color: cfg.color }}>
+                  {cfg.label} · Safra ativa
+                </span>
+              </div>
+              <div className="p-5">
+                {gddLoading ? (
+                  <div className="flex items-center gap-2 py-2">
+                    <div className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                    <p className="text-xs" style={{ color: '#64748b' }}>Calculando desde {activeSeason.planting_date?.split('-').reverse().join('/')}…</p>
+                  </div>
+                ) : gddAccum !== null ? (
+                  <div className="flex flex-col gap-4">
+                    {/* Linha principal */}
+                    <div className="flex items-end gap-4 flex-wrap">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: '#64748b' }}>GDD Acumulado</p>
+                        <p className="text-4xl font-black" style={{ color: cfg.color }}>{gddAccum.toLocaleString('pt-BR')}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>de {cfg.target.toLocaleString('pt-BR')} GDD estimados para colheita</p>
+                      </div>
+                      <div className="flex gap-5 ml-auto flex-wrap">
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-widest" style={{ color: '#64748b' }}>Dias de safra</p>
+                          <p className="text-xl font-bold text-white">{daysActive}d</p>
+                        </div>
+                        {precipAccum !== null && (
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase tracking-widest" style={{ color: '#64748b' }}>Chuva acumulada</p>
+                            <p className="text-xl font-bold" style={{ color: '#60a5fa' }}>{precipAccum} mm</p>
+                          </div>
+                        )}
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-widest" style={{ color: '#64748b' }}>Ciclo completo</p>
+                          <p className="text-xl font-bold text-white">{pct}%</p>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Barra de progresso */}
+                    <div>
+                      <div className="flex justify-between text-[10px] mb-1.5" style={{ color: '#64748b' }}>
+                        <span>Plantio · {activeSeason.planting_date?.split('-').reverse().join('/')}</span>
+                        <span>Colheita estimada · {pct}% do ciclo</span>
+                      </div>
+                      <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${pct}%`, background: `linear-gradient(to right, ${cfg.color}88, ${cfg.color})` }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] mt-1" style={{ color: '#475569' }}>
+                        <span>0 GDD</span>
+                        <span>{cfg.target.toLocaleString('pt-BR')} GDD</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px]" style={{ color: '#334155' }}>
+                      Base térmica: {cfg.base}°C · Fonte: Open-Meteo Archive API · Temperatura base internacional para {cfg.label}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs py-2" style={{ color: '#64748b' }}>Não foi possível calcular. Verifique a data de plantio na safra.</p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Previsão Horária ── */}
         {w && (

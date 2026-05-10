@@ -87,6 +87,7 @@ export default function Seasons() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SeasonFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<'lista' | 'rotacao'>('lista');
 
   const activeField = allFields.find(f => f.id === activeFieldId);
 
@@ -185,14 +186,33 @@ export default function Seasons() {
             <p className="text-sm" style={{ color: 'var(--muted)' }}>Histórico de safras por talhão</p>
           </div>
         </div>
-        {activeFieldId && (
-          <button onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-white"
-            style={{ background: 'var(--primary)' }}>
-            <span className="material-symbols-outlined text-base">add</span>
-            Nova Safra
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Toggle lista / rotação */}
+          {seasons.length > 0 && (
+            <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+              {(['lista', 'rotacao'] as const).map(v => (
+                <button key={v} onClick={() => setView(v)}
+                  className="px-3 py-2 text-xs font-bold transition-all flex items-center gap-1.5"
+                  style={view === v
+                    ? { background: 'var(--primary)', color: '#fff' }
+                    : { background: 'var(--surface)', color: 'var(--muted)' }}>
+                  <span className="material-symbols-outlined text-sm">
+                    {v === 'lista' ? 'list' : 'timeline'}
+                  </span>
+                  {v === 'lista' ? 'Lista' : 'Rotação'}
+                </button>
+              ))}
+            </div>
+          )}
+          {activeFieldId && (
+            <button onClick={openCreate}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-white"
+              style={{ background: 'var(--primary)' }}>
+              <span className="material-symbols-outlined text-base">add</span>
+              Nova Safra
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Seletor de talhão */}
@@ -345,6 +365,96 @@ export default function Seasons() {
             </div>
           )}
 
+          {/* ── Rotação de Culturas ── */}
+          {view === 'rotacao' && seasons.length > 0 && (() => {
+            const CROP_COLORS: Record<string, string> = {
+              soja: '#4ade80', milho: '#fbbf24', trigo: '#d4a574',
+              algodao: '#e2e8f0', sorgo: '#f97316', feijao: '#a78bfa',
+              cana: '#34d399', arroz: '#60a5fa',
+            };
+            const cropColor = (ct?: string) => {
+              if (!ct) return '#ec5b13';
+              const k = ct.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(' ')[0].replace(/[^a-z]/g, '');
+              return CROP_COLORS[k] ?? '#ec5b13';
+            };
+            // Agrupar por ano (do plantio)
+            const byYear = new Map<number, Season[]>();
+            seasons.forEach(s => {
+              const yr = s.planting_date ? new Date(s.planting_date).getFullYear() : new Date().getFullYear();
+              if (!byYear.has(yr)) byYear.set(yr, []);
+              byYear.get(yr)!.push(s);
+            });
+            const years = Array.from(byYear.keys()).sort((a, b) => b - a);
+            return (
+              <div className="rounded-2xl p-4 flex flex-col gap-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>timeline</span>
+                  <h3 className="font-bold text-white text-sm">Rotação de Culturas</h3>
+                  <span className="text-[10px] ml-auto" style={{ color: 'var(--muted)' }}>{seasons.length} safra{seasons.length !== 1 ? 's' : ''} registrada{seasons.length !== 1 ? 's' : ''}</span>
+                </div>
+                {years.map(yr => {
+                  const yrSeasons = byYear.get(yr)!;
+                  // Janela: 01/Set ano-1 a 31/Ago ano (safra brasileira)
+                  const winStart = new Date(`${yr - 1}-09-01`).getTime();
+                  const winEnd = new Date(`${yr}-08-31`).getTime();
+                  const winRange = winEnd - winStart;
+                  return (
+                    <div key={yr}>
+                      <p className="text-xs font-bold mb-2" style={{ color: 'var(--muted)' }}>Safra {yr - 1}/{String(yr).slice(-2)}</p>
+                      <div className="relative h-10 rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+                        {yrSeasons.map(s => {
+                          if (!s.planting_date) return null;
+                          const start = Math.max(new Date(s.planting_date).getTime(), winStart);
+                          const end = s.harvest_date ? Math.min(new Date(s.harvest_date).getTime(), winEnd) : Math.min(Date.now(), winEnd);
+                          const left = ((start - winStart) / winRange) * 100;
+                          const width = Math.max(2, ((end - start) / winRange) * 100);
+                          const color = cropColor(s.crop_type);
+                          const status = getSeasonStatus(s);
+                          return (
+                            <div key={s.id}
+                              className="absolute top-1 bottom-1 rounded-lg flex items-center px-2 overflow-hidden"
+                              style={{ left: `${left}%`, width: `${width}%`, background: color + '30', border: `1.5px solid ${color}`, minWidth: 4 }}
+                              title={`${s.name} · ${fmtDate(s.planting_date)} → ${fmtDate(s.harvest_date)}`}>
+                              <span className="text-[10px] font-bold truncate" style={{ color }}>
+                                {s.crop_type ?? s.name}
+                                {status === 'em_andamento' && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {/* Linha de hoje */}
+                        {(() => {
+                          const todayPct = ((Date.now() - winStart) / winRange) * 100;
+                          if (todayPct < 0 || todayPct > 100) return null;
+                          return <div className="absolute top-0 bottom-0 w-px" style={{ left: `${todayPct}%`, background: 'rgba(236,91,19,0.7)' }} />;
+                        })()}
+                      </div>
+                      {/* Meses */}
+                      <div className="flex justify-between mt-1">
+                        {['Set', 'Out', 'Nov', 'Dez', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago'].map((m, i) => (
+                          <span key={i} className="text-[8px]" style={{ color: '#334155' }}>{m}</span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Legenda */}
+                <div className="flex flex-wrap gap-2 pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
+                  {Array.from(new Set(seasons.map(s => s.crop_type).filter(Boolean))).map(ct => (
+                    <div key={ct} className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded" style={{ background: cropColor(ct) }} />
+                      <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{ct}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1 ml-auto">
+                    <div className="w-px h-3" style={{ background: 'rgba(236,91,19,0.7)' }} />
+                    <span className="text-[10px]" style={{ color: '#ec5b13' }}>Hoje</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Lista de safras */}
           {!loading && seasons.length === 0 && (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12 opacity-50">
@@ -358,7 +468,7 @@ export default function Seasons() {
             </div>
           )}
 
-          <div className="flex flex-col gap-3">
+          <div className={`flex flex-col gap-3 ${view === 'rotacao' ? 'hidden' : ''}`}>
             {seasons.map(s => {
               const status = getSeasonStatus(s);
               const totalSacasS = s.productivity_sc_ha != null && s.area_ha != null
