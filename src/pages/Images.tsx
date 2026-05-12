@@ -7,6 +7,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { API_URL, buildAuthHeaders } from '../services/api';
+import ClippedImageOverlay from '../components/ClippedImageOverlay';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface SatArtifact {
@@ -48,62 +49,6 @@ function computeBounds(b: [number, number][]): L.LatLngBoundsExpression {
   const lats = b.map(p => p[0]);
   const lngs = b.map(p => p[1]);
   return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
-}
-
-// ── ClippedImageOverlay: recorta PNG ao polígono do talhão ────────────────────
-function ClippedImageOverlay({
-  url,
-  bounds,
-  fieldBoundaries,
-}: {
-  url: string;
-  bounds: L.LatLngBoundsExpression;
-  fieldBoundaries: [number, number][];
-}) {
-  const map = useMap();
-  useEffect(() => {
-    const lb = bounds instanceof L.LatLngBounds
-      ? bounds
-      : L.latLngBounds(bounds as L.LatLngBoundsLiteral);
-    const overlay = L.imageOverlay(url, lb, { opacity: 0.95 });
-    overlay.addTo(map);
-
-    function applyClip() {
-      const el = overlay.getElement();
-      if (!el || fieldBoundaries.length < 3) return;
-      const sw = lb.getSouthWest();
-      const ne = lb.getNorthEast();
-      const latSpan = ne.lat - sw.lat;
-      const lngSpan = ne.lng - sw.lng;
-      if (!latSpan || !lngSpan) return;
-      const pts = fieldBoundaries
-        .map(([lat, lng]) => {
-          const x = (((lng - sw.lng) / lngSpan) * 100).toFixed(2);
-          const y = ((1 - (lat - sw.lat) / latSpan) * 100).toFixed(2);
-          return `${x}% ${y}%`;
-        })
-        .join(', ');
-      el.style.clipPath = `polygon(${pts})`;
-    }
-
-    overlay.on('load', applyClip);
-    Promise.resolve().then(() => {
-      const el = overlay.getElement();
-      if (!el) { overlay.once('load', applyClip); return; }
-      if (el.complete && el.naturalWidth > 0) {
-        applyClip();
-      } else {
-        el.addEventListener('load', applyClip, { once: true });
-      }
-    });
-
-    return () => {
-      overlay.off('load', applyClip);
-      map.removeLayer(overlay);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, map]);
-  return null;
 }
 
 // ── FitBounds: encaixa o mapa nos limites do talhão (uma vez) ─────────────────
@@ -454,43 +399,85 @@ export default function Images() {
         </div>
 
         <div className="p-2 flex flex-col gap-0.5">
-          {farms.map(farm => (
-            <div key={farm.id}>
-              <p
-                className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest truncate"
-                style={{ color: 'var(--muted)' }}>
-                {farm.name}
-              </p>
-              {farm.fields.map(field => {
-                const isActive = field.id === selectedFieldId;
-                return (
-                  <button
-                    key={field.id}
-                    onClick={() => handleSelectField(field.id!)}
-                    className="w-full text-left px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
-                    style={isActive
-                      ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)' }
-                      : { background: 'transparent', border: '1px solid transparent' }}>
-                    <span
-                      className="material-symbols-outlined text-base flex-shrink-0"
-                      style={{ color: isActive ? 'var(--primary)' : '#475569' }}>
-                      crop_square
-                    </span>
-                    <div className="min-w-0">
-                      <p
-                        className="text-[12px] font-bold truncate"
-                        style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>
-                        {field.name}
-                      </p>
-                      <p className="text-[9px] truncate" style={{ color: 'var(--muted)' }}>
-                        {field.areaHa ? `${field.areaHa} ha` : '—'} · {field.cultura ?? 'sem cultura'}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {farms.map(farm => {
+            // Fix: store mantém fields no array top-level, não em farm.fields
+            const farmFields = fields.filter(f => f.farm_id === farm.id);
+            if (farmFields.length === 0) return null;
+            return (
+              <div key={farm.id}>
+                <p
+                  className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest truncate"
+                  style={{ color: 'var(--muted)' }}>
+                  {farm.name}
+                </p>
+                {farmFields.map(field => {
+                  const isActive = field.id === selectedFieldId;
+                  return (
+                    <button
+                      key={field.id}
+                      onClick={() => field.id && handleSelectField(field.id)}
+                      className="w-full text-left px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
+                      style={isActive
+                        ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)' }
+                        : { background: 'transparent', border: '1px solid transparent' }}>
+                      <span
+                        className="material-symbols-outlined text-base flex-shrink-0"
+                        style={{ color: isActive ? 'var(--primary)' : '#475569' }}>
+                        crop_square
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="text-[12px] font-bold truncate"
+                          style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>
+                          {field.name}
+                        </p>
+                        <p className="text-[9px] truncate" style={{ color: 'var(--muted)' }}>
+                          {field.areaHa ? `${field.areaHa.toFixed(2)} ha` : '—'}
+                          {field.cultura ? ` · ${field.cultura}` : ''}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {/* Talhões sem fazenda */}
+          {(() => {
+            const farmIds = new Set(farms.map(f => f.id));
+            const orphans = fields.filter(f => !f.farm_id || !farmIds.has(f.farm_id));
+            if (orphans.length === 0) return null;
+            return (
+              <div>
+                <p className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
+                  Sem fazenda
+                </p>
+                {orphans.map(field => {
+                  const isActive = field.id === selectedFieldId;
+                  return (
+                    <button
+                      key={field.id}
+                      onClick={() => field.id && handleSelectField(field.id)}
+                      className="w-full text-left px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
+                      style={isActive
+                        ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)' }
+                        : { background: 'transparent', border: '1px solid transparent' }}>
+                      <span className="material-symbols-outlined text-base flex-shrink-0"
+                        style={{ color: isActive ? 'var(--primary)' : '#475569' }}>crop_square</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-bold truncate"
+                          style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>{field.name}</p>
+                        <p className="text-[9px] truncate" style={{ color: 'var(--muted)' }}>
+                          {field.areaHa ? `${field.areaHa.toFixed(2)} ha` : '—'}
+                          {field.cultura ? ` · ${field.cultura}` : ''}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
           {fields.length === 0 && (
             <p className="text-[11px] px-2 py-4 text-center" style={{ color: 'var(--muted)' }}>
               Nenhum talhão cadastrado

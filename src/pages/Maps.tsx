@@ -8,6 +8,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { API_URL } from '../services/api';
+import ClippedImageOverlay from '../components/ClippedImageOverlay';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface SentinelScene {
@@ -303,66 +304,6 @@ async function buildAuthHeaders(): Promise<HeadersInit> {
 function computeBounds(b: [number, number][]): L.LatLngBoundsExpression {
   const lats = b.map((p) => p[0]), lngs = b.map((p) => p[1]);
   return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
-}
-
-// ── ClippedImageOverlay: recorta a imagem ao polígono do talhão ───────────────
-function ClippedImageOverlay({
-  url,
-  bounds,
-  opacity = 0.93,
-  fieldBoundaries,
-}: {
-  url: string;
-  bounds: L.LatLngBoundsExpression;
-  opacity?: number;
-  fieldBoundaries: [number, number][];
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    const lb = bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngBoundsLiteral);
-    const overlay = L.imageOverlay(url, lb, { opacity });
-    overlay.addTo(map);
-
-    function applyClip() {
-      const el = overlay.getElement();
-      if (!el || fieldBoundaries.length < 3) return;
-      const sw = lb.getSouthWest();
-      const ne = lb.getNorthEast();
-      const latSpan = ne.lat - sw.lat;
-      const lngSpan = ne.lng - sw.lng;
-      if (latSpan === 0 || lngSpan === 0) return;
-      const pts = fieldBoundaries
-        .map(([lat, lng]) => {
-          const x = (((lng - sw.lng) / lngSpan) * 100).toFixed(2);
-          const y = ((1 - (lat - sw.lat) / latSpan) * 100).toFixed(2);
-          return `${x}% ${y}%`;
-        })
-        .join(', ');
-      el.style.clipPath = `polygon(${pts})`;
-    }
-
-    // Registra via evento Leaflet (sempre)
-    overlay.on('load', applyClip);
-    // Fallback: aplica via microtask (garante elemento criado) + listener direto no img
-    Promise.resolve().then(() => {
-      const el = overlay.getElement();
-      if (!el) { overlay.once('load', applyClip); return; }
-      if (el.complete && el.naturalWidth > 0) {
-        applyClip();
-      } else {
-        el.addEventListener('load', applyClip, { once: true });
-      }
-    });
-
-    return () => {
-      overlay.off('load', applyClip);
-      map.removeLayer(overlay);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, map]);
-
-  return null;
 }
 
 function FlyToBounds({ boundaries }: { boundaries: [number, number][] | null }) {
