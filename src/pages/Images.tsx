@@ -206,7 +206,7 @@ export default function Images() {
                         {field.name}
                       </p>
                       <p className="text-[9px] truncate" style={{ color: 'var(--muted)' }}>
-                        {field.areaHa ? `${field.areaHa} ha` : '—'} · {field.crop_type ?? 'sem cultura'}
+                        {field.areaHa ? `${field.areaHa} ha` : '—'} · {field.cultura ?? 'sem cultura'}
                       </p>
                     </div>
                   </button>
@@ -241,7 +241,7 @@ export default function Images() {
                   <h2 className="text-sm font-black text-white">{selectedField.name}</h2>
                   <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
                     {selectedField.areaHa ? `${selectedField.areaHa} ha` : '—'}
-                    {selectedField.crop_type ? ` · ${selectedField.crop_type}` : ''}
+                    {selectedField.cultura ? ` · ${selectedField.cultura}` : ''}
                     {' · '}{artifacts.length} imagens armazenadas
                   </p>
                 </div>

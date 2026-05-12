@@ -320,7 +320,7 @@ function ClippedImageOverlay({
   const map = useMap();
 
   useEffect(() => {
-    const lb = L.latLngBounds(bounds as L.LatLngBoundsExpression);
+    const lb = bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngBoundsLiteral);
     const overlay = L.imageOverlay(url, lb, { opacity });
     overlay.addTo(map);
 
