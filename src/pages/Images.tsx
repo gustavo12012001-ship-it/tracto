@@ -129,13 +129,20 @@ interface MapCardProps {
   fieldBoundaries: [number, number][];
   center: [number, number];
   mapBounds: L.LatLngBoundsExpression | null;
+  onExpand?: () => void;
+  onAnalyze?: () => void;
 }
 
-function MapCard({ mapKey, label, artifacts: _artifacts, slot, fieldBoundaries, center, mapBounds }: MapCardProps) {
+function MapCard({
+  mapKey, label, artifacts: _artifacts, slot,
+  fieldBoundaries, center, mapBounds,
+  onExpand, onAnalyze,
+}: MapCardProps) {
   const { idx, setIdx, url, loading, error, active, total } = slot;
   const modeColor = active ? (MODE_COLOR[active.mode] ?? '#94a3b8') : '#94a3b8';
   const modeLabel = active ? (MODE_LABEL[active.mode] ?? active.mode.toUpperCase()) : label;
   const dateLabel = active ? fmtDate(active.scene_date ?? active.generated_at) : '—';
+  const sourceLabel = active?.source ? (active.source === 's2' ? 'Sentinel-2' : active.source === 's1' ? 'Sentinel-1' : active.source.toUpperCase()) : '';
 
   return (
     <div className="flex flex-col rounded-2xl overflow-hidden flex-1 min-w-0 min-h-0"
@@ -154,6 +161,12 @@ function MapCard({ mapKey, label, artifacts: _artifacts, slot, fieldBoundaries, 
           {total > 0 ? dateLabel : label}
         </span>
 
+        {sourceLabel && (
+          <span className="text-[9px] flex-shrink-0 hidden sm:inline" style={{ color: '#64748b' }}>
+            {sourceLabel}
+          </span>
+        )}
+
         {loading && (
           <div className="w-3 h-3 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
         )}
@@ -169,6 +182,7 @@ function MapCard({ mapKey, label, artifacts: _artifacts, slot, fieldBoundaries, 
           <button
             onClick={() => setIdx(i => Math.max(0, i - 1))}
             disabled={idx <= 0 || total === 0}
+            title="Imagem anterior"
             className="w-6 h-6 flex items-center justify-center rounded-lg transition-all disabled:opacity-25 hover:bg-white/10">
             <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--muted)' }}>chevron_left</span>
           </button>
@@ -178,10 +192,31 @@ function MapCard({ mapKey, label, artifacts: _artifacts, slot, fieldBoundaries, 
           <button
             onClick={() => setIdx(i => Math.min(total - 1, i + 1))}
             disabled={idx >= total - 1 || total === 0}
+            title="Próxima imagem"
             className="w-6 h-6 flex items-center justify-center rounded-lg transition-all disabled:opacity-25 hover:bg-white/10">
             <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--muted)' }}>chevron_right</span>
           </button>
         </div>
+
+        {/* Ações: expandir + IA */}
+        {url && (
+          <div className="flex items-center gap-1 flex-shrink-0 ml-1 pl-1 border-l" style={{ borderColor: 'var(--border)' }}>
+            <button
+              onClick={onAnalyze}
+              title="Analisar com Tracto IA"
+              className="w-6 h-6 flex items-center justify-center rounded-lg transition-all hover:bg-white/10"
+              style={{ color: 'var(--primary)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>auto_awesome</span>
+            </button>
+            <button
+              onClick={onExpand}
+              title="Expandir"
+              className="w-6 h-6 flex items-center justify-center rounded-lg transition-all hover:bg-white/10"
+              style={{ color: 'var(--muted)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>fullscreen</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Mapa */}
@@ -381,6 +416,71 @@ export default function Images() {
   const ndviSlot = useArtifactSlot(ndviArtifacts);
   const satSlot = useArtifactSlot(satArtifacts);
 
+  // ── Modal de expansão (fullscreen) ─────────────────────────────────────────
+  const [expanded, setExpanded] = useState<'ndvi' | 'sat' | null>(null);
+  const expandedSlot = expanded === 'ndvi' ? ndviSlot : expanded === 'sat' ? satSlot : null;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpanded(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
+
+  // ── Modal de análise IA ─────────────────────────────────────────────────────
+  const [aiOpen, setAiOpen] = useState<'ndvi' | 'sat' | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiArtifact = aiOpen === 'ndvi' ? ndviSlot.active : aiOpen === 'sat' ? satSlot.active : null;
+
+  const analyzeWithAI = useCallback(async () => {
+    if (!aiArtifact || !selectedField) return;
+    setAiLoading(true); setAiError(null); setAiResult(null);
+    try {
+      const headers = await buildAuthHeaders();
+      const body = {
+        lat: selectedField.lat,
+        lng: selectedField.lng,
+        field_name: selectedField.name ?? 'Talhão',
+        crop_type: selectedField.cultura ?? undefined,
+        date_range_days: 30,
+        boundaries: selectedField.boundaries ?? null,
+        planting_date: selectedField.dataPlantio ?? undefined,
+        variety: selectedField.variedade ?? undefined,
+        area_ha: selectedField.areaHa ?? undefined,
+      };
+      const resp = await fetch(`${API_URL}/api/analyze-field`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        let msg = `Erro ${resp.status}`;
+        try { const j = await resp.json() as { detail?: string }; msg = j.detail ?? msg; } catch { /* */ }
+        throw new Error(msg);
+      }
+      const data = await resp.json() as { ai_report?: string };
+      setAiResult(data.ai_report ?? 'Análise não disponível.');
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'Erro na análise');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiArtifact, selectedField]);
+
+  // Dispara análise quando abre modal
+  useEffect(() => {
+    if (aiOpen && aiArtifact && !aiResult && !aiLoading && !aiError) {
+      void analyzeWithAI();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiOpen]);
+
+  useEffect(() => {
+    if (!aiOpen) { setAiResult(null); setAiError(null); }
+  }, [aiOpen]);
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
@@ -496,31 +596,48 @@ export default function Images() {
           </div>
         ) : (
           <>
-            {/* Header do talhão */}
+            {/* Header do talhão — info completa do talhão selecionado */}
             <div
-              className="flex-shrink-0 px-4 py-2 border-b flex items-center gap-3"
+              className="flex-shrink-0 px-4 py-3 border-b"
               style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
-              <span className="material-symbols-outlined text-lg" style={{ color: 'var(--primary)' }}>
-                crop_square
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-white truncate">{selectedField.name}</p>
-                <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
-                  {selectedField.areaHa ? `${selectedField.areaHa} ha` : '—'}
-                  {selectedField.cultura ? ` · ${selectedField.cultura}` : ''}
-                  {artifacts.length > 0 ? ` · ${artifacts.length} imagens` : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => void loadArtifacts(selectedFieldId)}
-                disabled={loadingArtifacts}
-                title="Atualizar"
-                className="p-1.5 rounded-lg transition-all hover:bg-white/10 disabled:opacity-50"
-                style={{ color: 'var(--muted)' }}>
-                <span className={`material-symbols-outlined text-base ${loadingArtifacts ? 'animate-spin' : ''}`}>
-                  refresh
+              <div className="flex items-start gap-3 flex-wrap">
+                <span className="material-symbols-outlined text-2xl flex-shrink-0" style={{ color: 'var(--primary)' }}>
+                  crop_square
                 </span>
-              </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-black text-white truncate">{selectedField.name}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[10px]" style={{ color: 'var(--muted)' }}>
+                    {selectedField.areaHa != null && (
+                      <span><strong className="text-white">{selectedField.areaHa.toFixed(2)}</strong> ha</span>
+                    )}
+                    {selectedField.cultura && (
+                      <span>Cultura: <strong className="text-white">{selectedField.cultura}</strong></span>
+                    )}
+                    {selectedField.dataPlantio && (
+                      <span>Plantio: <strong className="text-white">{(() => {
+                        try { return new Date(selectedField.dataPlantio + 'T12:00:00').toLocaleDateString('pt-BR'); }
+                        catch { return selectedField.dataPlantio; }
+                      })()}</strong></span>
+                    )}
+                    {selectedField.variedade && (
+                      <span>Variedade: <strong className="text-white">{selectedField.variedade}</strong></span>
+                    )}
+                    {artifacts.length > 0 && (
+                      <span><strong className="text-white">{artifacts.length}</strong> imagens armazenadas</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void loadArtifacts(selectedFieldId)}
+                  disabled={loadingArtifacts}
+                  title="Atualizar"
+                  className="p-1.5 rounded-lg transition-all hover:bg-white/10 disabled:opacity-50 flex-shrink-0"
+                  style={{ color: 'var(--muted)' }}>
+                  <span className={`material-symbols-outlined text-base ${loadingArtifacts ? 'animate-spin' : ''}`}>
+                    refresh
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Conteúdo */}
@@ -578,8 +695,8 @@ export default function Images() {
               /* ── Dois mapas + timeline ── */
               <div className="flex-1 flex flex-col min-h-0 p-3 gap-3 overflow-hidden">
 
-                {/* Dois painéis de mapa lado a lado */}
-                <div className="flex gap-3 flex-1 min-h-0">
+                {/* Grid responsivo: stack vertical em mobile, lado a lado em desktop */}
+                <div className="flex flex-col md:flex-row gap-3 flex-1 min-h-0">
                   <MapCard
                     mapKey={`ndvi-${selectedFieldId}`}
                     label="NDVI"
@@ -588,6 +705,8 @@ export default function Images() {
                     fieldBoundaries={fieldBoundaries}
                     center={center}
                     mapBounds={mapBounds}
+                    onExpand={() => setExpanded('ndvi')}
+                    onAnalyze={() => setAiOpen('ndvi')}
                   />
                   <MapCard
                     mapKey={`sat-${selectedFieldId}`}
@@ -597,6 +716,8 @@ export default function Images() {
                     fieldBoundaries={fieldBoundaries}
                     center={center}
                     mapBounds={mapBounds}
+                    onExpand={() => setExpanded('sat')}
+                    onAnalyze={() => setAiOpen('sat')}
                   />
                 </div>
 
@@ -643,6 +764,172 @@ export default function Images() {
           </>
         )}
       </div>
+
+      {/* ── Modal de expansão (fullscreen) ───────────────────────────────── */}
+      {expanded && expandedSlot && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setExpanded(null)}>
+          <div
+            className="relative w-full h-full max-w-7xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden"
+            style={{ background: '#080809', border: '1px solid var(--border)' }}
+            onClick={(e) => e.stopPropagation()}>
+
+            {/* Header do modal */}
+            <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3"
+              style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}>
+              {expandedSlot.active && (
+                <>
+                  <span className="text-[11px] font-black px-2 py-1 rounded"
+                    style={{
+                      background: (MODE_COLOR[expandedSlot.active.mode] ?? '#94a3b8') + '25',
+                      color: MODE_COLOR[expandedSlot.active.mode] ?? '#94a3b8',
+                    }}>
+                    {MODE_LABEL[expandedSlot.active.mode] ?? expandedSlot.active.mode.toUpperCase()}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">
+                      {selectedField?.name} — {fmtDate(expandedSlot.active.scene_date ?? expandedSlot.active.generated_at)}
+                    </p>
+                    <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                      {expandedSlot.active.source === 's2' ? 'Sentinel-2' : expandedSlot.active.source === 's1' ? 'Sentinel-1' : expandedSlot.active.source}
+                      {expandedSlot.active.cloud_coverage != null && ` · ☁ ${expandedSlot.active.cloud_coverage.toFixed(0)}% nuvens`}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* Navegação no modal */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => expandedSlot.setIdx(i => Math.max(0, i - 1))}
+                  disabled={expandedSlot.idx <= 0}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-all disabled:opacity-25 hover:bg-white/10">
+                  <span className="material-symbols-outlined text-sm" style={{ color: 'var(--muted)' }}>chevron_left</span>
+                </button>
+                <span className="text-[11px] tabular-nums px-2" style={{ color: 'var(--muted)' }}>
+                  {expandedSlot.total > 0 ? `${expandedSlot.idx + 1}/${expandedSlot.total}` : '—'}
+                </span>
+                <button
+                  onClick={() => expandedSlot.setIdx(i => Math.min(expandedSlot.total - 1, i + 1))}
+                  disabled={expandedSlot.idx >= expandedSlot.total - 1}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-all disabled:opacity-25 hover:bg-white/10">
+                  <span className="material-symbols-outlined text-sm" style={{ color: 'var(--muted)' }}>chevron_right</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => { setAiOpen(expanded); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90"
+                style={{ background: 'rgba(236,91,19,0.15)', color: 'var(--primary)', border: '1px solid rgba(236,91,19,0.3)' }}>
+                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                Analisar com Tracto IA
+              </button>
+
+              <button
+                onClick={() => setExpanded(null)}
+                title="Fechar (ESC)"
+                className="w-8 h-8 flex items-center justify-center rounded-lg transition-all hover:bg-white/10">
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>close</span>
+              </button>
+            </div>
+
+            {/* Mapa em fullscreen */}
+            <div className="flex-1 relative" style={{ minHeight: 0 }}>
+              {expandedSlot.url && mapBounds && fieldBoundaries.length >= 3 && (
+                <MapContainer
+                  key={`expand-${expanded}-${expandedSlot.active?.id ?? 'x'}`}
+                  center={center}
+                  zoom={15}
+                  style={{ height: '100%', width: '100%' }}
+                  zoomControl={true}
+                  attributionControl={false}>
+                  <TileLayer
+                    url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                    subdomains={['0', '1', '2', '3']}
+                    maxZoom={21}
+                    maxNativeZoom={20}
+                  />
+                  <FitBounds bounds={mapBounds} />
+                  <Polygon
+                    positions={fieldBoundaries}
+                    pathOptions={{
+                      color: 'rgba(255,255,255,0.6)',
+                      fill: false,
+                      weight: 2,
+                    }}
+                  />
+                  <ClippedImageOverlay
+                    url={expandedSlot.url}
+                    bounds={mapBounds}
+                    fieldBoundaries={fieldBoundaries}
+                  />
+                </MapContainer>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de análise IA ──────────────────────────────────────────── */}
+      {aiOpen && (
+        <div
+          className="fixed inset-0 z-[2100] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setAiOpen(null)}>
+          <div
+            className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden"
+            style={{ background: '#0a0a0c', border: '1px solid var(--border)' }}
+            onClick={(e) => e.stopPropagation()}>
+
+            <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3"
+              style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}>
+              <span className="material-symbols-outlined text-lg" style={{ color: 'var(--primary)' }}>auto_awesome</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-white">Análise Tracto IA</p>
+                <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                  {selectedField?.name}
+                  {aiArtifact && ` · ${MODE_LABEL[aiArtifact.mode] ?? aiArtifact.mode.toUpperCase()} · ${fmtDate(aiArtifact.scene_date ?? aiArtifact.generated_at)}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setAiOpen(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10">
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>close</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+              {aiLoading && (
+                <div className="flex flex-col items-center justify-center gap-3 py-12">
+                  <div className="w-8 h-8 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>Analisando talhão com IA…</p>
+                  <p className="text-[10px]" style={{ color: '#475569' }}>Pode levar 10–30 segundos</p>
+                </div>
+              )}
+              {aiError && !aiLoading && (
+                <div className="flex flex-col items-center justify-center gap-3 py-12">
+                  <span className="material-symbols-outlined text-3xl" style={{ color: '#f87171' }}>error</span>
+                  <p className="text-sm font-bold" style={{ color: '#f87171' }}>Erro na análise</p>
+                  <p className="text-xs text-center max-w-xs" style={{ color: 'var(--muted)' }}>{aiError}</p>
+                  <button
+                    onClick={() => void analyzeWithAI()}
+                    className="px-4 py-2 rounded-lg text-xs font-bold text-white"
+                    style={{ background: 'var(--primary)' }}>
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
+              {aiResult && !aiLoading && (
+                <div className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text, #e2e8f0)' }}>
+                  {aiResult}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

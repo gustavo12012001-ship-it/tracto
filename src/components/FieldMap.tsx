@@ -674,12 +674,22 @@ export default function FieldMap() {
         throw new Error(errorMsg);
       }
 
+      // X-Scene-Bounds: bounds exatos retornados pelo backend (south,west,north,east)
+      // Tem precedência sobre o bounds calculado localmente — garante alinhamento perfeito
+      // entre a imagem e o polígono de clip.
+      const sceneBoundsHeader = resp.headers.get('X-Scene-Bounds');
+      let overlayBounds: L.LatLngBoundsExpression = bounds;
+      if (sceneBoundsHeader) {
+        const [s, w, n, e] = sceneBoundsHeader.split(',').map(Number);
+        if ([s, w, n, e].every(v => !isNaN(v))) overlayBounds = [[s, w], [n, e]];
+      }
+
       const blob = await resp.blob();
       const objectUrl = URL.createObjectURL(blob);
       prevUrlRef.current = objectUrl;
       const cacheStatus = resp.headers.get('X-Cache') as 'HIT' | 'MISS' | null;
       const sceneDateHeader = resp.headers.get('X-Scene-Date');
-      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey, cacheStatus: cacheStatus ?? null, sceneDate: sceneDateHeader });
+      setOverlay({ url: objectUrl, bounds: overlayBounds, loading: false, error: null, sceneKey, cacheStatus: cacheStatus ?? null, sceneDate: sceneDateHeader });
 
       if (activeFieldId && (source === 's1' || source === 's2')) {
         setCurrentSatelliteScene({ fieldId: activeFieldId, source: source as 's1' | 's2', sceneId, sceneDate: date || sceneDateHeader || null, sceneDate_br: scene.date_br || null, cloudCoverage: typeof scene.cloud_coverage === 'number' ? scene.cloud_coverage : null });

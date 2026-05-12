@@ -657,10 +657,17 @@ export default function Maps() {
         try { msg = ct.includes('json') ? (((await resp.json()) as { detail?: string }).detail || msg) : (await resp.text()).slice(0, 200) || msg; } catch { /* ignore */ }
         throw new Error(msg);
       }
+      // X-Scene-Bounds tem precedência sobre bounds local
+      const sbh = resp.headers.get('X-Scene-Bounds');
+      let ob: L.LatLngBoundsExpression = bounds;
+      if (sbh) {
+        const [s, w, n, e] = sbh.split(',').map(Number);
+        if ([s, w, n, e].every(v => !isNaN(v))) ob = [[s, w], [n, e]];
+      }
       const blob = await resp.blob();
       const objectUrl = URL.createObjectURL(blob);
       prevUrlRef.current = objectUrl;
-      setOverlay({ url: objectUrl, bounds, loading: false, error: null, sceneKey });
+      setOverlay({ url: objectUrl, bounds: ob, loading: false, error: null, sceneKey });
     } catch (err) {
       setOverlay({ url: null, bounds, loading: false, error: err instanceof Error ? err.message : 'Erro ao carregar imagem.', sceneKey });
     }

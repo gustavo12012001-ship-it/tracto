@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -92,6 +93,8 @@ class SentinelOverlayResult:
     mode: str
     width: int | None = None
     height: int | None = None
+    # bbox no formato [min_lng, min_lat, max_lng, max_lat] (EPSG:4326)
+    bbox: list[float] | None = None
 
 
 def _get_cached_overlay(cache_key: str) -> bytes | None:
@@ -137,6 +140,11 @@ def get_bbox_from_boundaries(
     lat: float,
     lng: float,
 ) -> list[float]:
+    """
+    Retorna bbox [min_lng, min_lat, max_lng, max_lat] em EPSG:4326.
+    SEM margin — frontend usa exatamente os mesmos bounds pro Leaflet ImageOverlay.
+    Margin causaria offset entre imagem renderizada e polígono de clip.
+    """
     if not boundaries or len(boundaries) < 3:
         return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
 
@@ -145,8 +153,7 @@ def get_bbox_from_boundaries(
     if not lats or not lngs:
         return [lng - 0.005, lat - 0.005, lng + 0.005, lat + 0.005]
 
-    margin = 0.0005
-    return [min(lngs) - margin, min(lats) - margin, max(lngs) + margin, max(lats) + margin]
+    return [min(lngs), min(lats), max(lngs), max(lats)]
 
 
 def _build_geojson_polygon(boundaries: list[list[float]]) -> dict[str, Any] | None:
@@ -677,7 +684,25 @@ function evaluatePixel(s) {
             "timeRange": {"from": "", "to": ""},
         }
 
-    output_size = 512 if source == "s1" else 1024
+    # ── Dimensões da imagem: PROPORCIONAIS ao aspect ratio do bbox ──────────────
+    # CRÍTICO: se forçarmos width=height (quadrado) num bbox retangular,
+    # o Sentinel Hub retorna a cena distorcida e a máscara dataMask não bate
+    # com o polígono real quando renderizada via Leaflet ImageOverlay.
+    max_dim = 512 if source == "s1" else 1024
+    lng_span = bbox[2] - bbox[0]
+    lat_span = bbox[3] - bbox[1]
+    center_lat = (bbox[1] + bbox[3]) / 2.0
+    # Compensa a distorção do paralelo (1° de longitude = cos(lat)° de latitude)
+    meters_per_lng = math.cos(math.radians(center_lat))
+    width_m = max(lng_span * meters_per_lng, 1e-9)
+    height_m = max(lat_span, 1e-9)
+    aspect = width_m / height_m
+    if aspect >= 1.0:
+        output_width = max_dim
+        output_height = max(64, int(round(max_dim / aspect)))
+    else:
+        output_height = max_dim
+        output_width = max(64, int(round(max_dim * aspect)))
 
     payload: dict = {
         "input": {
@@ -690,8 +715,8 @@ function evaluatePixel(s) {
             ],
         },
         "output": {
-            "width": output_size,
-            "height": output_size,
+            "width": output_width,
+            "height": output_height,
             "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
         },
         "evalscript": evalscript,
@@ -988,6 +1013,7 @@ def get_sentinel_overlay_with_cache(
                 "cache_source": "memory",
                 "generated_at": None,
                 "scene_date": scene_date,
+                "bbox": bbox,
             }
 
     # ── 2ª Camada: banco + storage ────────────────────────────────────────────
@@ -1025,6 +1051,7 @@ def get_sentinel_overlay_with_cache(
                         "cache_source": "db",
                         "generated_at": artifact.get("generated_at"),
                         "scene_date": artifact.get("scene_date") or scene_date,
+                        "bbox": bbox,
                     }
         except Exception as exc:
             logging.warning("[SentinelCache] Falha ao checar cache persistente: %s", exc)
@@ -1054,6 +1081,7 @@ def get_sentinel_overlay_with_cache(
             "cache_source": None,
             "generated_at": None,
             "scene_date": scene_date,
+            "bbox": bbox,
         }
 
     # Extrai bytes do resultado (pode ser SentinelOverlayResult ou bytes direto)
@@ -1069,6 +1097,7 @@ def get_sentinel_overlay_with_cache(
                 "cache_source": "memory",
                 "generated_at": _raw.generated_at,
                 "scene_date": _raw.scene_date or scene_date,
+                "bbox": bbox,
             }
     else:
         image_bytes = _raw  # bytes direto (fallback legado)
@@ -1081,6 +1110,7 @@ def get_sentinel_overlay_with_cache(
             "cache_source": None,
             "generated_at": None,
             "scene_date": scene_date,
+            "bbox": bbox,
         }
 
     # ── Persistência: storage + banco ─────────────────────────────────────────
@@ -1096,7 +1126,8 @@ def get_sentinel_overlay_with_cache(
             SENTINEL_CACHE_BUCKET, image_path, image_bytes, "image/png"
         )
         if uploaded:
-            output_size = 512 if source == "s1" else 1024
+            # Lê dimensões REAIS da imagem em vez de hardcoded
+            real_width, real_height = _artifact_dimensions(image_bytes)
             metadata: dict[str, Any] = {
                 "user_id": user_id,
                 "field_id": field_id,
@@ -1108,8 +1139,8 @@ def get_sentinel_overlay_with_cache(
                 "bbox_hash": bbox_hash,
                 "image_path": image_path,
                 "mime_type": "image/png",
-                "width": output_size,
-                "height": output_size,
+                "width": real_width,
+                "height": real_height,
                 "bytes_size": len(image_bytes),
                 "generated_at": generated_at,
                 "updated_at": generated_at,
@@ -1136,4 +1167,5 @@ def get_sentinel_overlay_with_cache(
         "cache_source": "generated",
         "generated_at": generated_at,
         "scene_date": scene_date,
+        "bbox": bbox,
     }

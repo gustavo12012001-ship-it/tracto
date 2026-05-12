@@ -860,18 +860,30 @@ async def sentinel_overlay_endpoint(
                 ),
             )
 
+        # X-Scene-Bounds: bbox real usado no recorte (formato SWNE: south,west,north,east)
+        # Frontend usa pra criar Leaflet bounds EXATOS sem recalcular.
+        scene_bounds_header = None
+        bbox = cache_info.get("bbox")
+        if bbox and len(bbox) == 4:
+            # bbox = [min_lng, min_lat, max_lng, max_lat] → SWNE = south,west,north,east
+            scene_bounds_header = f"{bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]}"
+
+        response_headers = {
+            "Cache-Control": "public, max-age=1800",
+            "X-Field-ID": field_id,
+            "X-Source": source.upper(),
+            "X-Cache": "HIT" if cache_info.get("cache_hit") else "MISS",
+            "X-Scene-Date": cache_info.get("scene_date") or scene_date or "latest",
+            "X-Mode": mode,
+            "X-Cache-Source": cache_info.get("cache_source") or "unknown",
+        }
+        if scene_bounds_header:
+            response_headers["X-Scene-Bounds"] = scene_bounds_header
+
         return Response(
             content=image_bytes,
             media_type="image/png",
-            headers={
-                "Cache-Control": "public, max-age=1800",
-                "X-Field-ID": field_id,
-                "X-Source": source.upper(),
-                "X-Cache": "HIT" if cache_info.get("cache_hit") else "MISS",
-                "X-Scene-Date": cache_info.get("scene_date") or scene_date or "latest",
-                "X-Mode": mode,
-                "X-Cache-Source": cache_info.get("cache_source") or "unknown",
-            },
+            headers=response_headers,
         )
     except HTTPException:
         raise
