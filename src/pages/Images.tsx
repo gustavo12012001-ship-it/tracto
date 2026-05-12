@@ -369,6 +369,57 @@ export default function Images() {
     setActiveField(id);
   }
 
+  // ── Auto-buscar última imagem do satélite (NDVI + RGB) ─────────────────────
+  const [autoFetching, setAutoFetching] = useState(false);
+  const [autoFetchError, setAutoFetchError] = useState<string | null>(null);
+
+  const autoFetchLatest = useCallback(async () => {
+    if (!selectedFieldId || autoFetching) return;
+    setAutoFetching(true);
+    setAutoFetchError(null);
+    try {
+      const headers = await buildAuthHeaders();
+      // 1. Buscar cenas disponíveis (Sentinel-2)
+      const scenesResp = await fetch(
+        `${API_URL}/api/sentinel/scenes?field_id=${selectedFieldId}&lookback_days=60`,
+        { headers }
+      );
+      if (!scenesResp.ok) throw new Error('Falha ao buscar cenas do satélite');
+      const scenesData = await scenesResp.json() as {
+        s2: Array<{ scene_id: string; date: string; cloud_coverage: number | null; source: string }>;
+      };
+      const s2 = scenesData.s2 ?? [];
+      // Escolhe a cena mais recente com menos de 30% de nuvens
+      const bestScene = s2.find(s => (s.cloud_coverage ?? 100) <= 30) ?? s2[0];
+      if (!bestScene) throw new Error('Nenhuma cena disponível nos últimos 60 dias');
+
+      // 2. Gerar NDVI e RGB em paralelo
+      const modes = ['ndvi', 'truecolor'];
+      const results = await Promise.allSettled(modes.map(mode => {
+        const params = new URLSearchParams({
+          field_id: selectedFieldId,
+          source: bestScene.source,
+          scene_date: bestScene.date,
+          scene_id: bestScene.scene_id,
+          mode,
+        });
+        if (typeof bestScene.cloud_coverage === 'number') {
+          params.set('cloud_coverage', String(bestScene.cloud_coverage));
+        }
+        return fetch(`${API_URL}/api/sentinel/overlay?${params}`, { headers });
+      }));
+      const anyOk = results.some(r => r.status === 'fulfilled' && r.value.ok);
+      if (!anyOk) throw new Error('Falha ao gerar imagens');
+
+      // 3. Recarrega artefatos
+      await loadArtifacts(selectedFieldId);
+    } catch (e) {
+      setAutoFetchError(e instanceof Error ? e.message : 'Erro ao buscar imagem');
+    } finally {
+      setAutoFetching(false);
+    }
+  }, [selectedFieldId, autoFetching, loadArtifacts]);
+
   // ── Dividir artefatos por tipo ──────────────────────────────────────────────
   const ndviArtifacts = useMemo(
     () => artifacts.filter(a => a.mode === 'ndvi'),
@@ -492,7 +543,7 @@ export default function Images() {
                 <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando imagens…</p>
               </div>
             ) : artifacts.length === 0 ? (
-              /* Estado vazio */
+              /* Estado vazio — botão busca a última imagem automaticamente */
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
                 <div
                   className="w-16 h-16 rounded-2xl flex items-center justify-center"
@@ -502,19 +553,39 @@ export default function Images() {
                   </span>
                 </div>
                 <div className="text-center">
-                  <p className="text-base font-bold text-white mb-1">Nenhuma imagem gerada ainda</p>
+                  <p className="text-base font-bold text-white mb-1">Nenhuma imagem armazenada</p>
                   <p className="text-xs leading-relaxed max-w-xs" style={{ color: 'var(--muted)' }}>
-                    Acesse <strong className="text-white">Mapas Agronômicos</strong>, selecione uma cena de
-                    satélite e carregue a imagem. Ela será salva automaticamente aqui.
+                    Buscamos a imagem mais recente do <strong className="text-white">Sentinel-2</strong> e
+                    geramos o NDVI + Cor Real automaticamente.
                   </p>
                 </div>
-                <a
-                  href="/app/maps"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+                <button
+                  onClick={() => void autoFetchLatest()}
+                  disabled={autoFetching || !selectedField?.boundaries || selectedField.boundaries.length < 3}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
                   style={{ background: 'var(--primary)' }}>
-                  <span className="material-symbols-outlined text-base">map</span>
-                  Ir para Mapas Agronômicos
-                </a>
+                  {autoFetching ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Buscando…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base">cloud_download</span>
+                      Buscar última imagem
+                    </>
+                  )}
+                </button>
+                {autoFetchError && (
+                  <p className="text-[11px] max-w-xs text-center" style={{ color: '#f87171' }}>
+                    {autoFetchError}
+                  </p>
+                )}
+                {(!selectedField?.boundaries || selectedField.boundaries.length < 3) && (
+                  <p className="text-[10px] text-center max-w-xs" style={{ color: '#475569' }}>
+                    Talhão precisa ter polígono cadastrado.
+                  </p>
+                )}
               </div>
             ) : (
               /* ── Dois mapas + timeline ── */
