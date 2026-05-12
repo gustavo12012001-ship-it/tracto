@@ -3,7 +3,7 @@
 // backendReady = false → mostra estado de "processamento em desenvolvimento"
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ImageOverlay, MapContainer, Polygon, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Polygon, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
@@ -305,6 +305,58 @@ function computeBounds(b: [number, number][]): L.LatLngBoundsExpression {
   return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
 }
 
+// ── ClippedImageOverlay: recorta a imagem ao polígono do talhão ───────────────
+function ClippedImageOverlay({
+  url,
+  bounds,
+  opacity = 0.93,
+  fieldBoundaries,
+}: {
+  url: string;
+  bounds: L.LatLngBoundsExpression;
+  opacity?: number;
+  fieldBoundaries: [number, number][];
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    const lb = L.latLngBounds(bounds as L.LatLngBoundsExpression);
+    const overlay = L.imageOverlay(url, lb, { opacity });
+    overlay.addTo(map);
+
+    function applyClip() {
+      const el = overlay.getElement();
+      if (!el || fieldBoundaries.length < 3) return;
+      const sw = lb.getSouthWest();
+      const ne = lb.getNorthEast();
+      const latSpan = ne.lat - sw.lat;
+      const lngSpan = ne.lng - sw.lng;
+      if (latSpan === 0 || lngSpan === 0) return;
+      const pts = fieldBoundaries
+        .map(([lat, lng]) => {
+          const x = (((lng - sw.lng) / lngSpan) * 100).toFixed(2);
+          const y = ((1 - (lat - sw.lat) / latSpan) * 100).toFixed(2);
+          return `${x}% ${y}%`;
+        })
+        .join(', ');
+      el.style.clipPath = `polygon(${pts})`;
+    }
+
+    overlay.on('load', applyClip);
+    // Se a imagem já estiver em cache e completa, aplica imediatamente
+    const el = overlay.getElement();
+    if (el?.complete) applyClip();
+
+    return () => {
+      overlay.off('load', applyClip);
+      map.removeLayer(overlay);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, map]);
+
+  return null;
+}
+
 function FlyToBounds({ boundaries }: { boundaries: [number, number][] | null }) {
   const map = useMap();
   const prevRef = useRef<string | null>(null);
@@ -518,8 +570,13 @@ function CompareSide({
               }}
             />
           )}
-          {overlay.url && bounds && (
-            <ImageOverlay url={overlay.url} bounds={overlay.bounds ?? bounds} opacity={0.93} />
+          {overlay.url && bounds && fieldBoundaries && fieldBoundaries.length >= 3 && (
+            <ClippedImageOverlay
+              url={overlay.url}
+              bounds={overlay.bounds ?? bounds}
+              opacity={0.93}
+              fieldBoundaries={fieldBoundaries}
+            />
           )}
         </MapContainer>
 
@@ -905,8 +962,13 @@ export default function Maps() {
                 weight: 2, dashArray: overlay.url ? undefined : '5 4',
               }} />
             )}
-            {overlay.url && overlay.bounds && (
-              <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={0.93} />
+            {overlay.url && overlay.bounds && fieldBoundaries && fieldBoundaries.length >= 3 && (
+              <ClippedImageOverlay
+                url={overlay.url}
+                bounds={overlay.bounds}
+                opacity={0.93}
+                fieldBoundaries={fieldBoundaries}
+              />
             )}
           </MapContainer>
         ) : (
