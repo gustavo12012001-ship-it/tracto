@@ -186,7 +186,7 @@ interface MapCardProps {
   mapBounds: L.LatLngBoundsExpression | null;
 }
 
-function MapCard({ mapKey, label, artifacts, slot, fieldBoundaries, center, mapBounds }: MapCardProps) {
+function MapCard({ mapKey, label, artifacts: _artifacts, slot, fieldBoundaries, center, mapBounds }: MapCardProps) {
   const { idx, setIdx, url, loading, error, active, total } = slot;
   const modeColor = active ? (MODE_COLOR[active.mode] ?? '#94a3b8') : '#94a3b8';
   const modeLabel = active ? (MODE_LABEL[active.mode] ?? active.mode.toUpperCase()) : label;
