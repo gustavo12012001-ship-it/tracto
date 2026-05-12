@@ -459,9 +459,12 @@ def get_true_color_overlay(
     source: str = "s2",
     mode: str = "truecolor",
 ) -> bytes | SentinelOverlayResult | None:
-    # Cache key determinístico: (field_id, source, scene_id, mode)
+    # Cache key determinístico: (field_id, source, scene_id, mode, bbox_hash)
+    # bbox_hash invalida automaticamente quando geometria do talhão muda
     scene_identifier = scene_id or scene_date or ""
-    cache_key = f"{field_id}_{source}_{scene_identifier}_{mode}".rstrip('_')
+    _bbox_local = get_bbox_from_boundaries(boundaries, lat, lng)
+    _bbox_hash_local = _boundaries_hash(boundaries, _bbox_local)
+    cache_key = f"{field_id}_{source}_{scene_identifier}_{mode}_{_bbox_hash_local}".rstrip('_')
     cached = _get_cached_overlay(cache_key)
     if cached:
         if force_refresh:
@@ -996,7 +999,9 @@ def get_sentinel_overlay_with_cache(
 
     bbox = get_bbox_from_boundaries(boundaries, lat, lng)
     bbox_hash = _compute_bbox_hash(bbox)
-    mem_key = f"{field_id}_{source}_{effective_scene_id}_{mode}".rstrip('_')
+    # CRÍTICO: incluir bbox_hash invalida cache automaticamente quando o
+    # algoritmo de bbox muda (ex: remoção da margin de 0.0005° em 2026)
+    mem_key = f"{field_id}_{source}_{effective_scene_id}_{mode}_{bbox_hash}".rstrip('_')
 
     # ── 1ª Camada: memória ────────────────────────────────────────────────────
     if not force_refresh:

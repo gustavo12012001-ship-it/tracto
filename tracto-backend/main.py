@@ -869,7 +869,9 @@ async def sentinel_overlay_endpoint(
             scene_bounds_header = f"{bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]}"
 
         response_headers = {
-            "Cache-Control": "public, max-age=1800",
+            # max-age curto + must-revalidate força o browser a re-checar headers
+            # (incluindo X-Scene-Bounds) em vez de servir PNG antigo do disk cache.
+            "Cache-Control": "public, max-age=300, must-revalidate",
             "X-Field-ID": field_id,
             "X-Source": source.upper(),
             "X-Cache": "HIT" if cache_info.get("cache_hit") else "MISS",
