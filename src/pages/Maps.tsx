@@ -342,10 +342,18 @@ function ClippedImageOverlay({
       el.style.clipPath = `polygon(${pts})`;
     }
 
+    // Registra via evento Leaflet (sempre)
     overlay.on('load', applyClip);
-    // Se a imagem já estiver em cache e completa, aplica imediatamente
-    const el = overlay.getElement();
-    if (el?.complete) applyClip();
+    // Fallback: aplica via microtask (garante elemento criado) + listener direto no img
+    Promise.resolve().then(() => {
+      const el = overlay.getElement();
+      if (!el) { overlay.once('load', applyClip); return; }
+      if (el.complete && el.naturalWidth > 0) {
+        applyClip();
+      } else {
+        el.addEventListener('load', applyClip, { once: true });
+      }
+    });
 
     return () => {
       overlay.off('load', applyClip);

@@ -1,8 +1,10 @@
-// src/pages/Images.tsx — Monitor de Imagens de Satélite por Talhão
-// Layout: sidebar com lista de talhões + viewer principal com timeline de datas
-// Imagens servidas do Supabase Storage (cache) — zero custo de API externa
+// src/pages/Images.tsx — Imagens de Satélite por Talhão
+// Layout: sidebar de talhões + dois mapas lado a lado (NDVI e Satélite) com navegação por data
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import { API_URL, buildAuthHeaders } from '../services/api';
 
@@ -20,16 +22,10 @@ interface SatArtifact {
   image_path: string | null;
 }
 
-// ── Config visual por fonte e modo ────────────────────────────────────────────
-const SRC_INFO: Record<string, { label: string; color: string }> = {
-  s2: { label: 'Sentinel-2', color: '#60a5fa' },
-  s1: { label: 'Sentinel-1', color: '#a78bfa' },
-  up42: { label: 'Up42',      color: '#34d399' },
-};
-
+// ── Config visual ─────────────────────────────────────────────────────────────
 const MODE_LABEL: Record<string, string> = {
   truecolor: 'RGB', ndvi: 'NDVI', ndre: 'NDRE',
-  evi: 'EVI', ndmi: 'NDMI', sar: 'SAR',
+  evi: 'EVI', ndmi: 'Umidade', sar: 'SAR',
   falsecolor: 'Falsa Cor', agriculture: 'Agro',
 };
 
@@ -38,74 +34,328 @@ const MODE_COLOR: Record<string, string> = {
   ndmi: '#06b6d4', truecolor: '#60a5fa', sar: '#a78bfa',
 };
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(s: string | null) {
   if (!s) return '—';
-  try { return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }); }
-  catch { return s.slice(0, 10); }
+  try {
+    return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR', {
+      day: '2-digit', month: 'short', year: '2-digit',
+    });
+  } catch { return s.slice(0, 10); }
 }
 
-function fmtDateShort(s: string | null) {
-  if (!s) return '—';
-  try { return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }); }
-  catch { return s.slice(0, 10); }
+function computeBounds(b: [number, number][]): L.LatLngBoundsExpression {
+  const lats = b.map(p => p[0]);
+  const lngs = b.map(p => p[1]);
+  return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
 }
 
-function isoDate(s: string | null) {
-  if (!s) return '';
-  return s.slice(0, 10);
+// ── ClippedImageOverlay: recorta PNG ao polígono do talhão ────────────────────
+function ClippedImageOverlay({
+  url,
+  bounds,
+  fieldBoundaries,
+}: {
+  url: string;
+  bounds: L.LatLngBoundsExpression;
+  fieldBoundaries: [number, number][];
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const lb = bounds instanceof L.LatLngBounds
+      ? bounds
+      : L.latLngBounds(bounds as L.LatLngBoundsLiteral);
+    const overlay = L.imageOverlay(url, lb, { opacity: 0.95 });
+    overlay.addTo(map);
+
+    function applyClip() {
+      const el = overlay.getElement();
+      if (!el || fieldBoundaries.length < 3) return;
+      const sw = lb.getSouthWest();
+      const ne = lb.getNorthEast();
+      const latSpan = ne.lat - sw.lat;
+      const lngSpan = ne.lng - sw.lng;
+      if (!latSpan || !lngSpan) return;
+      const pts = fieldBoundaries
+        .map(([lat, lng]) => {
+          const x = (((lng - sw.lng) / lngSpan) * 100).toFixed(2);
+          const y = ((1 - (lat - sw.lat) / latSpan) * 100).toFixed(2);
+          return `${x}% ${y}%`;
+        })
+        .join(', ');
+      el.style.clipPath = `polygon(${pts})`;
+    }
+
+    overlay.on('load', applyClip);
+    Promise.resolve().then(() => {
+      const el = overlay.getElement();
+      if (!el) { overlay.once('load', applyClip); return; }
+      if (el.complete && el.naturalWidth > 0) {
+        applyClip();
+      } else {
+        el.addEventListener('load', applyClip, { once: true });
+      }
+    });
+
+    return () => {
+      overlay.off('load', applyClip);
+      map.removeLayer(overlay);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, map]);
+  return null;
+}
+
+// ── FitBounds: encaixa o mapa nos limites do talhão (uma vez) ─────────────────
+function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
+  const map = useMap();
+  const fittedRef = useRef(false);
+  useEffect(() => {
+    if (!bounds || fittedRef.current) return;
+    fittedRef.current = true;
+    map.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [20, 20] });
+  }, [bounds, map]);
+  return null;
+}
+
+// ── Hook: estado de um slot de artefato (NDVI ou Satélite) ───────────────────
+function useArtifactSlot(artifacts: SatArtifact[]) {
+  const [idx, setIdx] = useState(0);
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const prevRef = useRef<string | null>(null);
+
+  // chave estável para comparar a lista
+  const listKey = artifacts.map(a => a.id).join(',');
+
+  useEffect(() => {
+    setIdx(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listKey]);
+
+  const safeIdx = Math.min(idx, Math.max(0, artifacts.length - 1));
+  const active = artifacts[safeIdx] ?? null;
+
+  useEffect(() => {
+    if (!active) { setUrl(null); setError(null); return; }
+    let cancelled = false;
+    setLoading(true); setError(null);
+
+    buildAuthHeaders()
+      .then(h => fetch(`${API_URL}/api/satellite-artifacts/${active.id}/image`, { headers: h }))
+      .then(async r => {
+        if (cancelled) return;
+        if (!r.ok) throw new Error(`Erro ${r.status}`);
+        const blob = await r.blob();
+        if (cancelled) return;
+        if (prevRef.current) URL.revokeObjectURL(prevRef.current);
+        const u = URL.createObjectURL(blob);
+        prevRef.current = u;
+        setUrl(u);
+      })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Erro'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => {
+    if (prevRef.current) URL.revokeObjectURL(prevRef.current);
+  }, []);
+
+  return {
+    idx: safeIdx,
+    setIdx,
+    url,
+    loading,
+    error,
+    active,
+    total: artifacts.length,
+  };
+}
+
+// ── MapCard: painel de mapa com imagem recortada ──────────────────────────────
+interface MapCardProps {
+  mapKey: string;
+  label: string;
+  artifacts: SatArtifact[];
+  slot: ReturnType<typeof useArtifactSlot>;
+  fieldBoundaries: [number, number][];
+  center: [number, number];
+  mapBounds: L.LatLngBoundsExpression | null;
+}
+
+function MapCard({ mapKey, label, artifacts, slot, fieldBoundaries, center, mapBounds }: MapCardProps) {
+  const { idx, setIdx, url, loading, error, active, total } = slot;
+  const modeColor = active ? (MODE_COLOR[active.mode] ?? '#94a3b8') : '#94a3b8';
+  const modeLabel = active ? (MODE_LABEL[active.mode] ?? active.mode.toUpperCase()) : label;
+  const dateLabel = active ? fmtDate(active.scene_date ?? active.generated_at) : '—';
+
+  return (
+    <div className="flex flex-col rounded-2xl overflow-hidden flex-1 min-w-0 min-h-0"
+      style={{ border: '1px solid var(--border)', background: '#080809' }}>
+
+      {/* Header do card */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2"
+        style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}>
+
+        <span className="text-[10px] font-black px-1.5 py-0.5 rounded flex-shrink-0"
+          style={{ background: modeColor + '22', color: modeColor }}>
+          {modeLabel}
+        </span>
+
+        <span className="text-[11px] font-bold text-white truncate flex-1">
+          {total > 0 ? dateLabel : label}
+        </span>
+
+        {loading && (
+          <div className="w-3 h-3 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
+        )}
+
+        {active?.cloud_coverage != null && (
+          <span className="text-[9px] flex-shrink-0" style={{ color: '#64748b' }}>
+            ☁ {active.cloud_coverage.toFixed(0)}%
+          </span>
+        )}
+
+        {/* Navegação */}
+        <div className="flex items-center flex-shrink-0">
+          <button
+            onClick={() => setIdx(i => Math.max(0, i - 1))}
+            disabled={idx <= 0 || total === 0}
+            className="w-6 h-6 flex items-center justify-center rounded-lg transition-all disabled:opacity-25 hover:bg-white/10">
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--muted)' }}>chevron_left</span>
+          </button>
+          <span className="text-[9px] tabular-nums w-8 text-center" style={{ color: '#475569' }}>
+            {total > 0 ? `${idx + 1}/${total}` : '—'}
+          </span>
+          <button
+            onClick={() => setIdx(i => Math.min(total - 1, i + 1))}
+            disabled={idx >= total - 1 || total === 0}
+            className="w-6 h-6 flex items-center justify-center rounded-lg transition-all disabled:opacity-25 hover:bg-white/10">
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--muted)' }}>chevron_right</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Mapa */}
+      <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        {total === 0 ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+            style={{ background: '#080809' }}>
+            <span className="material-symbols-outlined text-3xl" style={{ color: '#1e293b' }}>satellite_alt</span>
+            <p className="text-[11px]" style={{ color: '#334155' }}>Sem imagens {label}</p>
+          </div>
+        ) : (
+          <MapContainer
+            key={mapKey}
+            center={center}
+            zoom={14}
+            style={{ height: '100%', width: '100%' }}
+            zoomControl={false}
+            attributionControl={false}>
+            <TileLayer
+              url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+              subdomains={['0', '1', '2', '3']}
+              maxZoom={21}
+              maxNativeZoom={20}
+            />
+            <FitBounds bounds={mapBounds} />
+            {fieldBoundaries.length > 0 && (
+              <Polygon
+                positions={fieldBoundaries}
+                pathOptions={{
+                  color: url ? 'rgba(255,255,255,0.55)' : '#ec5b13',
+                  fill: !url,
+                  fillColor: '#ec5b13',
+                  fillOpacity: url ? 0 : 0.07,
+                  weight: 1.5,
+                  dashArray: url ? undefined : '5 4',
+                }}
+              />
+            )}
+            {url && mapBounds && fieldBoundaries.length >= 3 && (
+              <ClippedImageOverlay
+                url={url}
+                bounds={mapBounds}
+                fieldBoundaries={fieldBoundaries}
+              />
+            )}
+          </MapContainer>
+        )}
+
+        {/* Loading overlay */}
+        {loading && (
+          <div className="absolute inset-0 z-[500] flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)' }}>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+              <p className="text-[10px] text-white">Carregando…</p>
+            </div>
+          </div>
+        )}
+
+        {/* Erro */}
+        {error && !loading && (
+          <div className="absolute bottom-2 left-2 right-2 z-[500] flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
+            style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+            <span className="material-symbols-outlined text-xs" style={{ color: '#f87171' }}>error</span>
+            <p className="text-[10px]" style={{ color: '#f87171' }}>{error}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function Images() {
   const { fields, farms, activeFieldId, setActiveField } = useAppStore();
 
-  // Talhão selecionado no sidebar
-  const [selectedFieldId, setSelectedFieldId] = useState<string>(activeFieldId ?? fields[0]?.id ?? '');
-
-  // Artefatos do talhão selecionado
+  const [selectedFieldId, setSelectedFieldId] = useState<string>(
+    activeFieldId ?? fields[0]?.id ?? ''
+  );
   const [artifacts, setArtifacts] = useState<SatArtifact[]>([]);
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 
-  // Artefato exibido no viewer (por padrão o mais recente NDVI)
-  const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
-
-  // URL da imagem exibida no viewer
-  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState<string | null>(null);
-  const prevViewerUrlRef = useRef<string | null>(null);
-
-  // Filtro de modo
-  const [modeFilter, setModeFilter] = useState<string>('all');
-
   const selectedField = fields.find(f => f.id === selectedFieldId) ?? null;
+  const fieldBoundaries = useMemo(
+    () => (selectedField?.boundaries ?? []) as [number, number][],
+    [selectedField?.id] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const center: [number, number] = selectedField
+    ? [selectedField.lat, selectedField.lng]
+    : [-15.78, -47.93];
+  const mapBounds = useMemo(
+    () => fieldBoundaries.length >= 3 ? computeBounds(fieldBoundaries) : null,
+    [fieldBoundaries]
+  );
 
   // Sync com talhão ativo do store
   useEffect(() => {
-    if (activeFieldId && activeFieldId !== selectedFieldId) setSelectedFieldId(activeFieldId);
+    if (activeFieldId && activeFieldId !== selectedFieldId) {
+      setSelectedFieldId(activeFieldId);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFieldId]);
 
-  // Carrega histórico quando muda o talhão
   const loadArtifacts = useCallback(async (fieldId: string) => {
     if (!fieldId) return;
     setLoadingArtifacts(true);
     setArtifacts([]);
-    setActiveArtifactId(null);
-    setViewerUrl(null);
-    setViewerError(null);
     try {
       const headers = await buildAuthHeaders();
-      const resp = await fetch(`${API_URL}/api/fields/${fieldId}/satellite-history?limit=200`, { headers });
-      if (!resp.ok) throw new Error();
-      const data = await resp.json() as { history?: SatArtifact[] };
-      const list = (data.history ?? []).sort((a, b) =>
+      const r = await fetch(
+        `${API_URL}/api/fields/${fieldId}/satellite-history?limit=200`,
+        { headers }
+      );
+      if (!r.ok) throw new Error();
+      const d = await r.json() as { history?: SatArtifact[] };
+      const list = (d.history ?? []).sort((a, b) =>
         (b.scene_date ?? b.generated_at).localeCompare(a.scene_date ?? a.generated_at)
       );
       setArtifacts(list);
-      // Auto-carrega o NDVI mais recente
-      const ndvi = list.find(a => a.mode === 'ndvi') ?? list[0] ?? null;
-      if (ndvi) setActiveArtifactId(ndvi.id);
     } catch { /* silencioso */ }
     setLoadingArtifacts(false);
   }, []);
@@ -114,63 +364,34 @@ export default function Images() {
     if (selectedFieldId) void loadArtifacts(selectedFieldId);
   }, [selectedFieldId, loadArtifacts]);
 
-  // Carrega imagem do artefato selecionado
-  useEffect(() => {
-    if (!activeArtifactId) return;
-    let cancelled = false;
-    setViewerLoading(true);
-    setViewerError(null);
-    setViewerUrl(null);
-
-    buildAuthHeaders()
-      .then(headers => fetch(`${API_URL}/api/satellite-artifacts/${activeArtifactId}/image`, { headers }))
-      .then(async resp => {
-        if (cancelled) return;
-        if (!resp.ok) throw new Error(`Erro ${resp.status}`);
-        const blob = await resp.blob();
-        if (cancelled) return;
-        // Revoga URL anterior
-        if (prevViewerUrlRef.current) { URL.revokeObjectURL(prevViewerUrlRef.current); }
-        const url = URL.createObjectURL(blob);
-        prevViewerUrlRef.current = url;
-        setViewerUrl(url);
-      })
-      .catch(e => { if (!cancelled) setViewerError(e.message ?? 'Erro ao carregar'); })
-      .finally(() => { if (!cancelled) setViewerLoading(false); });
-
-    return () => { cancelled = true; };
-  }, [activeArtifactId]);
-
-  useEffect(() => () => {
-    if (prevViewerUrlRef.current) URL.revokeObjectURL(prevViewerUrlRef.current);
-  }, []);
-
-  // Artefato ativo
-  const activeArtifact = artifacts.find(a => a.id === activeArtifactId) ?? null;
-
-  // Filtro de modo
-  const filtered = modeFilter === 'all' ? artifacts : artifacts.filter(a => a.mode === modeFilter);
-  const modes = [...new Set(artifacts.map(a => a.mode))];
-
-  // Talhão selecionado: navegar anterior/próximo
-  const filteredIdx = filtered.findIndex(a => a.id === activeArtifactId);
-  const canPrev = filteredIdx > 0;
-  const canNext = filteredIdx < filtered.length - 1 && filteredIdx >= 0;
-
   function handleSelectField(id: string) {
     setSelectedFieldId(id);
     setActiveField(id);
-    setModeFilter('all');
   }
 
-  const srcInfo = activeArtifact ? (SRC_INFO[activeArtifact.source] ?? { label: activeArtifact.source, color: '#94a3b8' }) : null;
-  const modeColor = activeArtifact ? (MODE_COLOR[activeArtifact.mode] ?? '#94a3b8') : '#94a3b8';
+  // ── Dividir artefatos por tipo ──────────────────────────────────────────────
+  const ndviArtifacts = useMemo(
+    () => artifacts.filter(a => a.mode === 'ndvi'),
+    [artifacts]
+  );
+  const satArtifacts = useMemo(() => {
+    const rgb = artifacts.filter(a => a.mode === 'truecolor' || a.mode === 'sar');
+    // fallback: tudo que não for índice de vegetação
+    return rgb.length > 0
+      ? rgb
+      : artifacts.filter(a => !['ndvi', 'ndre', 'evi', 'ndmi'].includes(a.mode));
+  }, [artifacts]);
 
+  const ndviSlot = useArtifactSlot(ndviArtifacts);
+  const satSlot = useArtifactSlot(satArtifacts);
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
       {/* ── Sidebar: lista de talhões ─────────────────────────────────────── */}
-      <aside className="w-56 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
+      <aside
+        className="w-52 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
         style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
 
         <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
@@ -184,24 +405,29 @@ export default function Images() {
         <div className="p-2 flex flex-col gap-0.5">
           {farms.map(farm => (
             <div key={farm.id}>
-              <p className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest truncate" style={{ color: 'var(--muted)' }}>
+              <p
+                className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest truncate"
+                style={{ color: 'var(--muted)' }}>
                 {farm.name}
               </p>
               {farm.fields.map(field => {
                 const isActive = field.id === selectedFieldId;
                 return (
-                  <button key={field.id}
+                  <button
+                    key={field.id}
                     onClick={() => handleSelectField(field.id!)}
                     className="w-full text-left px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
                     style={isActive
                       ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)' }
                       : { background: 'transparent', border: '1px solid transparent' }}>
-                    <span className="material-symbols-outlined text-base flex-shrink-0"
+                    <span
+                      className="material-symbols-outlined text-base flex-shrink-0"
                       style={{ color: isActive ? 'var(--primary)' : '#475569' }}>
                       crop_square
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[12px] font-bold truncate"
+                      <p
+                        className="text-[12px] font-bold truncate"
                         style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>
                         {field.name}
                       </p>
@@ -222,7 +448,7 @@ export default function Images() {
         </div>
       </aside>
 
-      {/* ── Área principal ────────────────────────────────────────────────── */}
+      {/* ── Área principal ───────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {!selectedField ? (
@@ -233,218 +459,127 @@ export default function Images() {
         ) : (
           <>
             {/* Header do talhão */}
-            <div className="flex-shrink-0 px-5 py-3 border-b flex items-center gap-3 flex-wrap"
+            <div
+              className="flex-shrink-0 px-4 py-2 border-b flex items-center gap-3"
               style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="material-symbols-outlined text-xl" style={{ color: 'var(--primary)' }}>crop_square</span>
-                <div>
-                  <h2 className="text-sm font-black text-white">{selectedField.name}</h2>
-                  <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
-                    {selectedField.areaHa ? `${selectedField.areaHa} ha` : '—'}
-                    {selectedField.cultura ? ` · ${selectedField.cultura}` : ''}
-                    {' · '}{artifacts.length} imagens armazenadas
-                  </p>
-                </div>
+              <span className="material-symbols-outlined text-lg" style={{ color: 'var(--primary)' }}>
+                crop_square
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-white truncate">{selectedField.name}</p>
+                <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                  {selectedField.areaHa ? `${selectedField.areaHa} ha` : '—'}
+                  {selectedField.cultura ? ` · ${selectedField.cultura}` : ''}
+                  {artifacts.length > 0 ? ` · ${artifacts.length} imagens` : ''}
+                </p>
               </div>
-
-              {/* Filtro de modo */}
-              <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                {['all', ...modes].map(m => {
-                  const label = m === 'all' ? 'Todos' : (MODE_LABEL[m] ?? m.toUpperCase());
-                  const color = m === 'all' ? '#94a3b8' : (MODE_COLOR[m] ?? '#94a3b8');
-                  return (
-                    <button key={m} onClick={() => setModeFilter(m)}
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
-                      style={modeFilter === m
-                        ? { background: `${color}20`, color }
-                        : { color: 'var(--muted)' }}>
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button onClick={() => void loadArtifacts(selectedFieldId)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                <span className="material-symbols-outlined text-sm">refresh</span>
+              <button
+                onClick={() => void loadArtifacts(selectedFieldId)}
+                disabled={loadingArtifacts}
+                title="Atualizar"
+                className="p-1.5 rounded-lg transition-all hover:bg-white/10 disabled:opacity-50"
+                style={{ color: 'var(--muted)' }}>
+                <span className={`material-symbols-outlined text-base ${loadingArtifacts ? 'animate-spin' : ''}`}>
+                  refresh
+                </span>
               </button>
             </div>
 
+            {/* Conteúdo */}
             {loadingArtifacts ? (
               <div className="flex-1 flex items-center justify-center gap-2">
                 <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
                 <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando imagens…</p>
               </div>
-            ) : filtered.length === 0 ? (
-              /* ── Estado vazio ── */
+            ) : artifacts.length === 0 ? (
+              /* Estado vazio */
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center"
                   style={{ background: 'rgba(236,91,19,0.1)' }}>
-                  <span className="material-symbols-outlined text-4xl" style={{ color: 'var(--primary)' }}>satellite_alt</span>
+                  <span className="material-symbols-outlined text-4xl" style={{ color: 'var(--primary)' }}>
+                    satellite_alt
+                  </span>
                 </div>
                 <div className="text-center">
                   <p className="text-base font-bold text-white mb-1">Nenhuma imagem gerada ainda</p>
                   <p className="text-xs leading-relaxed max-w-xs" style={{ color: 'var(--muted)' }}>
-                    Acesse <strong className="text-white">Mapas Agronômicos</strong>, selecione uma cena de satélite
-                    e carregue a imagem. Ela será salva automaticamente aqui.
+                    Acesse <strong className="text-white">Mapas Agronômicos</strong>, selecione uma cena de
+                    satélite e carregue a imagem. Ela será salva automaticamente aqui.
                   </p>
                 </div>
-                <a href="/app/maps"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
+                <a
+                  href="/app/maps"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
                   style={{ background: 'var(--primary)' }}>
                   <span className="material-symbols-outlined text-base">map</span>
                   Ir para Mapas Agronômicos
                 </a>
               </div>
             ) : (
-              /* ── Viewer + timeline ── */
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              /* ── Dois mapas + timeline ── */
+              <div className="flex-1 flex flex-col min-h-0 p-3 gap-3 overflow-hidden">
 
-                {/* ── Viewer principal ── */}
-                <div className="flex-1 relative min-h-0 flex items-center justify-center"
-                  style={{ background: '#0a0a0c' }}>
+                {/* Dois painéis de mapa lado a lado */}
+                <div className="flex gap-3 flex-1 min-h-0">
+                  <MapCard
+                    mapKey={`ndvi-${selectedFieldId}`}
+                    label="NDVI"
+                    artifacts={ndviArtifacts}
+                    slot={ndviSlot}
+                    fieldBoundaries={fieldBoundaries}
+                    center={center}
+                    mapBounds={mapBounds}
+                  />
+                  <MapCard
+                    mapKey={`sat-${selectedFieldId}`}
+                    label="Satélite"
+                    artifacts={satArtifacts}
+                    slot={satSlot}
+                    fieldBoundaries={fieldBoundaries}
+                    center={center}
+                    mapBounds={mapBounds}
+                  />
+                </div>
 
-                  {viewerLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10"
-                      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-8 h-8 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-                        <p className="text-xs text-white">Carregando imagem…</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {viewerError && (
-                    <div className="flex flex-col items-center gap-2">
-                      <span className="material-symbols-outlined text-3xl" style={{ color: '#f87171' }}>broken_image</span>
-                      <p className="text-sm" style={{ color: '#f87171' }}>{viewerError}</p>
-                    </div>
-                  )}
-
-                  {viewerUrl && !viewerError && (
-                    <img
-                      src={viewerUrl}
-                      alt={`${activeArtifact?.mode} ${activeArtifact?.scene_date}`}
-                      className="max-w-full max-h-full object-contain"
-                      style={{ display: 'block' }}
-                    />
-                  )}
-
-                  {!viewerUrl && !viewerLoading && !viewerError && (
-                    <div className="flex flex-col items-center gap-2 opacity-40">
-                      <span className="material-symbols-outlined text-5xl" style={{ color: 'var(--muted)' }}>image</span>
-                      <p className="text-sm" style={{ color: 'var(--muted)' }}>Selecione uma data abaixo</p>
-                    </div>
-                  )}
-
-                  {/* Info overlay da imagem ativa */}
-                  {activeArtifact && !viewerLoading && (
-                    <div className="absolute top-3 left-3 flex items-center gap-2 px-3 py-1.5 rounded-xl z-10"
-                      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                      <span className="text-[11px] font-black px-1.5 py-0.5 rounded"
-                        style={{ background: modeColor + '30', color: modeColor }}>
-                        {MODE_LABEL[activeArtifact.mode] ?? activeArtifact.mode.toUpperCase()}
-                      </span>
-                      <span className="text-[11px] font-semibold text-white">
-                        {fmtDate(activeArtifact.scene_date ?? activeArtifact.generated_at)}
-                      </span>
-                      {srcInfo && (
-                        <span className="text-[10px]" style={{ color: srcInfo.color }}>{srcInfo.label}</span>
-                      )}
-                      {activeArtifact.cloud_coverage != null && (
-                        <span className="text-[10px]" style={{ color: '#94a3b8' }}>
-                          ☁ {activeArtifact.cloud_coverage.toFixed(0)}%
+                {/* Timeline: todos os artefatos */}
+                <div className="flex-shrink-0 flex gap-2 overflow-x-auto scrollbar-thin pb-1">
+                  {artifacts.map(a => {
+                    const mColor = MODE_COLOR[a.mode] ?? '#94a3b8';
+                    const isNdviActive = a.id === ndviSlot.active?.id;
+                    const isSatActive = a.id === satSlot.active?.id;
+                    const isActive = isNdviActive || isSatActive;
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => {
+                          const ni = ndviArtifacts.findIndex(x => x.id === a.id);
+                          const si = satArtifacts.findIndex(x => x.id === a.id);
+                          if (ni >= 0) ndviSlot.setIdx(ni);
+                          if (si >= 0) satSlot.setIdx(si);
+                        }}
+                        className="flex-shrink-0 flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl transition-all"
+                        style={isActive
+                          ? { background: mColor + '20', border: `1px solid ${mColor}50` }
+                          : { background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        <span
+                          className="text-[9px] font-black uppercase"
+                          style={{ color: isActive ? mColor : 'var(--muted)' }}>
+                          {MODE_LABEL[a.mode] ?? a.mode}
                         </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Navegação prev/next */}
-                  {filtered.length > 1 && (
-                    <>
-                      <button
-                        onClick={() => canPrev && setActiveArtifactId(filtered[filteredIdx - 1].id)}
-                        disabled={!canPrev}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-xl flex items-center justify-center transition-all disabled:opacity-20"
-                        style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <span className="material-symbols-outlined text-lg text-white">chevron_left</span>
+                        <span className="text-[11px] font-bold text-white whitespace-nowrap">
+                          {fmtDate(a.scene_date ?? a.generated_at)}
+                        </span>
+                        {a.cloud_coverage != null && (
+                          <span className="text-[9px]" style={{ color: '#475569' }}>
+                            ☁ {a.cloud_coverage.toFixed(0)}%
+                          </span>
+                        )}
                       </button>
-                      <button
-                        onClick={() => canNext && setActiveArtifactId(filtered[filteredIdx + 1].id)}
-                        disabled={!canNext}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-xl flex items-center justify-center transition-all disabled:opacity-20"
-                        style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <span className="material-symbols-outlined text-lg text-white">chevron_right</span>
-                      </button>
-                    </>
-                  )}
-
-                  {/* Contador */}
-                  {filtered.length > 0 && filteredIdx >= 0 && (
-                    <div className="absolute bottom-3 right-3 z-10 px-2.5 py-1 rounded-lg text-[10px] font-semibold"
-                      style={{ background: 'rgba(0,0,0,0.6)', color: '#94a3b8', backdropFilter: 'blur(8px)' }}>
-                      {filteredIdx + 1} / {filtered.length}
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
 
-                {/* ── Timeline de datas ── */}
-                <div className="flex-shrink-0 border-t" style={{ borderColor: 'var(--border)', background: 'var(--sidebar)' }}>
-                  <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin px-3 py-2.5">
-                    {filtered.map(artifact => {
-                      const isActive = artifact.id === activeArtifactId;
-                      const mColor = MODE_COLOR[artifact.mode] ?? '#94a3b8';
-                      const src = SRC_INFO[artifact.source] ?? { color: '#94a3b8' };
-                      return (
-                        <button
-                          key={artifact.id}
-                          onClick={() => setActiveArtifactId(artifact.id)}
-                          className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all"
-                          style={isActive
-                            ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.4)' }
-                            : { background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                          {/* Indicador de modo */}
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded"
-                            style={{ background: mColor + '20', color: mColor }}>
-                            {MODE_LABEL[artifact.mode] ?? artifact.mode.toUpperCase()}
-                          </span>
-                          {/* Data */}
-                          <p className="text-[11px] font-bold whitespace-nowrap"
-                            style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>
-                            {fmtDateShort(isoDate(artifact.scene_date ?? artifact.generated_at))}
-                          </p>
-                          {/* Fonte */}
-                          <span className="text-[8px] font-semibold" style={{ color: src.color }}>
-                            {artifact.source.toUpperCase()}
-                          </span>
-                          {/* Nuvens */}
-                          {artifact.cloud_coverage != null && (
-                            <span className="text-[8px]" style={{ color: '#475569' }}>
-                              ☁{artifact.cloud_coverage.toFixed(0)}%
-                            </span>
-                          )}
-                          {isActive && (
-                            <div className="w-1 h-1 rounded-full" style={{ background: 'var(--primary)' }} />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Rodapé */}
-                  <div className="px-4 py-1.5 border-t flex items-center justify-between"
-                    style={{ borderColor: 'var(--border)' }}>
-                    <p className="text-[9px]" style={{ color: '#334155' }}>
-                      💾 Imagens armazenadas no Supabase Storage · sem custo de regeneração
-                    </p>
-                    {activeArtifact?.bytes_size && (
-                      <p className="text-[9px]" style={{ color: '#334155' }}>
-                        {(activeArtifact.bytes_size / 1024).toFixed(0)} KB
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
             )}
           </>
