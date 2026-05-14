@@ -485,6 +485,34 @@ export default function Layout() {
           color: #1e293b !important;
         }
 
+        /* ── Overlays flutuantes sobre o mapa (dropdowns Ações, Satélite HD, etc) ── */
+        /* Mesmo dentro de .always-dark, esses controles devem adaptar ao tema. */
+        [data-theme="light"] [style*="rgba(8,8,9,0.82)"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.85)"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.9)"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.95)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.6)"] {
+          background: rgba(255, 255, 255, 0.95) !important;
+          border-color: rgba(15, 23, 42, 0.12) !important;
+          color: #0f172a !important;
+        }
+        [data-theme="light"] [style*="rgba(8,8,9,0.82)"] *,
+        [data-theme="light"] [style*="rgba(8,8,9,0.85)"] *,
+        [data-theme="light"] [style*="rgba(8,8,9,0.9)"] *,
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] *,
+        [data-theme="light"] [style*="rgba(8,8,9,0.95)"] * {
+          color: #0f172a !important;
+        }
+        /* Mantém ícones laranja/verde/azul originais dos badges nos dropdowns */
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #ec5b13"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #34d399"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #60a5fa"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #a78bfa"],
+        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #f59e0b"] {
+          color: inherit !important;
+        }
+
         /* ── Ícone da marca: badge branco arredondado em todos os temas ── */
         .tracto-brand-icon { background: #fff; border-radius: 7px; padding: 2px; }
 
