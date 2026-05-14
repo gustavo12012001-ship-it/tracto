@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { apiFetch } from '../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type DoseMode = 'per_ha' | 'per_100l';
@@ -95,6 +96,53 @@ export default function Calculator() {
 
     return { totalCalda, doseTotal, tanques, custo };
   }, [areaNum, volumePerHaNum, doseNum, mode, tankCapNum, unitPriceNum]);
+
+  // ── Análise com Tracto IA — usa contexto completo do talhão + cálculo ──────
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const analyzeWithAI = async () => {
+    if (!activeField) {
+      setAiError('Selecione um talhão ativo em Mapa & Talhões antes de pedir recomendação.');
+      return;
+    }
+    setAiLoading(true); setAiError(null); setAiResult(null);
+    try {
+      const body = {
+        lat: activeField.lat,
+        lng: activeField.lng,
+        field_name: activeField.name ?? 'Talhão',
+        crop_type: activeField.cultura ?? undefined,
+        date_range_days: 30,
+        boundaries: activeField.boundaries ?? null,
+        planting_date: activeField.dataPlantio ?? undefined,
+        variety: activeField.variedade ?? undefined,
+        area_ha: areaNum || activeField.areaHa,
+        // Contexto extra da Calculator pra IA usar na recomendação:
+        application_context: {
+          product: productName || null,
+          dose: doseNum || null,
+          unit,
+          volume_l_per_ha: volumePerHaNum,
+          total_calda_l: results.totalCalda,
+          dose_total: results.doseTotal,
+          tanques: results.tanques,
+          tank_capacity_l: tankCapNum,
+          custo_estimado_brl: results.custo,
+        },
+      };
+      const resp = await apiFetch<{ ai_report?: string }>('/api/analyze-field', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      setAiResult(resp?.ai_report ?? 'Análise não disponível.');
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'Erro na análise');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const copyResume = () => {
     const lines = [
@@ -361,7 +409,64 @@ export default function Calculator() {
               <span className="material-symbols-outlined text-base">book</span>
               Salvar no Caderno
             </button>
+            <button
+              onClick={() => void analyzeWithAI()}
+              disabled={aiLoading || !activeField}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-all disabled:opacity-50"
+              style={{ background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)', color: '#ec5b13' }}
+            >
+              {aiLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                  Analisando…
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-base">auto_awesome</span>
+                  Recomendação Tracto IA
+                </>
+              )}
+            </button>
           </div>
+
+          {/* ── Resultado da Tracto IA ───────────────────────────────────── */}
+          {(aiResult || aiError) && (
+            <div
+              className="mt-4 rounded-2xl p-4"
+              style={{
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>auto_awesome</span>
+                <h3 className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--primary)' }}>
+                  Recomendação Tracto IA
+                </h3>
+                {activeField && (
+                  <span className="text-[10px] ml-auto" style={{ color: 'var(--muted)' }}>
+                    {activeField.name}{activeField.cultura ? ` · ${activeField.cultura}` : ''}
+                  </span>
+                )}
+              </div>
+              {aiError && (
+                <div className="flex items-center gap-2 text-xs" style={{ color: '#f87171' }}>
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  {aiError}
+                </div>
+              )}
+              {aiResult && (
+                <div className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text, #e2e8f0)' }}>
+                  {aiResult}
+                </div>
+              )}
+              {aiResult && (
+                <p className="text-[10px] mt-3 pt-3 border-t" style={{ color: 'var(--muted)', borderColor: 'var(--border)' }}>
+                  IA considerou: imagens Sentinel-2 do talhão, dados meteorológicos atuais, cultura{activeField?.dataPlantio ? `, data de plantio (${activeField.dataPlantio})` : ''}{productName ? `, produto (${productName})` : ''} e janela de pulverização.
+                </p>
+              )}
+            </div>
+          )}
 
         </div>
       </div>
