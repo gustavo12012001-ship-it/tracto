@@ -34,10 +34,69 @@ const TABS: { id: CadernoTab; label: string; icon: string }[] = [
   { id: 'calculadora',    label: 'Calculadora',      icon: 'calculate'    },
 ];
 
-const inputCls = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-orange-500/40';
-const selectCls = 'w-full bg-[#0d0d0f] border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500/40 appearance-none';
-const labelCls = 'text-[10px] text-slate-500 mb-1 block';
+// Classes que usam CSS variables — adaptam automaticamente light/dark
+const inputCls = 'tracto-input w-full rounded-lg px-3 py-2 text-xs focus:outline-none';
+const selectCls = 'tracto-select w-full rounded-lg px-3 py-2 text-xs focus:outline-none appearance-none';
+const labelCls = 'tracto-label text-[10px] mb-1 block';
 const btnPrimary = 'flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all text-white';
+
+// Helper de delete de evento — usado em todas as sub-tabs
+async function deleteNotebookEvent(eventId: string): Promise<boolean> {
+  try {
+    await apiFetch(`/api/notebook/${eventId}`, { method: 'DELETE' });
+    return true;
+  } catch (err) {
+    console.error('Erro ao deletar evento:', err);
+    return false;
+  }
+}
+
+// Componente reutilizável: botão de delete inline com confirmação
+function DeleteEventButton({ eventId, onDeleted }: { eventId: string; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1">
+        <button
+          onClick={async () => {
+            setDeleting(true);
+            const ok = await deleteNotebookEvent(eventId);
+            setDeleting(false);
+            if (ok) onDeleted();
+            else setConfirming(false);
+          }}
+          disabled={deleting}
+          className="text-[10px] font-bold px-2 py-1 rounded transition-all"
+          style={{ background: 'rgba(239,68,68,0.18)', color: '#f87171', border: '1px solid rgba(239,68,68,0.35)' }}
+          title="Confirmar exclusão"
+        >
+          {deleting ? '…' : 'Excluir'}
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          disabled={deleting}
+          className="text-[10px] font-bold px-2 py-1 rounded transition-all"
+          style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+          title="Cancelar"
+        >
+          Cancelar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setConfirming(true)}
+      className="p-1 rounded transition-all hover:bg-red-500/10"
+      title="Excluir registro"
+    >
+      <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>delete</span>
+    </button>
+  );
+}
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function fmtDate(s: string) {
@@ -247,6 +306,12 @@ function FitossanitarioTab() {
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${type?.color ?? '#94a3b8'}20`, color: type?.color ?? '#94a3b8' }}>{type?.label}</span>
                 <span className="text-[10px]" style={{ color: '#64748b' }}>{fmtDate(e.occurred_at)}</span>
+                <div className="ml-auto">
+                  <DeleteEventButton
+                    eventId={e.id}
+                    onDeleted={() => setEvents(prev => prev.filter(x => x.id !== e.id))}
+                  />
+                </div>
               </div>
               <p className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{e.title}</p>
               {e.data?.infestation_level != null && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>Infestação: {String(e.data.infestation_level)}</p>}
@@ -447,6 +512,12 @@ function AplicacoesTab() {
                 {TYPE_LABELS[e.category] ?? e.category}
               </span>
               <span className="text-[10px]" style={{ color: '#64748b' }}>{fmtDate(e.occurred_at)}</span>
+              <div className="ml-auto">
+                <DeleteEventButton
+                  eventId={e.id}
+                  onDeleted={() => setEvents(prev => prev.filter(x => x.id !== e.id))}
+                />
+              </div>
             </div>
             <p className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{e.title}</p>
             {e.data?.dose_l_ha != null && <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>Dose: {String(e.data.dose_l_ha)}</p>}
@@ -562,6 +633,12 @@ function ColheitaTab() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(234,179,8,0.15)', color: '#eab308' }}>Colheita</span>
               <span className="text-[10px]" style={{ color: '#64748b' }}>{fmtDate(e.occurred_at)}</span>
+              <div className="ml-auto">
+                <DeleteEventButton
+                  eventId={e.id}
+                  onDeleted={() => setEvents(prev => prev.filter(x => x.id !== e.id))}
+                />
+              </div>
             </div>
             <p className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{e.title}</p>
             {e.data?.real_yield_sc_ha != null && (

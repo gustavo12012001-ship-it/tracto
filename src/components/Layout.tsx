@@ -528,7 +528,6 @@ export default function Layout() {
         }
 
         /* ── Dropdowns nativos <select> e <option> adaptam ao tema ── */
-        /* Sem isso, o browser herda cor do sistema e fica preto no light mode. */
         select { color-scheme: dark; }
         [data-theme="light"] select { color-scheme: light; }
         select option {
@@ -548,6 +547,26 @@ export default function Layout() {
         [data-theme="light"] input[type="datetime-local"] {
           color-scheme: light;
         }
+
+        /* ── Tracto Input/Select/Label — classes reutilizáveis adaptativas ── */
+        .tracto-input, .tracto-select {
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.1);
+          color: var(--text);
+        }
+        .tracto-input::placeholder { color: #475569; }
+        .tracto-input:focus, .tracto-select:focus {
+          border-color: rgba(236,91,19,0.45);
+        }
+        [data-theme="light"] .tracto-input,
+        [data-theme="light"] .tracto-select {
+          background: #ffffff;
+          border: 1px solid rgba(15,23,42,0.15);
+          color: #0f172a;
+        }
+        [data-theme="light"] .tracto-input::placeholder { color: #94a3b8; }
+        .tracto-label { color: #64748b; }
+        [data-theme="light"] .tracto-label { color: #475569; }
         /* Textos com text-white explícito dentro de overlays mantém visibilidade */
         [data-theme="light"] [style*="rgba(8,8,9,0."] .text-white,
         [data-theme="light"] [style*="rgba(0,0,0,0."] .text-white {
