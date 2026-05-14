@@ -478,6 +478,15 @@ export default function Images() {
     return b64 ? `data:image/png;base64,${b64}` : null;
   }, [snapshot]);
 
+  // RGB truecolor inline (novo campo no snapshot — backend codifica em base64
+  // junto do NDVI). Garante que ambos venham do MESMO scene Sentinel-2.
+  const snapshotTrueColorUrl = useMemo(() => {
+    if (!snapshot?.satellite) return null;
+    const sat = snapshot.satellite as Record<string, unknown>;
+    const b64 = sat.truecolor_image_base64 as string | null | undefined;
+    return b64 ? `data:image/png;base64,${b64}` : null;
+  }, [snapshot]);
+
   const snapshotSceneDate = useMemo(() => {
     if (!snapshot?.satellite) return null;
     const sat = snapshot.satellite as Record<string, unknown>;
@@ -906,11 +915,13 @@ export default function Images() {
                   onExpand={() => setExpanded('sat')}
                   onAnalyze={() => setAiOpen('sat')}
                   onFetch={() => { autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); }}
-                  fetching={autoFetching}
-                  fallbackUrl={satFallback?.url ?? null}
-                  fallbackSceneDate={satFallback?.sceneDate ?? null}
-                  fallbackCloud={satFallback?.cloud ?? null}
-                  fallbackSource={satFallback?.source}
+                  fetching={autoFetching || snapshotLoading}
+                  // Prioridade do fallback RGB: 1º snapshot inline (mesma fonte do NDVI),
+                  // 2º blob URL do autoFetch. Garante RGB sempre presente.
+                  fallbackUrl={snapshotTrueColorUrl ?? satFallback?.url ?? null}
+                  fallbackSceneDate={snapshotTrueColorUrl ? snapshotSceneDate : (satFallback?.sceneDate ?? null)}
+                  fallbackCloud={snapshotTrueColorUrl ? snapshotCloud : (satFallback?.cloud ?? null)}
+                  fallbackSource={snapshotTrueColorUrl ? 'Sentinel-2' : (satFallback?.source)}
                 />
               </div>
 

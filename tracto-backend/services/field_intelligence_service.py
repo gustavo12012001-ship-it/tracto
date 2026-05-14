@@ -168,12 +168,23 @@ async def _resolve_satellite(
 		)
 
 		if isinstance(scene_meta, dict):
+			# CRÍTICO: codifica o RGB truecolor em base64 inline também (igual NDVI).
+			# Frontend usa direto sem precisar do DB satellite_artifacts.
+			import base64 as _b64
+			truecolor_b64 = None
+			if overlay_result is not None and getattr(overlay_result, "image_bytes", None):
+				try:
+					truecolor_b64 = _b64.b64encode(overlay_result.image_bytes).decode("ascii")
+				except Exception:
+					truecolor_b64 = None
+
 			satellite = {
 				**scene_meta,
 				"s1_scene_date": s1_scene_date,
 				"s2_scene_date": s2_scene_date or scene_meta.get("scene_date"),
 				"ndvi_image_base64": ndvi_data.get("image_base64") if isinstance(ndvi_data, dict) else None,
 				"ndvi_stats": ndvi_data.get("stats") if isinstance(ndvi_data, dict) else None,
+				"truecolor_image_base64": truecolor_b64,
 				"image_cached": bool(getattr(overlay_result, "image_cached", False)),
 				"cache_path": getattr(overlay_result, "cache_path", None),
 				"cache_hit": bool(getattr(overlay_result, "cache_hit", False)),
