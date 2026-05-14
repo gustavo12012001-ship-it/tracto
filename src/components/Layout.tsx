@@ -526,6 +526,28 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(8,8,9,0."] input::placeholder {
           color: #64748b !important;
         }
+
+        /* ── Dropdowns nativos <select> e <option> adaptam ao tema ── */
+        /* Sem isso, o browser herda cor do sistema e fica preto no light mode. */
+        select { color-scheme: dark; }
+        [data-theme="light"] select { color-scheme: light; }
+        select option {
+          background: #1a1a1c;
+          color: #e2e8f0;
+        }
+        [data-theme="light"] select option {
+          background: #ffffff;
+          color: #0f172a;
+        }
+        /* Inputs date/time pickers também */
+        input[type="date"], input[type="time"], input[type="datetime-local"] {
+          color-scheme: dark;
+        }
+        [data-theme="light"] input[type="date"],
+        [data-theme="light"] input[type="time"],
+        [data-theme="light"] input[type="datetime-local"] {
+          color-scheme: light;
+        }
         /* Textos com text-white explícito dentro de overlays mantém visibilidade */
         [data-theme="light"] [style*="rgba(8,8,9,0."] .text-white,
         [data-theme="light"] [style*="rgba(0,0,0,0."] .text-white {

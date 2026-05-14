@@ -104,7 +104,20 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
       return (await response.text()) as T;
     }
 
-    return response.json();
+    // Trata corretamente 204 No Content e respostas com body vazio
+    // (DELETE muitas vezes retorna body vazio → response.json() throw)
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return undefined as T;
+    }
   } catch (err) {
     console.error('[API] fetch error:', url, err);
     if (err instanceof TypeError && err.message === 'Failed to fetch') {

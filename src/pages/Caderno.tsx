@@ -609,17 +609,17 @@ export default function Caderno() {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
-      {/* ── Tab bar — centralizada com largura máxima ──────────────────────── */}
+      {/* ── Tab bar — full-width, tabs distribuídas igualmente ──────────────── */}
       <div
         className="flex-shrink-0 overflow-x-auto scrollbar-thin"
         style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}
       >
-        <div className="flex items-center justify-center gap-1.5 px-3 py-2 w-full max-w-6xl mx-auto">
+        <div className="flex items-stretch w-full px-2 py-1">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0"
+            className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all mx-0.5"
             style={
               activeTab === tab.id
                 ? { background: 'var(--primary-dim)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }
