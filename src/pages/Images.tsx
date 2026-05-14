@@ -192,7 +192,7 @@ function MapCard({
   const cloudCoverage = active?.cloud_coverage ?? (usingFallback ? fallbackCloud ?? null : null);
 
   return (
-    <div className="flex flex-col rounded-2xl overflow-hidden flex-1 min-w-0 min-h-0"
+    <div className="flex flex-col rounded-2xl overflow-hidden flex-1 basis-0 min-w-0 min-h-0"
       style={{ border: '1px solid var(--border)', background: '#080809' }}>
 
       {/* Header do card */}
@@ -499,8 +499,27 @@ export default function Images() {
   // ── Auto-buscar última imagem do satélite (NDVI + RGB) ─────────────────────
   const [autoFetching, setAutoFetching] = useState(false);
   const [autoFetchError, setAutoFetchError] = useState<string | null>(null);
+  const [satFallback, setSatFallback] = useState<{
+    url: string;
+    sceneDate: string | null;
+    cloud: number | null;
+    source: string;
+  } | null>(null);
+  const satFallbackRef = useRef<string | null>(null);
   // Marca talhões onde já tentamos auto-fetch nesta sessão pra não loop
   const autoFetchedFieldsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (satFallbackRef.current) {
+      URL.revokeObjectURL(satFallbackRef.current);
+      satFallbackRef.current = null;
+    }
+    setSatFallback(null);
+  }, [selectedFieldId]);
+
+  useEffect(() => () => {
+    if (satFallbackRef.current) URL.revokeObjectURL(satFallbackRef.current);
+  }, []);
 
   const autoFetchLatest = useCallback(async () => {
     if (!selectedFieldId || autoFetching) return;
@@ -524,7 +543,7 @@ export default function Images() {
 
       // 2. Gerar NDVI e RGB em paralelo
       const modes = ['ndvi', 'truecolor'];
-      const results = await Promise.allSettled(modes.map(mode => {
+      const results = await Promise.allSettled(modes.map(async mode => {
         const params = new URLSearchParams({
           field_id: selectedFieldId,
           source: bestScene.source,
@@ -535,10 +554,28 @@ export default function Images() {
         if (typeof bestScene.cloud_coverage === 'number') {
           params.set('cloud_coverage', String(bestScene.cloud_coverage));
         }
-        return fetch(`${API_URL}/api/sentinel/overlay?${params}`, { headers });
+        const response = await fetch(`${API_URL}/api/sentinel/overlay?${params}`, { headers });
+        const blob = response.ok ? await response.blob() : null;
+        return { mode, response, blob };
       }));
-      const anyOk = results.some(r => r.status === 'fulfilled' && r.value.ok);
+      const anyOk = results.some(r => r.status === 'fulfilled' && r.value.response.ok);
       if (!anyOk) throw new Error('Falha ao gerar imagens');
+
+      const trueColorResult = results.find(
+        (r): r is PromiseFulfilledResult<{ mode: string; response: Response; blob: Blob | null }> =>
+          r.status === 'fulfilled' && r.value.mode === 'truecolor' && r.value.response.ok && !!r.value.blob
+      );
+      if (trueColorResult?.value.blob) {
+        if (satFallbackRef.current) URL.revokeObjectURL(satFallbackRef.current);
+        const objectUrl = URL.createObjectURL(trueColorResult.value.blob);
+        satFallbackRef.current = objectUrl;
+        setSatFallback({
+          url: objectUrl,
+          sceneDate: bestScene.date,
+          cloud: bestScene.cloud_coverage,
+          source: bestScene.source === 's2' ? 'Sentinel-2' : bestScene.source.toUpperCase(),
+        });
+      }
 
       // 3. Recarrega artefatos
       await loadArtifacts(selectedFieldId);
@@ -564,18 +601,20 @@ export default function Images() {
 
   const ndviSlot = useArtifactSlot(ndviArtifacts);
   const satSlot = useArtifactSlot(satArtifacts);
+  const hasNdviImage = ndviArtifacts.length > 0 || Boolean(snapshotNdviUrl);
+  const hasSatelliteImage = satArtifacts.length > 0 || Boolean(satFallback?.url);
 
   // ── Auto-trigger: ao selecionar talhão sem cache, busca automaticamente ────
   useEffect(() => {
     if (!selectedFieldId || loadingArtifacts || autoFetching) return;
-    if (artifacts.length > 0) return;
+    if (hasNdviImage && hasSatelliteImage) return;
     if (autoFetchedFieldsRef.current.has(selectedFieldId)) return;
     if (!selectedField?.boundaries || selectedField.boundaries.length < 3) return;
     // Marca antes de chamar pra evitar loop em caso de erro
     autoFetchedFieldsRef.current.add(selectedFieldId);
     void autoFetchLatest();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFieldId, loadingArtifacts, artifacts.length, autoFetching, selectedField?.boundaries]);
+  }, [selectedFieldId, loadingArtifacts, hasNdviImage, hasSatelliteImage, autoFetching, selectedField?.boundaries]);
 
   // ── Modal de expansão (fullscreen) ─────────────────────────────────────────
   const [expanded, setExpanded] = useState<'ndvi' | 'sat' | null>(null);
@@ -644,7 +683,7 @@ export default function Images() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div className="flex flex-1 w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
       {/* ── Sidebar: lista de talhões ─────────────────────────────────────── */}
       <aside
@@ -832,10 +871,10 @@ export default function Images() {
             )}
 
             {/* ── Conteúdo principal: container centralizado com largura máxima ── */}
-            <div className="flex-1 flex flex-col min-h-0 p-4 gap-4 overflow-hidden w-full max-w-6xl mx-auto">
+            <div className="flex-1 flex flex-col min-h-0 p-3 lg:p-4 gap-3 lg:gap-4 overflow-hidden w-full max-w-[1240px] mx-auto">
 
               {/* Grid responsivo: stack em mobile, lado a lado em desktop */}
-              <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
+              <div className="flex flex-col md:flex-row gap-3 lg:gap-4 flex-1 min-h-0">
                 <MapCard
                   mapKey={`ndvi-${selectedFieldId}`}
                   label="NDVI"
@@ -868,6 +907,10 @@ export default function Images() {
                   onAnalyze={() => setAiOpen('sat')}
                   onFetch={() => { autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); }}
                   fetching={autoFetching}
+                  fallbackUrl={satFallback?.url ?? null}
+                  fallbackSceneDate={satFallback?.sceneDate ?? null}
+                  fallbackCloud={satFallback?.cloud ?? null}
+                  fallbackSource={satFallback?.source}
                 />
               </div>
 

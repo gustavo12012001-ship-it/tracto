@@ -142,22 +142,32 @@ export default function Alerts() {
     <>
       <style>{`
         .glass-card-alert {
-          background: rgba(38, 28, 24, 0.6);
+          background: var(--surface);
           backdrop-filter: blur(12px);
-          border: 1px solid rgba(236, 91, 19, 0.1);
+          border: 1px solid var(--border);
+        }
+        [data-theme="dark"] .glass-card-alert {
+          background: rgba(38, 28, 24, 0.6);
+          border-color: rgba(236, 91, 19, 0.1);
+        }
+        [data-theme="light"] .glass-card-alert {
+          background: rgba(255, 255, 255, 0.86);
+          border-color: rgba(15, 23, 42, 0.08);
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
         }
         .alert-scrollbar::-webkit-scrollbar { width: 6px; }
         .alert-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .alert-scrollbar::-webkit-scrollbar-thumb { background: #3d2a22; border-radius: 10px; }
+        .alert-scrollbar::-webkit-scrollbar-thumb { background: rgba(236, 91, 19, 0.28); border-radius: 10px; }
+        [data-theme="light"] .alert-scrollbar::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.16); }
       `}</style>
 
-      <main className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#0a0a0a' }}>
+      <main className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
         {/* VALIDAÇÃO: Nenhum talhão selecionado */}
         {!activeFieldId || !activeField ? (
-          <div className="flex items-center justify-center h-screen bg-gradient-to-br from-amber-50 to-orange-100">
-            <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Nenhum talhão selecionado</h2>
-              <p className="text-gray-600 mb-6">Selecione um talhão ativo no mapa para visualizar alertas agronômicos.</p>
+          <div className="flex items-center justify-center h-full p-6" style={{ background: 'var(--bg)' }}>
+            <div className="card-glass p-8 text-center max-w-md">
+              <h2 className="text-2xl font-bold mb-4" style={{ color: 'var(--text)' }}>Nenhum talhão selecionado</h2>
+              <p className="mb-6" style={{ color: 'var(--muted)' }}>Selecione um talhão ativo no mapa para visualizar alertas agronômicos.</p>
             </div>
           </div>
         ) : (
@@ -359,7 +369,7 @@ export default function Alerts() {
                           <button
                             onClick={() => dismissAlert(a.id)}
                             className="px-4 py-2 rounded-lg text-slate-300 text-xs font-bold border hover:bg-orange-500/5 transition-all"
-                            style={{ background: 'rgba(38,28,24,1)', borderColor: 'rgba(236,91,19,0.1)' }}
+                            style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
                           >
                             Ignorar
                           </button>

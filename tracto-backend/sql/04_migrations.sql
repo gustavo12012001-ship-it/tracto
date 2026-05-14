@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.satellite_artifacts (
     last_accessed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     expires_at       TIMESTAMP WITH TIME ZONE,
     cache_version    TEXT DEFAULT 'v1',
-    UNIQUE (field_id, source, scene_id)
+    UNIQUE (field_id, source, scene_id, mode, bbox_hash)
 );
 
 ALTER TABLE public.satellite_artifacts ENABLE ROW LEVEL SECURITY;

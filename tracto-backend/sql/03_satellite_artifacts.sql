@@ -24,7 +24,7 @@ create table if not exists public.satellite_artifacts (
 );
 
 create unique index if not exists ux_satellite_artifacts_scene_key
-on public.satellite_artifacts (field_id, source, scene_id);
+on public.satellite_artifacts (field_id, source, scene_id, mode, bbox_hash);
 
 create index if not exists ix_satellite_artifacts_lookup
 on public.satellite_artifacts (field_id, source, updated_at desc);

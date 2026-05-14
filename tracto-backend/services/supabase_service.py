@@ -284,20 +284,29 @@ def touch_satellite_artifact(artifact_id: str) -> None:
 
 
 def upsert_satellite_artifact(metadata: dict) -> dict | None:
-    try:
-        response = requests.post(
-            _rest_url("satellite_artifacts"),
-            headers={**_get_supabase_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
-            params={"on_conflict": "field_id,source,scene_id"},
-            json=metadata,
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        rows = response.json()
-        return rows[0] if rows else None
-    except Exception as exc:
-        logging.warning("Erro ao upsert do artifact satelital: %s", exc)
-        return None
+    conflicts = (
+        "field_id,source,scene_id,mode,bbox_hash",
+        "field_id,source,scene_id",
+    )
+    last_exc: Exception | None = None
+    for conflict in conflicts:
+        try:
+            response = requests.post(
+                _rest_url("satellite_artifacts"),
+                headers={**_get_supabase_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+                params={"on_conflict": conflict},
+                json=metadata,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            return rows[0] if rows else None
+        except Exception as exc:
+            last_exc = exc
+            logging.warning("Erro ao upsert do artifact satelital com conflito %s: %s", conflict, exc)
+    if last_exc:
+        logging.warning("Erro ao upsert do artifact satelital: %s", last_exc)
+    return None
 
 
 def upload_storage_object(bucket: str, object_path: str, payload: bytes, mime_type: str) -> bool:

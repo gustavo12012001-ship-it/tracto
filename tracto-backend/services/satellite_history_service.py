@@ -81,7 +81,7 @@ def save_satellite_artifact(
 ) -> bool:
     """
     Upsert de artefato de satélite no histórico.
-    Usa ON CONFLICT (field_id, source, scene_id) DO UPDATE.
+    Usa ON CONFLICT por cena + modo + bbox para NDVI/RGB/SAR coexistirem.
     """
     try:
         payload = {
@@ -114,9 +114,33 @@ def save_satellite_artifact(
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }
-        resp = requests.post(_url(), json=payload, headers=headers, timeout=_TIMEOUT)
-        resp.raise_for_status()
-        return True
+        conflicts = (
+            "field_id,source,scene_id,mode,bbox_hash",
+            "field_id,source,scene_id",
+        )
+        last_exc: Exception | None = None
+        for conflict in conflicts:
+            try:
+                resp = requests.post(
+                    _url(),
+                    params={"on_conflict": conflict},
+                    json=payload,
+                    headers=headers,
+                    timeout=_TIMEOUT,
+                )
+                resp.raise_for_status()
+                return True
+            except Exception as exc:
+                last_exc = exc
+                logging.warning(
+                    "[satellite_history] save retry conflict=%s field_id=%s: %s",
+                    conflict,
+                    field_id,
+                    exc,
+                )
+        if last_exc:
+            raise last_exc
+        return False
     except Exception as e:
         logging.warning("[satellite_history] save error field_id=%s: %s", field_id, e)
         return False

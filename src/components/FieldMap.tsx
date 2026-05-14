@@ -951,7 +951,7 @@ export default function FieldMap() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-full overflow-hidden" style={{ cursor: drawMode !== 'none' ? 'crosshair' : 'default' }}>
+    <div className="always-dark relative w-full h-full overflow-hidden" style={{ cursor: drawMode !== 'none' ? 'crosshair' : 'default' }}>
       <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', background: '#080809' }} zoomControl={false}>
         <InitialCenterController />
         <ActiveFieldFlyController />
