@@ -121,9 +121,12 @@ function useArtifactSlot(artifacts: SatArtifact[]) {
 }
 
 // ── MapCard: painel de mapa com imagem recortada ──────────────────────────────
+type CardKind = 'ndvi' | 'satellite';
+
 interface MapCardProps {
   mapKey: string;
   label: string;
+  kind: CardKind;
   artifacts: SatArtifact[];
   slot: ReturnType<typeof useArtifactSlot>;
   fieldBoundaries: [number, number][];
@@ -131,12 +134,42 @@ interface MapCardProps {
   mapBounds: L.LatLngBoundsExpression | null;
   onExpand?: () => void;
   onAnalyze?: () => void;
+  onFetch?: () => void;
+  fetching?: boolean;
+}
+
+// Gradient NDVI placeholder — escala vermelho→amarelo→verde típica de índice vegetativo
+function NDVIPlaceholder({ fieldBoundaries }: { fieldBoundaries: [number, number][] }) {
+  if (fieldBoundaries.length < 3) return null;
+  const lats = fieldBoundaries.map(p => p[0]);
+  const lngs = fieldBoundaries.map(p => p[1]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const span = (maxLat - minLat) || 1, lspan = (maxLng - minLng) || 1;
+  const pts = fieldBoundaries.map(([lat, lng]) => {
+    const x = ((lng - minLng) / lspan * 100).toFixed(2);
+    const y = ((1 - (lat - minLat) / span) * 100).toFixed(2);
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
+      <defs>
+        <linearGradient id="ndvi-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#d73027" />
+          <stop offset="33%" stopColor="#fee08b" />
+          <stop offset="66%" stopColor="#a6d96a" />
+          <stop offset="100%" stopColor="#1a9850" />
+        </linearGradient>
+      </defs>
+      <polygon points={pts} fill="url(#ndvi-grad)" stroke="rgba(255,255,255,0.25)" strokeWidth="0.4" />
+    </svg>
+  );
 }
 
 function MapCard({
-  mapKey, label, artifacts: _artifacts, slot,
+  mapKey, label, kind, artifacts: _artifacts, slot,
   fieldBoundaries, center, mapBounds,
-  onExpand, onAnalyze,
+  onExpand, onAnalyze, onFetch, fetching,
 }: MapCardProps) {
   const { idx, setIdx, url, loading, error, active, total } = slot;
   const modeColor = active ? (MODE_COLOR[active.mode] ?? '#94a3b8') : '#94a3b8';
@@ -219,50 +252,100 @@ function MapCard({
         )}
       </div>
 
-      {/* Mapa — sempre renderizado, mesmo sem imagem (mostra polígono) */}
-      <div className="flex-1 relative" style={{ minHeight: 0 }}>
-        <MapContainer
-          key={mapKey}
-          center={center}
-          zoom={14}
-          style={{ height: '100%', width: '100%' }}
-          zoomControl={false}
-          attributionControl={false}>
-          <TileLayer
-            url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-            subdomains={['0', '1', '2', '3']}
-            maxZoom={21}
-            maxNativeZoom={20}
-          />
-          <FitBounds bounds={mapBounds} />
-          {fieldBoundaries.length > 0 && (
-            <Polygon
-              positions={fieldBoundaries}
-              pathOptions={{
-                color: url ? 'rgba(255,255,255,0.55)' : '#ec5b13',
-                fill: !url,
-                fillColor: '#ec5b13',
-                fillOpacity: url ? 0 : 0.07,
-                weight: 1.5,
-                dashArray: url ? undefined : '5 4',
-              }}
+      {/* Mapa OU placeholder — depende se tem imagem do tipo correto */}
+      <div className="flex-1 relative always-dark" style={{ minHeight: 0, background: '#0a0e1a' }}>
+        {url ? (
+          /* COM imagem: renderiza Leaflet com basemap + clip ao polígono */
+          <MapContainer
+            key={mapKey}
+            center={center}
+            zoom={14}
+            style={{ height: '100%', width: '100%' }}
+            zoomControl={false}
+            attributionControl={false}>
+            <TileLayer
+              url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+              subdomains={['0', '1', '2', '3']}
+              maxZoom={21}
+              maxNativeZoom={20}
             />
-          )}
-          {url && mapBounds && fieldBoundaries.length >= 3 && (
-            <ClippedImageOverlay
-              url={url}
-              bounds={mapBounds}
-              fieldBoundaries={fieldBoundaries}
-            />
-          )}
-        </MapContainer>
-
-        {/* Sem imagens: overlay sutil no canto */}
-        {total === 0 && !loading && (
-          <div className="absolute top-2 right-2 z-[500] flex items-center gap-1.5 px-2 py-1 rounded-lg"
-            style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#475569' }}>cloud_off</span>
-            <span className="text-[9px]" style={{ color: '#64748b' }}>Sem imagens</span>
+            <FitBounds bounds={mapBounds} />
+            {fieldBoundaries.length > 0 && (
+              <Polygon
+                positions={fieldBoundaries}
+                pathOptions={{ color: 'rgba(255,255,255,0.55)', fill: false, weight: 1.5 }}
+              />
+            )}
+            {mapBounds && fieldBoundaries.length >= 3 && (
+              <ClippedImageOverlay
+                url={url}
+                bounds={mapBounds}
+                fieldBoundaries={fieldBoundaries}
+              />
+            )}
+          </MapContainer>
+        ) : (
+          /* SEM imagem: placeholder específico do tipo (NÃO mostra basemap pra não confundir) */
+          <div className="absolute inset-0 flex flex-col" style={{ background: '#0a0e1a' }}>
+            {/* Preview do polígono no estilo do tipo de imagem */}
+            <div className="flex-1 relative flex items-center justify-center p-6 opacity-30">
+              {kind === 'ndvi'
+                ? <NDVIPlaceholder fieldBoundaries={fieldBoundaries} />
+                : (
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
+                    {fieldBoundaries.length >= 3 && (() => {
+                      const lats = fieldBoundaries.map(p => p[0]);
+                      const lngs = fieldBoundaries.map(p => p[1]);
+                      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+                      const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+                      const span = (maxLat - minLat) || 1, lspan = (maxLng - minLng) || 1;
+                      const pts = fieldBoundaries.map(([lat, lng]) =>
+                        `${((lng - minLng) / lspan * 100).toFixed(2)},${((1 - (lat - minLat) / span) * 100).toFixed(2)}`
+                      ).join(' ');
+                      return <polygon points={pts} fill="rgba(96,165,250,0.25)" stroke="rgba(96,165,250,0.5)" strokeWidth="0.6" />;
+                    })()}
+                  </svg>
+                )
+              }
+            </div>
+            {/* Estado vazio com botão de buscar */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4">
+              <span className="material-symbols-outlined text-3xl" style={{
+                color: kind === 'ndvi' ? '#22c55e' : '#60a5fa',
+                opacity: 0.7,
+              }}>
+                {kind === 'ndvi' ? 'eco' : 'satellite_alt'}
+              </span>
+              <div className="text-center">
+                <p className="text-sm font-bold text-white mb-1">
+                  {kind === 'ndvi' ? 'NDVI indisponível' : 'Imagem RGB indisponível'}
+                </p>
+                <p className="text-[10px] leading-relaxed max-w-[200px]" style={{ color: '#94a3b8' }}>
+                  {kind === 'ndvi'
+                    ? 'Índice vegetativo ainda não gerado pra este talhão'
+                    : 'Imagem natural do Sentinel-2 ainda não gerada'}
+                </p>
+              </div>
+              {onFetch && (
+                <button
+                  onClick={onFetch}
+                  disabled={fetching}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white transition-all disabled:opacity-50"
+                  style={{ background: 'var(--primary)' }}>
+                  {fetching ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Buscando…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-sm">cloud_download</span>
+                      Gerar agora
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -685,14 +768,15 @@ export default function Images() {
               </div>
             )}
 
-            {/* ── Conteúdo principal: sempre 2 cards + timeline ── */}
-            <div className="flex-1 flex flex-col min-h-0 p-3 gap-3 overflow-hidden">
+            {/* ── Conteúdo principal: container centralizado com largura máxima ── */}
+            <div className="flex-1 flex flex-col min-h-0 p-4 gap-4 overflow-hidden w-full max-w-6xl mx-auto">
 
               {/* Grid responsivo: stack em mobile, lado a lado em desktop */}
-              <div className="flex flex-col md:flex-row gap-3 flex-1 min-h-0">
+              <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
                 <MapCard
                   mapKey={`ndvi-${selectedFieldId}`}
                   label="NDVI"
+                  kind="ndvi"
                   artifacts={ndviArtifacts}
                   slot={ndviSlot}
                   fieldBoundaries={fieldBoundaries}
@@ -700,10 +784,13 @@ export default function Images() {
                   mapBounds={mapBounds}
                   onExpand={() => setExpanded('ndvi')}
                   onAnalyze={() => setAiOpen('ndvi')}
+                  onFetch={() => { autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); }}
+                  fetching={autoFetching}
                 />
                 <MapCard
                   mapKey={`sat-${selectedFieldId}`}
                   label="Satélite"
+                  kind="satellite"
                   artifacts={satArtifacts}
                   slot={satSlot}
                   fieldBoundaries={fieldBoundaries}
@@ -711,6 +798,8 @@ export default function Images() {
                   mapBounds={mapBounds}
                   onExpand={() => setExpanded('sat')}
                   onAnalyze={() => setAiOpen('sat')}
+                  onFetch={() => { autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); }}
+                  fetching={autoFetching}
                 />
               </div>
 
