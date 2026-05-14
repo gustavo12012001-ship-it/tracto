@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import {
   LineChart,
@@ -13,11 +13,83 @@ import {
   Cell,
   ReferenceLine,
 } from 'recharts';
+import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
 import type { Location } from '../store/useAppStore';
 import type { FieldAnalysisResult, FieldIntelligenceSnapshot } from '../services/api';
 import { apiFetch } from '../services/api';
 import { polygonAreaHa } from '../utils/geo';
+import ClippedImageOverlay from '../components/ClippedImageOverlay';
+
+// ── NDVIMapPreview: mapa Leaflet com NDVI recortado ao polígono do talhão ────
+function NDVIMapPreview({ base64, field, name }: { base64: string; field: Location; name: string }) {
+  const fieldBoundaries = (field.boundaries ?? []) as [number, number][];
+  const center: [number, number] = [field.lat, field.lng];
+
+  const mapBounds = useMemo<L.LatLngBoundsExpression | null>(() => {
+    if (fieldBoundaries.length < 3) return null;
+    const lats = fieldBoundaries.map(p => p[0]);
+    const lngs = fieldBoundaries.map(p => p[1]);
+    return [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+  }, [fieldBoundaries]);
+
+  // Constrói data URL uma vez
+  const dataUrl = useMemo(() => `data:image/png;base64,${base64}`, [base64]);
+
+  // Fallback: se talhão sem boundaries, mostra a imagem solta
+  if (!mapBounds || fieldBoundaries.length < 3) {
+    return (
+      <img
+        src={dataUrl}
+        alt={`NDVI ${name}`}
+        className="w-full h-[240px] object-contain rounded-xl mb-6"
+        style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden mb-6" style={{ border: '1px solid var(--border)', height: 260 }}>
+      <MapContainer
+        center={center}
+        zoom={15}
+        style={{ height: '100%', width: '100%' }}
+        zoomControl={true}
+        attributionControl={false}
+        scrollWheelZoom={true}>
+        <TileLayer
+          url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+          subdomains={['0', '1', '2', '3']}
+          maxZoom={21}
+          maxNativeZoom={20}
+        />
+        <NDVIFitBounds bounds={mapBounds} />
+        <Polygon
+          positions={fieldBoundaries}
+          pathOptions={{ color: 'rgba(255,255,255,0.6)', fill: false, weight: 1.5 }}
+        />
+        <ClippedImageOverlay
+          url={dataUrl}
+          bounds={mapBounds}
+          fieldBoundaries={fieldBoundaries}
+        />
+      </MapContainer>
+    </div>
+  );
+}
+
+function NDVIFitBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
+  const map = useMap();
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (fitted.current) return;
+    fitted.current = true;
+    map.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [16, 16] });
+  }, [bounds, map]);
+  return null;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -541,11 +613,10 @@ export default function Reports() {
                         </div>
 
                         {result.ndvi_image_base64 && (
-                          <img
-                            src={`data:image/png;base64,${result.ndvi_image_base64}`}
-                            alt={`NDVI ${name}`}
-                            className="w-full h-[200px] object-cover rounded-xl mb-6"
-                            style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+                          <NDVIMapPreview
+                            base64={result.ndvi_image_base64}
+                            field={loc}
+                            name={name}
                           />
                         )}
 

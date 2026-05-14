@@ -431,6 +431,60 @@ export default function Layout() {
         /* Light mode: map/research panels stay dark always */
         [data-theme="light"] .leaflet-container { filter: none; }
 
+        /* ── AUDITORIA: inline styles brancos hardcoded → escuro no light mode ── */
+        /* Não aplica dentro de .always-dark (painéis flutuantes que ficam escuros sempre) */
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: #fff"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color:#fff"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: white"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color:white"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: rgb(255, 255, 255)"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: rgb(255,255,255)"] {
+          color: #0f172a !important;
+        }
+        /* Backgrounds brancos hardcoded → fundo bege/claro no light mode */
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background: #fff"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background:#fff"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background: white"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background-color: #fff"],
+        [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background-color: white"] {
+          background: #ffffff !important;
+        }
+        /* Backgrounds escuros hardcoded em panel (#080809, #0a0a0c, #0c0c0e) → claro */
+        [data-theme="light"] :not(.always-dark) [style*="background: #080809"],
+        [data-theme="light"] :not(.always-dark) [style*="background:#080809"],
+        [data-theme="light"] :not(.always-dark) [style*="background: #0a0a0c"],
+        [data-theme="light"] :not(.always-dark) [style*="background:#0a0a0c"],
+        [data-theme="light"] :not(.always-dark) [style*="background: #0c0c0e"],
+        [data-theme="light"] :not(.always-dark) [style*="background:#0c0c0e"],
+        [data-theme="light"] :not(.always-dark) [style*="background: #0d0d0f"] {
+          background: #ffffff !important;
+          border-color: rgba(0,0,0,0.08) !important;
+        }
+        /* Cores muted hardcoded típicas → ficam visíveis no light mode */
+        [data-theme="light"] :not(.always-dark) [style*="color: #64748b"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#64748b"],
+        [data-theme="light"] :not(.always-dark) [style*="color: #475569"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#475569"] {
+          color: #475569 !important;
+        }
+        [data-theme="light"] :not(.always-dark) [style*="color: #334155"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#334155"],
+        [data-theme="light"] :not(.always-dark) [style*="color: #1e293b"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#1e293b"] {
+          color: #64748b !important;
+        }
+        /* Texto claro slate-200/300 hardcoded → escuro no light */
+        [data-theme="light"] :not(.always-dark) [style*="color: #e2e8f0"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#e2e8f0"],
+        [data-theme="light"] :not(.always-dark) [style*="color: #f1f5f9"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#f1f5f9"],
+        [data-theme="light"] :not(.always-dark) [style*="color: #cbd5e1"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#cbd5e1"],
+        [data-theme="light"] :not(.always-dark) [style*="color: #94a3b8"],
+        [data-theme="light"] :not(.always-dark) [style*="color:#94a3b8"] {
+          color: #1e293b !important;
+        }
+
         /* ── Ícone da marca: badge branco arredondado em todos os temas ── */
         .tracto-brand-icon { background: #fff; border-radius: 7px; padding: 2px; }
 
