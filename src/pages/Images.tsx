@@ -219,50 +219,51 @@ function MapCard({
         )}
       </div>
 
-      {/* Mapa */}
+      {/* Mapa — sempre renderizado, mesmo sem imagem (mostra polígono) */}
       <div className="flex-1 relative" style={{ minHeight: 0 }}>
-        {total === 0 ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-            style={{ background: '#080809' }}>
-            <span className="material-symbols-outlined text-3xl" style={{ color: '#1e293b' }}>satellite_alt</span>
-            <p className="text-[11px]" style={{ color: '#334155' }}>Sem imagens {label}</p>
-          </div>
-        ) : (
-          <MapContainer
-            key={mapKey}
-            center={center}
-            zoom={14}
-            style={{ height: '100%', width: '100%' }}
-            zoomControl={false}
-            attributionControl={false}>
-            <TileLayer
-              url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-              subdomains={['0', '1', '2', '3']}
-              maxZoom={21}
-              maxNativeZoom={20}
+        <MapContainer
+          key={mapKey}
+          center={center}
+          zoom={14}
+          style={{ height: '100%', width: '100%' }}
+          zoomControl={false}
+          attributionControl={false}>
+          <TileLayer
+            url="https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+            subdomains={['0', '1', '2', '3']}
+            maxZoom={21}
+            maxNativeZoom={20}
+          />
+          <FitBounds bounds={mapBounds} />
+          {fieldBoundaries.length > 0 && (
+            <Polygon
+              positions={fieldBoundaries}
+              pathOptions={{
+                color: url ? 'rgba(255,255,255,0.55)' : '#ec5b13',
+                fill: !url,
+                fillColor: '#ec5b13',
+                fillOpacity: url ? 0 : 0.07,
+                weight: 1.5,
+                dashArray: url ? undefined : '5 4',
+              }}
             />
-            <FitBounds bounds={mapBounds} />
-            {fieldBoundaries.length > 0 && (
-              <Polygon
-                positions={fieldBoundaries}
-                pathOptions={{
-                  color: url ? 'rgba(255,255,255,0.55)' : '#ec5b13',
-                  fill: !url,
-                  fillColor: '#ec5b13',
-                  fillOpacity: url ? 0 : 0.07,
-                  weight: 1.5,
-                  dashArray: url ? undefined : '5 4',
-                }}
-              />
-            )}
-            {url && mapBounds && fieldBoundaries.length >= 3 && (
-              <ClippedImageOverlay
-                url={url}
-                bounds={mapBounds}
-                fieldBoundaries={fieldBoundaries}
-              />
-            )}
-          </MapContainer>
+          )}
+          {url && mapBounds && fieldBoundaries.length >= 3 && (
+            <ClippedImageOverlay
+              url={url}
+              bounds={mapBounds}
+              fieldBoundaries={fieldBoundaries}
+            />
+          )}
+        </MapContainer>
+
+        {/* Sem imagens: overlay sutil no canto */}
+        {total === 0 && !loading && (
+          <div className="absolute top-2 right-2 z-[500] flex items-center gap-1.5 px-2 py-1 rounded-lg"
+            style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(8px)', border: '1px solid var(--border)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#475569' }}>cloud_off</span>
+            <span className="text-[9px]" style={{ color: '#64748b' }}>Sem imagens</span>
+          </div>
         )}
 
         {/* Loading overlay */}
@@ -352,6 +353,8 @@ export default function Images() {
   // ── Auto-buscar última imagem do satélite (NDVI + RGB) ─────────────────────
   const [autoFetching, setAutoFetching] = useState(false);
   const [autoFetchError, setAutoFetchError] = useState<string | null>(null);
+  // Marca talhões onde já tentamos auto-fetch nesta sessão pra não loop
+  const autoFetchedFieldsRef = useRef<Set<string>>(new Set());
 
   const autoFetchLatest = useCallback(async () => {
     if (!selectedFieldId || autoFetching) return;
@@ -415,6 +418,18 @@ export default function Images() {
 
   const ndviSlot = useArtifactSlot(ndviArtifacts);
   const satSlot = useArtifactSlot(satArtifacts);
+
+  // ── Auto-trigger: ao selecionar talhão sem cache, busca automaticamente ────
+  useEffect(() => {
+    if (!selectedFieldId || loadingArtifacts || autoFetching) return;
+    if (artifacts.length > 0) return;
+    if (autoFetchedFieldsRef.current.has(selectedFieldId)) return;
+    if (!selectedField?.boundaries || selectedField.boundaries.length < 3) return;
+    // Marca antes de chamar pra evitar loop em caso de erro
+    autoFetchedFieldsRef.current.add(selectedFieldId);
+    void autoFetchLatest();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFieldId, loadingArtifacts, artifacts.length, autoFetching, selectedField?.boundaries]);
 
   // ── Modal de expansão (fullscreen) ─────────────────────────────────────────
   const [expanded, setExpanded] = useState<'ndvi' | 'sat' | null>(null);
@@ -640,88 +655,67 @@ export default function Images() {
               </div>
             </div>
 
-            {/* Conteúdo */}
-            {loadingArtifacts ? (
-              <div className="flex-1 flex items-center justify-center gap-2">
-                <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-                <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando imagens…</p>
+            {/* Banner: status do auto-fetch (carregando ou erro) */}
+            {(autoFetching || autoFetchError) && (
+              <div
+                className="flex-shrink-0 px-4 py-2 border-b flex items-center gap-2"
+                style={{
+                  background: autoFetchError ? 'rgba(239,68,68,0.08)' : 'rgba(236,91,19,0.08)',
+                  borderColor: 'var(--border)',
+                }}>
+                {autoFetching ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+                    <p className="text-[11px]" style={{ color: 'var(--primary)' }}>
+                      Buscando última imagem do Sentinel-2 e gerando NDVI + Cor Real…
+                    </p>
+                  </>
+                ) : autoFetchError ? (
+                  <>
+                    <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>error</span>
+                    <p className="text-[11px] flex-1" style={{ color: '#f87171' }}>{autoFetchError}</p>
+                    <button
+                      onClick={() => { setAutoFetchError(null); autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); }}
+                      className="text-[10px] font-bold px-2 py-1 rounded"
+                      style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+                      Tentar novamente
+                    </button>
+                  </>
+                ) : null}
               </div>
-            ) : artifacts.length === 0 ? (
-              /* Estado vazio — botão busca a última imagem automaticamente */
-              <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
-                <div
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(236,91,19,0.1)' }}>
-                  <span className="material-symbols-outlined text-4xl" style={{ color: 'var(--primary)' }}>
-                    satellite_alt
-                  </span>
-                </div>
-                <div className="text-center">
-                  <p className="text-base font-bold text-white mb-1">Nenhuma imagem armazenada</p>
-                  <p className="text-xs leading-relaxed max-w-xs" style={{ color: 'var(--muted)' }}>
-                    Buscamos a imagem mais recente do <strong className="text-white">Sentinel-2</strong> e
-                    geramos o NDVI + Cor Real automaticamente.
-                  </p>
-                </div>
-                <button
-                  onClick={() => void autoFetchLatest()}
-                  disabled={autoFetching || !selectedField?.boundaries || selectedField.boundaries.length < 3}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
-                  style={{ background: 'var(--primary)' }}>
-                  {autoFetching ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Buscando…
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-base">cloud_download</span>
-                      Buscar última imagem
-                    </>
-                  )}
-                </button>
-                {autoFetchError && (
-                  <p className="text-[11px] max-w-xs text-center" style={{ color: '#f87171' }}>
-                    {autoFetchError}
-                  </p>
-                )}
-                {(!selectedField?.boundaries || selectedField.boundaries.length < 3) && (
-                  <p className="text-[10px] text-center max-w-xs" style={{ color: '#475569' }}>
-                    Talhão precisa ter polígono cadastrado.
-                  </p>
-                )}
+            )}
+
+            {/* ── Conteúdo principal: sempre 2 cards + timeline ── */}
+            <div className="flex-1 flex flex-col min-h-0 p-3 gap-3 overflow-hidden">
+
+              {/* Grid responsivo: stack em mobile, lado a lado em desktop */}
+              <div className="flex flex-col md:flex-row gap-3 flex-1 min-h-0">
+                <MapCard
+                  mapKey={`ndvi-${selectedFieldId}`}
+                  label="NDVI"
+                  artifacts={ndviArtifacts}
+                  slot={ndviSlot}
+                  fieldBoundaries={fieldBoundaries}
+                  center={center}
+                  mapBounds={mapBounds}
+                  onExpand={() => setExpanded('ndvi')}
+                  onAnalyze={() => setAiOpen('ndvi')}
+                />
+                <MapCard
+                  mapKey={`sat-${selectedFieldId}`}
+                  label="Satélite"
+                  artifacts={satArtifacts}
+                  slot={satSlot}
+                  fieldBoundaries={fieldBoundaries}
+                  center={center}
+                  mapBounds={mapBounds}
+                  onExpand={() => setExpanded('sat')}
+                  onAnalyze={() => setAiOpen('sat')}
+                />
               </div>
-            ) : (
-              /* ── Dois mapas + timeline ── */
-              <div className="flex-1 flex flex-col min-h-0 p-3 gap-3 overflow-hidden">
 
-                {/* Grid responsivo: stack vertical em mobile, lado a lado em desktop */}
-                <div className="flex flex-col md:flex-row gap-3 flex-1 min-h-0">
-                  <MapCard
-                    mapKey={`ndvi-${selectedFieldId}`}
-                    label="NDVI"
-                    artifacts={ndviArtifacts}
-                    slot={ndviSlot}
-                    fieldBoundaries={fieldBoundaries}
-                    center={center}
-                    mapBounds={mapBounds}
-                    onExpand={() => setExpanded('ndvi')}
-                    onAnalyze={() => setAiOpen('ndvi')}
-                  />
-                  <MapCard
-                    mapKey={`sat-${selectedFieldId}`}
-                    label="Satélite"
-                    artifacts={satArtifacts}
-                    slot={satSlot}
-                    fieldBoundaries={fieldBoundaries}
-                    center={center}
-                    mapBounds={mapBounds}
-                    onExpand={() => setExpanded('sat')}
-                    onAnalyze={() => setAiOpen('sat')}
-                  />
-                </div>
-
-                {/* Timeline: todos os artefatos */}
+              {/* Timeline: todos os artefatos (só aparece se houver) */}
+              {artifacts.length > 0 && (
                 <div className="flex-shrink-0 flex gap-2 overflow-x-auto scrollbar-thin pb-1">
                   {artifacts.map(a => {
                     const mColor = MODE_COLOR[a.mode] ?? '#94a3b8';
@@ -758,9 +752,9 @@ export default function Images() {
                     );
                   })}
                 </div>
+              )}
 
-              </div>
-            )}
+            </div>
           </>
         )}
       </div>
