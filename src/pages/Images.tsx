@@ -6,7 +6,7 @@ import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useAppStore from '../store/useAppStore';
-import { API_URL, buildAuthHeaders } from '../services/api';
+import { API_URL, buildAuthHeaders, fetchFieldIntelligenceSnapshot, type FieldIntelligenceSnapshot } from '../services/api';
 import ClippedImageOverlay from '../components/ClippedImageOverlay';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -136,6 +136,11 @@ interface MapCardProps {
   onAnalyze?: () => void;
   onFetch?: () => void;
   fetching?: boolean;
+  // Fallback (ex: NDVI base64 do snapshot quando não há artifact)
+  fallbackUrl?: string | null;
+  fallbackSceneDate?: string | null;
+  fallbackCloud?: number | null;
+  fallbackSource?: string;
 }
 
 // Gradient NDVI placeholder — escala vermelho→amarelo→verde típica de índice vegetativo
@@ -170,12 +175,21 @@ function MapCard({
   mapKey, label, kind, artifacts: _artifacts, slot,
   fieldBoundaries, center, mapBounds,
   onExpand, onAnalyze, onFetch, fetching,
+  fallbackUrl, fallbackSceneDate, fallbackCloud, fallbackSource,
 }: MapCardProps) {
-  const { idx, setIdx, url, loading, error, active, total } = slot;
-  const modeColor = active ? (MODE_COLOR[active.mode] ?? '#94a3b8') : '#94a3b8';
+  const { idx, setIdx, url: slotUrl, loading, error, active, total } = slot;
+  // Se não há artifact, usa fallback (ex: NDVI base64 do snapshot)
+  const url = slotUrl ?? fallbackUrl ?? null;
+  const usingFallback = !slotUrl && !!fallbackUrl;
+  const modeColor = MODE_COLOR[kind === 'ndvi' ? 'ndvi' : 'truecolor'] ?? '#94a3b8';
   const modeLabel = active ? (MODE_LABEL[active.mode] ?? active.mode.toUpperCase()) : label;
-  const dateLabel = active ? fmtDate(active.scene_date ?? active.generated_at) : '—';
-  const sourceLabel = active?.source ? (active.source === 's2' ? 'Sentinel-2' : active.source === 's1' ? 'Sentinel-1' : active.source.toUpperCase()) : '';
+  const dateLabel = active
+    ? fmtDate(active.scene_date ?? active.generated_at)
+    : (usingFallback && fallbackSceneDate ? fmtDate(fallbackSceneDate) : '—');
+  const sourceLabel = active?.source
+    ? (active.source === 's2' ? 'Sentinel-2' : active.source === 's1' ? 'Sentinel-1' : active.source.toUpperCase())
+    : (usingFallback ? (fallbackSource ?? 'Sentinel-2') : '');
+  const cloudCoverage = active?.cloud_coverage ?? (usingFallback ? fallbackCloud ?? null : null);
 
   return (
     <div className="flex flex-col rounded-2xl overflow-hidden flex-1 min-w-0 min-h-0"
@@ -204,9 +218,9 @@ function MapCard({
           <div className="w-3 h-3 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
         )}
 
-        {active?.cloud_coverage != null && (
+        {cloudCoverage != null && (
           <span className="text-[9px] flex-shrink-0" style={{ color: '#64748b' }}>
-            ☁ {active.cloud_coverage.toFixed(0)}%
+            ☁ {cloudCoverage.toFixed(0)}%
           </span>
         )}
 
@@ -383,6 +397,11 @@ export default function Images() {
   const [artifacts, setArtifacts] = useState<SatArtifact[]>([]);
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 
+  // Snapshot (mesma fonte do Reports) — garante NDVI inline base64 confiável
+  const [snapshot, setSnapshot] = useState<FieldIntelligenceSnapshot | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [, setSnapshotError] = useState<string | null>(null);
+
   const selectedField = fields.find(f => f.id === selectedFieldId) ?? null;
   const fieldBoundaries = useMemo(
     () => (selectedField?.boundaries ?? []) as [number, number][],
@@ -427,6 +446,50 @@ export default function Images() {
   useEffect(() => {
     if (selectedFieldId) void loadArtifacts(selectedFieldId);
   }, [selectedFieldId, loadArtifacts]);
+
+  // Carrega snapshot (mesma API que o Reports usa, retorna NDVI base64 inline)
+  // O snapshot TAMBÉM dispara backend a salvar Sentinel-2 RGB como artifact
+  const loadSnapshot = useCallback(async (fieldId: string, forceRefresh = false) => {
+    if (!fieldId) return;
+    setSnapshotLoading(true);
+    setSnapshotError(null);
+    try {
+      const snap = await fetchFieldIntelligenceSnapshot(fieldId, forceRefresh);
+      setSnapshot(snap);
+      // Reload artifacts pra pegar o RGB truecolor recém-salvo
+      void loadArtifacts(fieldId);
+    } catch (e) {
+      setSnapshotError(e instanceof Error ? e.message : 'Erro ao carregar snapshot');
+      setSnapshot(null);
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [loadArtifacts]);
+
+  useEffect(() => {
+    if (selectedFieldId) void loadSnapshot(selectedFieldId);
+  }, [selectedFieldId, loadSnapshot]);
+
+  // NDVI extraído do snapshot — mesma fonte que o Reports usa
+  const snapshotNdviUrl = useMemo(() => {
+    if (!snapshot?.satellite) return null;
+    const sat = snapshot.satellite as Record<string, unknown>;
+    const b64 = sat.ndvi_image_base64 as string | null | undefined;
+    return b64 ? `data:image/png;base64,${b64}` : null;
+  }, [snapshot]);
+
+  const snapshotSceneDate = useMemo(() => {
+    if (!snapshot?.satellite) return null;
+    const sat = snapshot.satellite as Record<string, unknown>;
+    return (sat.scene_date as string | null | undefined) ?? null;
+  }, [snapshot]);
+
+  const snapshotCloud = useMemo(() => {
+    if (!snapshot?.satellite) return null;
+    const sat = snapshot.satellite as Record<string, unknown>;
+    const c = sat.cloud_coverage;
+    return typeof c === 'number' ? c : null;
+  }, [snapshot]);
 
   function handleSelectField(id: string) {
     setSelectedFieldId(id);
@@ -784,8 +847,13 @@ export default function Images() {
                   mapBounds={mapBounds}
                   onExpand={() => setExpanded('ndvi')}
                   onAnalyze={() => setAiOpen('ndvi')}
-                  onFetch={() => { autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); }}
-                  fetching={autoFetching}
+                  onFetch={() => { autoFetchedFieldsRef.current.delete(selectedFieldId); void autoFetchLatest(); void loadSnapshot(selectedFieldId, true); }}
+                  fetching={autoFetching || snapshotLoading}
+                  // Fallback: usa NDVI base64 do snapshot (mesma fonte do Reports)
+                  fallbackUrl={snapshotNdviUrl}
+                  fallbackSceneDate={snapshotSceneDate}
+                  fallbackCloud={snapshotCloud}
+                  fallbackSource="Sentinel-2"
                 />
                 <MapCard
                   mapKey={`sat-${selectedFieldId}`}
