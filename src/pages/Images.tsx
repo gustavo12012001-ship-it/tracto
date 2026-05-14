@@ -694,108 +694,7 @@ export default function Images() {
   return (
     <div className="flex flex-1 w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
-      {/* ── Sidebar: lista de talhões ─────────────────────────────────────── */}
-      <aside
-        className="w-52 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
-        style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
-
-        <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>satellite_alt</span>
-            <h1 className="text-sm font-black text-white">Imagens</h1>
-          </div>
-          <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>Satélite por talhão</p>
-        </div>
-
-        <div className="p-2 flex flex-col gap-0.5">
-          {farms.map(farm => {
-            // Fix: store mantém fields no array top-level, não em farm.fields
-            const farmFields = fields.filter(f => f.farm_id === farm.id);
-            if (farmFields.length === 0) return null;
-            return (
-              <div key={farm.id}>
-                <p
-                  className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest truncate"
-                  style={{ color: 'var(--muted)' }}>
-                  {farm.name}
-                </p>
-                {farmFields.map(field => {
-                  const isActive = field.id === selectedFieldId;
-                  return (
-                    <button
-                      key={field.id}
-                      onClick={() => field.id && handleSelectField(field.id)}
-                      className="w-full text-left px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
-                      style={isActive
-                        ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)' }
-                        : { background: 'transparent', border: '1px solid transparent' }}>
-                      <span
-                        className="material-symbols-outlined text-base flex-shrink-0"
-                        style={{ color: isActive ? 'var(--primary)' : '#475569' }}>
-                        crop_square
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p
-                          className="text-[12px] font-bold truncate"
-                          style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>
-                          {field.name}
-                        </p>
-                        <p className="text-[9px] truncate" style={{ color: 'var(--muted)' }}>
-                          {field.areaHa ? `${field.areaHa.toFixed(2)} ha` : '—'}
-                          {field.cultura ? ` · ${field.cultura}` : ''}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-          {/* Talhões sem fazenda */}
-          {(() => {
-            const farmIds = new Set(farms.map(f => f.id));
-            const orphans = fields.filter(f => !f.farm_id || !farmIds.has(f.farm_id));
-            if (orphans.length === 0) return null;
-            return (
-              <div>
-                <p className="px-2 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
-                  Sem fazenda
-                </p>
-                {orphans.map(field => {
-                  const isActive = field.id === selectedFieldId;
-                  return (
-                    <button
-                      key={field.id}
-                      onClick={() => field.id && handleSelectField(field.id)}
-                      className="w-full text-left px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
-                      style={isActive
-                        ? { background: 'rgba(236,91,19,0.15)', border: '1px solid rgba(236,91,19,0.35)' }
-                        : { background: 'transparent', border: '1px solid transparent' }}>
-                      <span className="material-symbols-outlined text-base flex-shrink-0"
-                        style={{ color: isActive ? 'var(--primary)' : '#475569' }}>crop_square</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-bold truncate"
-                          style={{ color: isActive ? 'white' : 'var(--text, #e2e8f0)' }}>{field.name}</p>
-                        <p className="text-[9px] truncate" style={{ color: 'var(--muted)' }}>
-                          {field.areaHa ? `${field.areaHa.toFixed(2)} ha` : '—'}
-                          {field.cultura ? ` · ${field.cultura}` : ''}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          {fields.length === 0 && (
-            <p className="text-[11px] px-2 py-4 text-center" style={{ color: 'var(--muted)' }}>
-              Nenhum talhão cadastrado
-            </p>
-          )}
-        </div>
-      </aside>
-
-      {/* ── Área principal ───────────────────────────────────────────────────── */}
+      {/* ── Área principal centralizada (sem sidebar interna, igual Mercado) ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {!selectedField ? (
@@ -805,14 +704,58 @@ export default function Images() {
           </div>
         ) : (
           <>
-            {/* Header do talhão — info completa do talhão selecionado */}
+            {/* Header do talhão — info completa + dropdown de seleção */}
             <div
               className="flex-shrink-0 px-4 py-3 border-b"
               style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
-              <div className="flex items-start gap-3 flex-wrap">
+              <div className="w-full max-w-6xl mx-auto flex items-start gap-3 flex-wrap">
                 <span className="material-symbols-outlined text-2xl flex-shrink-0" style={{ color: 'var(--primary)' }}>
                   crop_square
                 </span>
+                {/* Dropdown nativo de seleção de talhão (substitui sidebar antiga) */}
+                <div className="flex-shrink-0">
+                  <label className="block text-[9px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--muted)' }}>
+                    Talhão ativo
+                  </label>
+                  <select
+                    value={selectedFieldId}
+                    onChange={e => handleSelectField(e.target.value)}
+                    className="rounded-lg px-2.5 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                    style={{
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text, #e2e8f0)',
+                      minWidth: 180,
+                    }}>
+                    {farms.map(farm => {
+                      const farmFields = fields.filter(f => f.farm_id === farm.id);
+                      if (farmFields.length === 0) return null;
+                      return (
+                        <optgroup key={farm.id} label={farm.name}>
+                          {farmFields.map(f => (
+                            <option key={f.id} value={f.id ?? ''}>
+                              {f.name}{f.areaHa ? ` — ${f.areaHa.toFixed(2)} ha` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                    {(() => {
+                      const farmIds = new Set(farms.map(f => f.id));
+                      const orphans = fields.filter(f => !f.farm_id || !farmIds.has(f.farm_id));
+                      if (orphans.length === 0) return null;
+                      return (
+                        <optgroup label="Sem fazenda">
+                          {orphans.map(f => (
+                            <option key={f.id} value={f.id ?? ''}>
+                              {f.name}{f.areaHa ? ` — ${f.areaHa.toFixed(2)} ha` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })()}
+                  </select>
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-base font-black text-white truncate">{selectedField.name}</p>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[10px]" style={{ color: 'var(--muted)' }}>

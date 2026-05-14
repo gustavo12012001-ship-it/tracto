@@ -169,6 +169,19 @@ export default function Calculator() {
     void navigate(`/app/field-log?${params.toString()}`);
   };
 
+  // Navegações contextuais — leva o usuário pra outras telas com talhão ativo
+  const goToMap = () => void navigate('/app/dashboard');
+  const goToImages = () => void navigate('/app/images');
+  const goToWeather = () => void navigate('/app/weather');
+  const goToAlerts = () => void navigate('/app/alerts');
+  const goToReports = () => void navigate('/app/reports');
+  const goToAI = () => {
+    const params = new URLSearchParams();
+    if (productName) params.set('product', productName);
+    if (activeField?.name) params.set('field', activeField.name);
+    void navigate(`/app/chat?${params.toString()}`);
+  };
+
   const sectionStyle: React.CSSProperties = {
     background: 'var(--surface)',
     border: '1px solid var(--border)',
@@ -427,6 +440,54 @@ export default function Calculator() {
                 </>
               )}
             </button>
+          </div>
+
+          {/* ── Acesso rápido ao resto do sistema com contexto do cálculo ── */}
+          <div className="mt-4 rounded-2xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-sm" style={{ color: 'var(--muted)' }}>hub</span>
+              <h3 className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
+                Ver no contexto do talhão
+              </h3>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+              <button onClick={goToMap}
+                className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text, #e2e8f0)' }}>
+                <span className="material-symbols-outlined text-base" style={{ color: '#60a5fa' }}>map</span>
+                Mapa
+              </button>
+              <button onClick={goToImages}
+                className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text, #e2e8f0)' }}>
+                <span className="material-symbols-outlined text-base" style={{ color: '#22c55e' }}>satellite_alt</span>
+                NDVI / Imagens
+              </button>
+              <button onClick={goToWeather}
+                className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text, #e2e8f0)' }}>
+                <span className="material-symbols-outlined text-base" style={{ color: '#fbbf24' }}>wb_sunny</span>
+                Clima
+              </button>
+              <button onClick={goToAlerts}
+                className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text, #e2e8f0)' }}>
+                <span className="material-symbols-outlined text-base" style={{ color: '#f87171' }}>notifications_active</span>
+                Alertas
+              </button>
+              <button onClick={goToReports}
+                className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text, #e2e8f0)' }}>
+                <span className="material-symbols-outlined text-base" style={{ color: '#a78bfa' }}>insights</span>
+                Relatórios
+              </button>
+              <button onClick={goToAI}
+                className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: 'rgba(236,91,19,0.12)', border: '1px solid rgba(236,91,19,0.35)', color: 'var(--primary)' }}>
+                <span className="material-symbols-outlined text-base">auto_awesome</span>
+                Tracto IA
+              </button>
+            </div>
           </div>
 
           {/* ── Resultado da Tracto IA ───────────────────────────────────── */}

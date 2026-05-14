@@ -487,30 +487,49 @@ export default function Layout() {
 
         /* ── Overlays flutuantes sobre o mapa (dropdowns Ações, Satélite HD, etc) ── */
         /* Mesmo dentro de .always-dark, esses controles devem adaptar ao tema. */
-        [data-theme="light"] [style*="rgba(8,8,9,0.82)"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.85)"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.9)"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.95)"],
-        [data-theme="light"] [style*="rgba(0,0,0,0.6)"] {
-          background: rgba(255, 255, 255, 0.95) !important;
+        [data-theme="light"] [style*="rgba(8,8,9,0."],
+        [data-theme="light"] [style*="rgba(0,0,0,0.4)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.5)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.55)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.6)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.7)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.75)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.85)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.9)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.92)"],
+        [data-theme="light"] [style*="rgba(0,0,0,0.95)"] {
+          background: rgba(255, 255, 255, 0.96) !important;
           border-color: rgba(15, 23, 42, 0.12) !important;
           color: #0f172a !important;
         }
-        [data-theme="light"] [style*="rgba(8,8,9,0.82)"] *,
-        [data-theme="light"] [style*="rgba(8,8,9,0.85)"] *,
-        [data-theme="light"] [style*="rgba(8,8,9,0.9)"] *,
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] *,
-        [data-theme="light"] [style*="rgba(8,8,9,0.95)"] * {
+        [data-theme="light"] [style*="rgba(8,8,9,0."] *,
+        [data-theme="light"] [style*="rgba(0,0,0,0.6)"] *,
+        [data-theme="light"] [style*="rgba(0,0,0,0.75)"] *,
+        [data-theme="light"] [style*="rgba(0,0,0,0.85)"] *,
+        [data-theme="light"] [style*="rgba(0,0,0,0.9)"] *,
+        [data-theme="light"] [style*="rgba(0,0,0,0.92)"] *,
+        [data-theme="light"] [style*="rgba(0,0,0,0.95)"] * {
           color: #0f172a !important;
         }
-        /* Mantém ícones laranja/verde/azul originais dos badges nos dropdowns */
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #ec5b13"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #34d399"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #60a5fa"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #a78bfa"],
-        [data-theme="light"] [style*="rgba(8,8,9,0.92)"] [style*="color: #f59e0b"] {
+        /* Mantém ícones laranja/verde/azul originais dentro dos overlays */
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #ec5b13"],
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #34d399"],
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #60a5fa"],
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #a78bfa"],
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #f59e0b"],
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #fbbf24"],
+        [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #f87171"] {
           color: inherit !important;
+        }
+        /* Placeholder em inputs sobre o mapa fica visível no light mode */
+        [data-theme="light"] .always-dark input::placeholder,
+        [data-theme="light"] [style*="rgba(8,8,9,0."] input::placeholder {
+          color: #64748b !important;
+        }
+        /* Textos com text-white explícito dentro de overlays mantém visibilidade */
+        [data-theme="light"] [style*="rgba(8,8,9,0."] .text-white,
+        [data-theme="light"] [style*="rgba(0,0,0,0."] .text-white {
+          color: #0f172a !important;
         }
 
         /* ── Ícone da marca: badge branco arredondado em todos os temas ── */
