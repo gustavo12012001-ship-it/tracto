@@ -65,8 +65,8 @@ export default function PrivacyPolicy() {
               A controladora responsável pelo tratamento dos seus dados pessoais é a <strong>Tracto Agricultural Technologies</strong>, empresa brasileira com atuação no setor de tecnologia agrícola.
             </p>
             <ul>
-              <li><strong>E-mail de contato:</strong> privacidade@tracto.ag</li>
-              <li><strong>Canal de atendimento:</strong> contato@tracto.ag</li>
+              <li><strong>E-mail de contato:</strong> contato@tractoagro.com.br</li>
+              <li><strong>Canal de atendimento:</strong> contato@tractoagro.com.br</li>
             </ul>
 
             <hr className="section-divider my-8" />
@@ -186,7 +186,7 @@ export default function PrivacyPolicy() {
               <li><strong>Informação</strong> — sobre entidades com as quais compartilhamos seus dados</li>
             </ul>
             <p>
-              Para exercer qualquer desses direitos, envie um e-mail para <a href="mailto:privacidade@tracto.ag">privacidade@tracto.ag</a> com o assunto "Direitos LGPD — [seu nome]". Responderemos em até <strong>15 dias úteis</strong>.
+              Para exercer qualquer desses direitos, envie um e-mail para <a href="mailto:contato@tractoagro.com.br">contato@tractoagro.com.br</a> com o assunto "Direitos LGPD — [seu nome]". Responderemos em até <strong>15 dias úteis</strong>.
             </p>
 
             <hr className="section-divider my-8" />
@@ -235,8 +235,8 @@ export default function PrivacyPolicy() {
               Em conformidade com o Art. 41 da LGPD, designamos um Encarregado de Proteção de Dados (DPO) disponível para contato:
             </p>
             <ul>
-              <li><strong>E-mail:</strong> <a href="mailto:dpo@tracto.ag">dpo@tracto.ag</a></li>
-              <li><strong>Canal geral:</strong> <a href="mailto:privacidade@tracto.ag">privacidade@tracto.ag</a></li>
+              <li><strong>E-mail:</strong> <a href="mailto:contato@tractoagro.com.br">contato@tractoagro.com.br</a></li>
+              <li><strong>Canal geral:</strong> <a href="mailto:contato@tractoagro.com.br">contato@tractoagro.com.br</a></li>
             </ul>
             <p>
               Você também pode registrar reclamações junto à <strong>Autoridade Nacional de Proteção de Dados (ANPD)</strong> em <a href="https://www.gov.br/anpd" target="_blank" rel="noopener noreferrer">www.gov.br/anpd</a>.

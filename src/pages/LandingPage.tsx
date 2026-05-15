@@ -343,7 +343,7 @@ export default function LandingPage() {
 <ul className="space-y-6 text-slate-500 text-xs font-light">
 <li className="flex items-center gap-4">
 <span className="material-symbols-outlined text-primary text-lg">mail</span>
-                            contato@tracto.ag
+                            contato@tractoagro.com.br
                         </li>
 <li className="flex items-center gap-4">
 <span className="material-symbols-outlined text-primary text-lg">call</span>

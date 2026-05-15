@@ -797,17 +797,17 @@ export default function Chat() {
                 </div>
                 <div className="flex-1 space-y-1">
                   <div
-                    className="px-4 py-3 rounded-2xl rounded-tl-none text-sm leading-relaxed prose prose-sm prose-invert max-w-none prose-p:my-1"
+                    className="px-4 py-3 rounded-2xl rounded-tl-none text-sm leading-relaxed prose prose-sm max-w-none prose-p:my-1"
                     style={{
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.07)',
-                      color: '#cbd5e1',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)',
                     }}
                   >
                     <ReactMarkdown>{msg.text}</ReactMarkdown>
                   </div>
                   {msg.time && (
-                    <p className="text-[10px] ml-1" style={{ color: '#334155' }}>
+                    <p className="text-[10px] ml-1" style={{ color: 'var(--muted)' }}>
                       Tracto IA · {msg.time}
                     </p>
                   )}
@@ -836,14 +836,14 @@ export default function Chat() {
                     className="px-4 py-3 rounded-2xl rounded-tr-none text-sm leading-relaxed"
                     style={{
                       background: 'rgba(236,91,19,0.12)',
-                      border: '1px solid rgba(236,91,19,0.2)',
-                      color: '#f1f5f9',
+                      border: '1px solid rgba(236,91,19,0.3)',
+                      color: 'var(--text)',
                     }}
                   >
                     {msg.text}
                   </div>
                   {msg.time && (
-                    <p className="text-[10px] mr-1" style={{ color: '#334155' }}>
+                    <p className="text-[10px] mr-1" style={{ color: 'var(--muted)' }}>
                       Você · {msg.time}
                     </p>
                   )}

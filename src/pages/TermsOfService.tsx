@@ -85,7 +85,7 @@ export default function TermsOfService() {
               <li>O cadastro requer informações verdadeiras, precisas e atualizadas.</li>
               <li>Cada conta é pessoal e intransferível. O compartilhamento de credenciais é vedado.</li>
               <li>Você é responsável por manter a confidencialidade da sua senha e por todas as atividades realizadas com sua conta.</li>
-              <li>Em caso de acesso não autorizado, notifique imediatamente: <a href="mailto:contato@tracto.ag">contato@tracto.ag</a>.</li>
+              <li>Em caso de acesso não autorizado, notifique imediatamente: <a href="mailto:contato@tractoagro.com.br">contato@tractoagro.com.br</a>.</li>
               <li>É permitida apenas <strong>uma conta por usuário</strong>. Contas duplicadas podem ser suspensas sem aviso prévio.</li>
             </ul>
 
@@ -223,8 +223,8 @@ export default function TermsOfService() {
             <h2>14. Contato</h2>
             <p>Dúvidas, solicitações ou reclamações sobre estes Termos:</p>
             <ul>
-              <li><strong>E-mail:</strong> <a href="mailto:contato@tracto.ag">contato@tracto.ag</a></li>
-              <li><strong>Privacidade/LGPD:</strong> <a href="mailto:privacidade@tracto.ag">privacidade@tracto.ag</a></li>
+              <li><strong>E-mail:</strong> <a href="mailto:contato@tractoagro.com.br">contato@tractoagro.com.br</a></li>
+              <li><strong>Privacidade/LGPD:</strong> <a href="mailto:contato@tractoagro.com.br">contato@tractoagro.com.br</a></li>
             </ul>
 
           </div>

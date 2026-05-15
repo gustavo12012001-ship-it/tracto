@@ -126,7 +126,7 @@ export default function Pricing() {
 
   const handleCheckout = async (planKey: string) => {
     if (planKey === 'enterprise') {
-      window.open('mailto:comercial@tracto.ag?subject=Interesse%20Enterprise', '_blank');
+      window.open('mailto:contato@tractoagro.com.br?subject=Interesse%20Enterprise', '_blank');
       return;
     }
     setLoading(planKey);

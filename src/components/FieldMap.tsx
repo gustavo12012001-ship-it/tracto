@@ -1171,10 +1171,11 @@ export default function FieldMap() {
       {/* Barra de busca */}
       {drawMode === 'none' && !editingField && (
         <form onSubmit={handleSearch} className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto" style={{ minWidth: 300 }}>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
-            style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(16px)', border: `1px solid ${searchError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+          <div className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
+            style={searchError ? { borderColor: 'rgba(239,68,68,0.4)' } : undefined}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
-            <input className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none"
+            <input className="flex-1 bg-transparent border-none text-xs focus:outline-none"
+              style={{ color: 'inherit' }}
               placeholder="Buscar cidade ou coordenadas..." value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
             {searchLoading && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />}
