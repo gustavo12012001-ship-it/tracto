@@ -941,10 +941,8 @@ export default function FieldMap() {
   const FIELD_COLORS = ['#ec5b13', '#4ade80', '#60a5fa', '#f472b6', '#a78bfa', '#facc15'];
   const activeField = fields.find((f) => f.id === activeFieldId);
 
+  // panelStyle: só dimensões. Background/border vêm da classe .glass-overlay
   const panelStyle: React.CSSProperties = {
-    background: 'rgba(8,8,9,0.97)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255,255,255,0.09)',
     minWidth: 440,
     maxHeight: 'calc(100vh - 120px)',
   };
@@ -1318,10 +1316,9 @@ export default function FieldMap() {
 
       {/* Instrução de desenho */}
       {drawMode !== 'none' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white pointer-events-none"
+        <div className="glass-overlay absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold pointer-events-none"
           style={{
-            background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)',
-            border: `1px solid ${drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : drawMode === 'drawing_farm' ? 'rgba(255,255,255,0.3)' : 'rgba(236,91,19,0.3)'}`,
+            borderColor: drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : drawMode === 'drawing_farm' ? 'rgba(255,255,255,0.3)' : 'rgba(236,91,19,0.3)',
           }}>
           <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#fff' : '#ec5b13' }}>draw</span>
           {drawMode === 'drawing_block' ? '🔬 Bloco — ' : drawMode === 'drawing_farm' ? '🏡 Fazenda — ' : ''}
@@ -1331,7 +1328,7 @@ export default function FieldMap() {
 
       {/* Painel de criação de talhão */}
       {drawMode === 'drawing' && (
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+        <div className="glass-overlay absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
           {/* Seletor de fazenda */}
           <div>
             <label className={labelCls}>Fazenda *</label>
@@ -1456,7 +1453,7 @@ export default function FieldMap() {
 
       {/* Painel de criação de bloco de pesquisa */}
       {drawMode === 'drawing_block' && (
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+        <div className="glass-overlay absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(52,211,153,0.15)' }}>
               <span className="text-sm">🔬</span>
@@ -1514,7 +1511,7 @@ export default function FieldMap() {
 
       {/* Painel de edição de talhão */}
       {editingField && (
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
+        <div className="glass-overlay absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#60a5fa' }}>Editar Talhão</p>

@@ -417,13 +417,32 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(255,255,255,0.03)"] { background: rgba(0,0,0,0.04) !important; }
         [data-theme="light"] [style*="rgba(255,255,255,0.05)"] { background: rgba(0,0,0,0.05) !important; }
         [data-theme="light"] [style*="rgba(255,255,255,0.06)"] { background: rgba(0,0,0,0.06) !important; }
-        /* Bordas claras → bordas escuras suaves */
+        /* Bordas claras → bordas escuras suaves (PERSISTE em todas as áreas) */
+        [data-theme="light"] [style*="rgba(255,255,255,0.05)"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.06)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.07)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.08)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.09)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.10)"],
-        [data-theme="light"] [style*="rgba(255,255,255,0.12)"] {
-          border-color: rgba(0,0,0,0.10) !important;
+        [data-theme="light"] [style*="rgba(255,255,255,0.12)"],
+        [data-theme="light"] [style*="rgba(255,255,255,0.15)"] {
+          border-color: rgba(15,23,42,0.12) !important;
+        }
+        /* Bordas explícitas Tailwind (border-white/N) → visíveis no light mode */
+        [data-theme="light"] .border-white\/5,
+        [data-theme="light"] .border-white\/10,
+        [data-theme="light"] .border-white\/15,
+        [data-theme="light"] .border-white\/20 {
+          border-color: rgba(15,23,42,0.12) !important;
+        }
+        /* Divider lines em <hr> e elementos com border-t/b/l/r usando rgba branco */
+        [data-theme="light"] [style*="borderColor: rgba(255,255,255"],
+        [data-theme="light"] [style*="border-color: rgba(255,255,255"],
+        [data-theme="light"] [style*="border-top: 1px solid rgba(255,255,255"],
+        [data-theme="light"] [style*="border-bottom: 1px solid rgba(255,255,255"],
+        [data-theme="light"] [style*="borderTop: '1px solid rgba(255,255,255"],
+        [data-theme="light"] [style*="borderBottom: '1px solid rgba(255,255,255"] {
+          border-color: rgba(15,23,42,0.12) !important;
         }
         /* Scrollbar */
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
@@ -958,8 +977,8 @@ export default function Layout() {
 
                 {/* Dropdown de notificações */}
                 {showNotifications && (
-                  <div className="always-dark absolute right-0 top-full mt-2 z-[600] rounded-2xl overflow-hidden flex flex-col"
-                    style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 320, maxHeight: 420 }}>
+                  <div className="glass-overlay absolute right-0 top-full mt-2 z-[600] rounded-2xl overflow-hidden flex flex-col"
+                    style={{ width: 320, maxHeight: 420 }}>
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                       <p className="text-xs font-bold text-white">Notificações</p>
