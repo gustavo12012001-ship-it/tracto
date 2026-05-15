@@ -905,14 +905,14 @@ export default function Layout() {
                 </span>
               </div>
 
-              {/* Calculadora — atalho rápido no header */}
+              {/* Caderno de Campo — atalho rápido no header */}
               <button
-                onClick={() => void navigate('/app/calculator')}
-                title="Calculadora de aplicações"
+                onClick={() => void navigate('/app/caderno')}
+                title="Caderno de Campo"
                 className="p-2 rounded-lg transition-all hover:bg-white/5"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               >
-                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>calculate</span>
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>menu_book</span>
               </button>
 
               {/* Notifications */}
