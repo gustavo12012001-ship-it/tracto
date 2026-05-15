@@ -550,21 +550,30 @@ export default function Layout() {
 
         /* ── Tracto Input/Select/Label — classes reutilizáveis adaptativas ── */
         .tracto-input, .tracto-select {
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.1);
-          color: var(--text);
+          background: rgba(255,255,255,0.05) !important;
+          border: 1px solid rgba(255,255,255,0.1) !important;
+          color: var(--text) !important;
         }
-        .tracto-input::placeholder { color: #475569; }
+        .tracto-input::placeholder { color: #475569 !important; }
         .tracto-input:focus, .tracto-select:focus {
-          border-color: rgba(236,91,19,0.45);
+          border-color: rgba(236,91,19,0.45) !important;
+          outline: none;
         }
         [data-theme="light"] .tracto-input,
         [data-theme="light"] .tracto-select {
-          background: #ffffff;
-          border: 1px solid rgba(15,23,42,0.15);
-          color: #0f172a;
+          background: #ffffff !important;
+          border: 1px solid rgba(15,23,42,0.15) !important;
+          color: #0f172a !important;
         }
-        [data-theme="light"] .tracto-input::placeholder { color: #94a3b8; }
+        [data-theme="light"] .tracto-input::placeholder { color: #94a3b8 !important; }
+        /* Seta do select customizada já que appearance:none remove a nativa */
+        .tracto-select {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+          background-repeat: no-repeat !important;
+          background-position: right 10px center !important;
+          background-size: 12px !important;
+          padding-right: 28px !important;
+        }
         .tracto-label { color: #64748b; }
         [data-theme="light"] .tracto-label { color: #475569; }
         /* Textos com text-white explícito dentro de overlays mantém visibilidade */
@@ -895,6 +904,16 @@ export default function Layout() {
                   <span style={{ color: 'var(--muted)' }}>{humidity}</span>
                 </span>
               </div>
+
+              {/* Calculadora — atalho rápido no header */}
+              <button
+                onClick={() => void navigate('/app/calculator')}
+                title="Calculadora de aplicações"
+                className="p-2 rounded-lg transition-all hover:bg-white/5"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>calculate</span>
+              </button>
 
               {/* Notifications */}
               <div className="relative" ref={bellRef}>
