@@ -548,6 +548,31 @@ export default function Layout() {
           color-scheme: light;
         }
 
+        /* ── Glass overlay panel — adaptativo claro/escuro ── */
+        .glass-overlay {
+          background: rgba(8,8,9,0.94) !important;
+          backdrop-filter: blur(14px) !important;
+          -webkit-backdrop-filter: blur(14px) !important;
+          border: 1px solid rgba(255,255,255,0.1) !important;
+          color: #e2e8f0 !important;
+        }
+        [data-theme="light"] .glass-overlay {
+          background: rgba(255,255,255,0.97) !important;
+          border: 1px solid rgba(15,23,42,0.1) !important;
+          color: #0f172a !important;
+          box-shadow: 0 10px 30px rgba(15,23,42,0.08);
+        }
+        [data-theme="light"] .glass-overlay .text-white {
+          color: #0f172a !important;
+        }
+        /* Cores semânticas internas mantém (laranja, verde, vermelho) */
+        [data-theme="light"] .glass-overlay [style*="color: #ec5b13"],
+        [data-theme="light"] .glass-overlay [style*="color: #34d399"],
+        [data-theme="light"] .glass-overlay [style*="color: #f87171"],
+        [data-theme="light"] .glass-overlay [style*="color: #fbbf24"] {
+          color: inherit !important;
+        }
+
         /* ── Tracto Input/Select/Label — classes reutilizáveis adaptativas ── */
         .tracto-input, .tracto-select {
           background: rgba(255,255,255,0.05) !important;
@@ -689,8 +714,8 @@ export default function Layout() {
                 </button>
 
                 {selectorOpen && (
-                  <div className="always-dark absolute top-full left-0 mt-1.5 z-[600] rounded-xl flex flex-col"
-                    style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', minWidth: 300, maxHeight: 480, overflowY: 'auto' }}>
+                  <div className="glass-overlay absolute top-full left-0 mt-1.5 z-[600] rounded-xl flex flex-col"
+                    style={{ minWidth: 300, maxHeight: 480, overflowY: 'auto' }}>
 
                     {farms.length === 0 ? (
                       <p className="px-4 py-4 text-[11px]" style={{ color: '#475569' }}>Nenhuma fazenda cadastrada.</p>

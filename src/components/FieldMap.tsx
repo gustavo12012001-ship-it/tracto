@@ -1197,8 +1197,7 @@ export default function FieldMap() {
           {/* Botão principal */}
           <button
             onClick={() => setLayerDropdownOpen((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-            style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+            className="glass-overlay flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
           >
             <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>
               {mapLayer === 'osm' ? 'map' : mapLayer === 'esri' ? 'public' : 'travel_explore'}
@@ -1212,8 +1211,8 @@ export default function FieldMap() {
 
           {/* Dropdown de opções */}
           {layerDropdownOpen && (
-            <div className="mt-1 flex flex-col gap-0.5 rounded-xl overflow-hidden"
-              style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 140 }}>
+            <div className="glass-overlay mt-1 flex flex-col gap-0.5 rounded-xl overflow-hidden"
+              style={{ minWidth: 140 }}>
               {([
                 { key: 'google', label: 'Satélite HD', sub: 'Google', icon: 'travel_explore' },
                 { key: 'esri',   label: 'Esri',        sub: 'Melhor rural', icon: 'public' },
@@ -1259,8 +1258,8 @@ export default function FieldMap() {
           {actionsOpen && (
             <div className="flex flex-col gap-1 mt-0.5">
               <button onClick={() => { setActionsOpen(false); setEditingField(null); setDrawFarmId(null); setDrawMode('drawing'); }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
-                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.35)', color: '#ec5b13' }}>
+                className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                style={{ borderColor: 'rgba(236,91,19,0.35)', color: '#ec5b13' }}>
                 <span className="material-symbols-outlined text-base">add_location_alt</span>
                 Desenhar Talhão
               </button>
@@ -1276,14 +1275,13 @@ export default function FieldMap() {
                   setShowBlockPicker(true);
                 }
               }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
-                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(52,211,153,0.35)', color: '#34d399' }}>
+                className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
+                style={{ borderColor: 'rgba(52,211,153,0.35)', color: '#34d399' }}>
                 <span className="material-symbols-outlined text-base">biotech</span>
                 Bloco de Pesquisa
               </button>
               <button onClick={() => { setActionsOpen(false); setShowNewFarmModal(true); }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
-                style={{ background: 'rgba(8,8,9,0.92)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.12)', color: '#94a3b8' }}>
+                className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all">
                 <span className="material-symbols-outlined text-base">add_home</span>
                 Nova Fazenda
               </button>
