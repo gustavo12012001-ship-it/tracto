@@ -258,9 +258,10 @@ export default function FieldLog() {
     >
       {/* Header */}
       <div
-        className="flex-shrink-0 px-4 md:px-6 py-4 border-b flex items-center justify-between gap-4"
+        className="flex-shrink-0 border-b"
         style={{ borderColor: 'var(--border)', background: 'var(--sidebar)' }}
       >
+       <div className="w-full max-w-6xl mx-auto px-4 md:px-6 py-4 flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-0.5">
             <span
@@ -292,11 +293,12 @@ export default function FieldLog() {
             Registrar
           </button>
         )}
+       </div>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="max-w-2xl mx-auto px-4 py-6 flex flex-col gap-4">
+        <div className="w-full max-w-6xl mx-auto px-4 py-6 flex flex-col gap-4">
 
           {/* No active field */}
           {!activeFieldId && (
