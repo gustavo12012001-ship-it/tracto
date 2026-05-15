@@ -689,6 +689,42 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
         canonical_metadata = _build_canonical_chat_metadata(snapshot, field_data)
         farm_context = _build_farm_context_from_metadata(canonical_metadata, snapshot)
 
+        # ── INTEGRAÇÃO CADERNO DE CAMPO ─────────────────────────────────────
+        # Busca eventos recentes do caderno (todas as categorias) e adiciona
+        # ao contexto da IA. Permite que ela responda sobre:
+        #   - Pulverizações registradas (produto, dose, data)
+        #   - Adubações + Irrigações
+        #   - Ocorrências fitossanitárias (pragas/doenças/plantas daninhas)
+        #   - Colheitas (produtividade real)
+        #   - Análises de solo importadas
+        #   - Observações anotadas pelo produtor
+        try:
+            notebook_events = await get_notebook_events(canonical_field_id, _user.id, limit=50)
+            if notebook_events:
+                # Ordena por data ocorrência (mais recente primeiro)
+                notebook_events.sort(key=lambda e: e.get('occurred_at') or e.get('created_at') or '', reverse=True)
+                events_lines = ["", "CADERNO DE CAMPO — REGISTROS RECENTES (últimos 50):"]
+                for ev in notebook_events[:50]:
+                    cat = ev.get('category', '?')
+                    date = (ev.get('occurred_at') or '')[:10]
+                    title = ev.get('title') or '(sem título)'
+                    data = ev.get('data') or {}
+                    extras = []
+                    if isinstance(data, dict):
+                        for k in ('product', 'pest_name', 'disease_name', 'species', 'dose_l_ha', 'dose_kg_ha',
+                                  'incidence_pct', 'infestation_level', 'volume_L_ha', 'method', 'real_yield_sc_ha',
+                                  'estimated_yield_sc_ha', 'NPK', 'pH', 'notes', 'purpose', 'duration_h', 'volume_mm'):
+                            v = data.get(k)
+                            if v is not None and str(v).strip():
+                                extras.append(f"{k}={v}")
+                    extras_str = f" | {' · '.join(extras)}" if extras else ""
+                    events_lines.append(f"- [{date}] {cat.upper()}: {title}{extras_str}")
+                    if ev.get('ai_analysis'):
+                        events_lines.append(f"    Análise prévia IA: {ev['ai_analysis'][:200]}")
+                farm_context = farm_context + "\n" + "\n".join(events_lines)
+        except Exception as _nb_exc:
+            logging.warning("[chat] Falha ao injetar caderno no contexto field_id=%s: %s", canonical_field_id, _nb_exc)
+
         reply = generate_chat_response(
             messages=[message.model_dump() for message in chat_req.messages],
             farm_context=farm_context,

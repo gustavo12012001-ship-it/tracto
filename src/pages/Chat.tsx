@@ -56,7 +56,7 @@ const INITIAL_MSG = (time: string, profile?: string | null): Message => ({
   role: 'assistant',
   text: profile === 'pesquisador'
     ? 'Olá! Sou a **MelhorIA**, sua analista de melhoramento vegetal.\n\n🧬 **O que analiso:** experimentos, germoplasma, avaliações fenotípicas, interação GxE, seleção de linhagens e recomendações de avanço de geração.\n\n📸 **Envie fotos de parcelas** para análise visual de altura, sanidade, florescimento e uniformidade.\n\nTodos os dados cadastrados pela sua empresa já estão como meu contexto. Como posso ajudar?'
-    : 'Olá! Sou a **Tracto IA**, sua analista agronômica. Posso ajudar com análise de solo, NDVI, irrigação, pragas, colheita e clima.\n\n📸 **Dica:** Envie uma foto da lavoura para análise visual de pragas e doenças.\n\nComo posso ajudar?',
+    : 'Olá! Sou a **Tracto IA**, sua analista agronômica. Tenho acesso completo ao seu talhão:\n\n✅ **Metadados** (cultura, variedade, plantio, área)\n✅ **Imagens Sentinel-2 e Sentinel-1** (NDVI, RGB, datas, nuvens)\n✅ **Clima atual** e previsão\n✅ **Caderno de Campo** completo — pulverizações, adubações, irrigações, ocorrências fitossanitárias, colheitas, análises de solo e observações\n✅ **Análises consolidadas** (pulverização, geada, estresse hídrico)\n\n📸 **Envie fotos da lavoura** para análise visual de pragas e doenças.\n\nComo posso ajudar?',
   time,
 });
 
