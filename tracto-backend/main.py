@@ -345,16 +345,510 @@ async def send_whatsapp_reply(phone: str, message: str) -> bool:
 async def get_entitlements(user: AuthenticatedUser = Depends(get_current_user)):
     return billing_service.get_entitlements(user.id)
 
-@app.post("/api/billing/checkout")
-async def create_checkout(req: CheckoutRequest, user: AuthenticatedUser = Depends(get_current_user)):
-    # MOCK ESTRUTURAL: Nenhum gateway real estÃ¡ conectado (Stripe/Asaas).
-    if req.plan_id not in ["pro", "premium"]:
-        raise HTTPException(status_code=400, detail="Plano invalido")
-    
-    return {
-        "checkout_url": "https://sandbox.gateway.com/pay/mock_123",
-        "message": f"MOCK: Checkout do plano {req.plan_id} via {req.payment_method}. Pagamento nÃ£o efetuado na realidade."
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BILLING — MERCADO PAGO (recorrência via preapproval)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/billing/plans")
+@limiter.limit("60/minute")
+async def list_billing_plans(request: Request, _user: AuthenticatedUser = Depends(get_current_user)):
+    """Lista planos ativos disponíveis pra assinatura."""
+    import requests as _req
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/plans"
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    resp = _req.get(
+        sb_url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"is_active": "eq.true", "order": "display_order.asc"},
+        timeout=10,
+    )
+    if not resp.ok:
+        raise HTTPException(status_code=503, detail="Falha ao buscar planos.")
+    plans = resp.json()
+    # Converte centavos pra reais decimais pro frontend
+    for p in plans:
+        p["price_monthly_brl"] = round((p.get("price_monthly_brl_cents") or 0) / 100.0, 2)
+        p["price_yearly_brl"] = round((p.get("price_yearly_brl_cents") or 0) / 100.0, 2)
+    return {"plans": plans}
+
+
+@app.get("/api/billing/subscription")
+@limiter.limit("30/minute")
+async def get_user_subscription(request: Request, user: AuthenticatedUser = Depends(get_current_user)):
+    """Retorna a assinatura ativa (ou pending) do usuário, se houver."""
+    import requests as _req
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    resp = _req.get(
+        sb_url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={
+            "user_id": f"eq.{user.id}",
+            "status": "in.(pending,authorized,paused)",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+        timeout=10,
+    )
+    if not resp.ok:
+        raise HTTPException(status_code=503, detail="Falha ao consultar assinatura.")
+    rows = resp.json()
+    if not rows:
+        return {"subscription": None, "plan_id": "free"}
+    sub = rows[0]
+    return {"subscription": sub, "plan_id": sub.get("plan_id", "free")}
+
+
+@app.get("/api/billing/profile")
+@limiter.limit("30/minute")
+async def get_billing_profile(request: Request, user: AuthenticatedUser = Depends(get_current_user)):
+    """Retorna o perfil de cobrança do usuário (CPF, endereço, etc)."""
+    import requests as _req
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/billing_profiles"
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    resp = _req.get(
+        sb_url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"user_id": f"eq.{user.id}", "limit": "1"},
+        timeout=10,
+    )
+    if not resp.ok:
+        raise HTTPException(status_code=503, detail="Falha ao consultar perfil.")
+    rows = resp.json()
+    return {"profile": rows[0] if rows else None}
+
+
+from pydantic import BaseModel as _BM
+
+
+class BillingProfileUpsert(_BM):
+    full_name: str
+    document_type: str  # 'CPF' or 'CNPJ'
+    document_number: str
+    email: str
+    phone: str | None = None
+    address_zip: str | None = None
+    address_street: str | None = None
+    address_number: str | None = None
+    address_complement: str | None = None
+    address_district: str | None = None
+    address_city: str | None = None
+    address_state: str | None = None
+
+
+@app.post("/api/billing/profile")
+@limiter.limit("20/minute")
+async def upsert_billing_profile(
+    request: Request,
+    body: BillingProfileUpsert,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Cria ou atualiza o perfil de cobrança (CPF/CNPJ + endereço)."""
+    import requests as _req
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/billing_profiles"
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    # Validações simples
+    if body.document_type not in ("CPF", "CNPJ"):
+        raise HTTPException(status_code=422, detail="document_type deve ser CPF ou CNPJ.")
+    doc = body.document_number.replace(".", "").replace("-", "").replace("/", "").strip()
+    if body.document_type == "CPF" and len(doc) != 11:
+        raise HTTPException(status_code=422, detail="CPF inválido.")
+    if body.document_type == "CNPJ" and len(doc) != 14:
+        raise HTTPException(status_code=422, detail="CNPJ inválido.")
+
+    payload = {
+        "user_id": user.id,
+        "full_name": body.full_name.strip(),
+        "document_type": body.document_type,
+        "document_number": doc,
+        "email": body.email.strip().lower(),
+        "phone": body.phone,
+        "address_zip": body.address_zip,
+        "address_street": body.address_street,
+        "address_number": body.address_number,
+        "address_complement": body.address_complement,
+        "address_district": body.address_district,
+        "address_city": body.address_city,
+        "address_state": body.address_state,
+        "updated_at": datetime.now().isoformat(),
     }
+    resp = _req.post(
+        sb_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=representation",
+        },
+        params={"on_conflict": "user_id"},
+        json=payload,
+        timeout=10,
+    )
+    if not resp.ok:
+        logging.error("[billing/profile] upsert falhou: %s %s", resp.status_code, resp.text[:300])
+        raise HTTPException(status_code=503, detail="Falha ao salvar perfil.")
+    rows = resp.json()
+    return {"profile": rows[0] if isinstance(rows, list) and rows else payload}
+
+
+class CheckoutCreateRequest(_BM):
+    plan_id: str
+    billing_cycle: str  # 'monthly' or 'yearly'
+
+
+@app.post("/api/billing/checkout")
+@limiter.limit("10/minute")
+async def create_checkout(
+    request: Request,
+    body: CheckoutCreateRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Cria uma assinatura no Mercado Pago e retorna a URL pra redirect.
+    Frontend redireciona o usuário pra essa URL pra completar o pagamento.
+    """
+    import requests as _req
+    from services import mercadopago_service as mp
+
+    if body.billing_cycle not in ("monthly", "yearly"):
+        raise HTTPException(status_code=422, detail="billing_cycle inválido.")
+
+    # 1. Busca plano no DB
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/plans"
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    resp = _req.get(
+        sb_url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"id": f"eq.{body.plan_id}", "is_active": "eq.true", "limit": "1"},
+        timeout=10,
+    )
+    if not resp.ok or not resp.json():
+        raise HTTPException(status_code=404, detail="Plano não encontrado.")
+    plan = resp.json()[0]
+
+    if body.plan_id == "free":
+        raise HTTPException(status_code=400, detail="Plano gratuito não requer checkout.")
+
+    amount_cents = plan["price_monthly_brl_cents"] if body.billing_cycle == "monthly" else plan["price_yearly_brl_cents"]
+    if amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="Plano sem preço configurado.")
+    amount_brl = amount_cents / 100.0
+    frequency = 1 if body.billing_cycle == "monthly" else 12
+
+    # 2. Garante billing_profile (precisa ter CPF/email pra cobrar)
+    prof_resp = _req.get(
+        f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/billing_profiles",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"user_id": f"eq.{user.id}", "limit": "1"},
+        timeout=10,
+    )
+    profile = prof_resp.json()[0] if prof_resp.ok and prof_resp.json() else None
+    if not profile:
+        raise HTTPException(
+            status_code=412,
+            detail="Complete seu cadastro (CPF/CNPJ + endereço) antes de assinar.",
+        )
+
+    # 3. Cria registro pending de subscription pra ter external_reference
+    sub_id = str(uuid.uuid4())
+    frontend_base = os.getenv("FRONTEND_URL", "https://tracto-eta.vercel.app").rstrip("/")
+    backend_base = os.getenv("BACKEND_URL", "https://tracto-production.up.railway.app").rstrip("/")
+    success_url = f"{frontend_base}/app/billing/success?sub={sub_id}"
+    notification_url = f"{backend_base}/api/billing/mercadopago-webhook"
+
+    # 4. Chama Mercado Pago pra criar preapproval
+    try:
+        mp_resp = await mp.create_preapproval(
+            plan_id=plan.get(f"mp_plan_id_{body.billing_cycle}"),  # pode ser None
+            payer_email=profile["email"],
+            amount_brl=amount_brl,
+            frequency_months=frequency,
+            reason=f"Tracto {plan['name']} ({body.billing_cycle})",
+            external_reference=sub_id,
+            back_url=success_url,
+            notification_url=notification_url,
+            trial_days=7,  # 7 dias trial — ajuste conforme negócio
+        )
+    except mp.MercadoPagoError as exc:
+        logging.error("[billing/checkout] MP rejeitou: %s", exc.detail)
+        raise HTTPException(status_code=502, detail=f"Falha no Mercado Pago: {exc.detail}") from exc
+
+    # 5. Salva subscription no DB
+    sub_payload = {
+        "id": sub_id,
+        "user_id": user.id,
+        "plan_id": body.plan_id,
+        "status": mp_resp.get("status", "pending"),
+        "billing_cycle": body.billing_cycle,
+        "mp_preapproval_id": mp_resp.get("id"),
+        "mp_init_point": mp_resp.get("init_point"),
+        "mp_payer_email": profile["email"],
+        "started_at": datetime.now().isoformat(),
+        "trial_end_at": None,  # MP gerencia
+    }
+    sb_sub_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
+    _req.post(
+        sb_sub_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        json=sub_payload,
+        timeout=10,
+    )
+
+    return {
+        "subscription_id": sub_id,
+        "mp_preapproval_id": mp_resp.get("id"),
+        "checkout_url": mp_resp.get("init_point"),
+        "sandbox_url": mp_resp.get("sandbox_init_point"),
+        "environment": mp.get_environment(),
+    }
+
+
+@app.post("/api/billing/cancel")
+@limiter.limit("10/minute")
+async def cancel_subscription(request: Request, user: AuthenticatedUser = Depends(get_current_user)):
+    """Cancela a assinatura ativa do usuário."""
+    import requests as _req
+    from services import mercadopago_service as mp
+
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
+    resp = _req.get(
+        sb_url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={
+            "user_id": f"eq.{user.id}",
+            "status": "in.(pending,authorized,paused)",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+        timeout=10,
+    )
+    if not resp.ok or not resp.json():
+        raise HTTPException(status_code=404, detail="Nenhuma assinatura ativa.")
+    sub = resp.json()[0]
+    mp_id = sub.get("mp_preapproval_id")
+    if mp_id:
+        try:
+            await mp.cancel_preapproval(mp_id)
+        except mp.MercadoPagoError as exc:
+            logging.warning("[billing/cancel] MP cancel falhou: %s", exc.detail)
+    # Atualiza local
+    _req.patch(
+        sb_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        params={"id": f"eq.{sub['id']}"},
+        json={"status": "cancelled", "cancelled_at": datetime.now().isoformat()},
+        timeout=10,
+    )
+    return {"ok": True, "subscription_id": sub["id"]}
+
+
+@app.post("/api/billing/mercadopago-webhook")
+async def mercadopago_webhook(request: Request):
+    """
+    Webhook do Mercado Pago. NÃO usa auth — valida via signature HMAC.
+
+    Eventos esperados:
+    - payment.created / payment.updated
+    - subscription_preapproval.created / updated
+    """
+    import requests as _req
+    from services import mercadopago_service as mp
+
+    body_bytes = await request.body()
+    headers = request.headers
+
+    # Query string traz data.id geralmente
+    data_id = request.query_params.get("data.id") or request.query_params.get("id")
+    event_type = request.query_params.get("type") or request.query_params.get("topic") or "unknown"
+
+    # Tenta JSON body também
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not data_id and isinstance(payload, dict):
+        data_id = (payload.get("data") or {}).get("id") or payload.get("id")
+        event_type = payload.get("type") or payload.get("action") or event_type
+
+    # ── Validação de assinatura ─────────────────────────────────────────────
+    if not mp.verify_webhook_signature(
+        raw_body=body_bytes,
+        x_signature_header=headers.get("x-signature"),
+        x_request_id_header=headers.get("x-request-id"),
+        data_id=str(data_id) if data_id else None,
+    ):
+        raise HTTPException(status_code=401, detail="Assinatura de webhook inválida.")
+
+    # ── Idempotência: usa request-id ou data.id como chave ──────────────────
+    event_key = headers.get("x-request-id") or f"{event_type}:{data_id}"
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    sb_evt_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/mp_webhook_events"
+    existing = _req.get(
+        sb_evt_url,
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"mp_event_id": f"eq.{event_key}", "limit": "1"},
+        timeout=10,
+    )
+    if existing.ok and existing.json():
+        logging.info("[MP webhook] evento %s já processado, ignorando", event_key)
+        return {"status": "duplicate"}
+
+    # Registra evento
+    _req.post(
+        sb_evt_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        json={
+            "mp_event_id": event_key,
+            "event_type": event_type,
+            "action": payload.get("action") if isinstance(payload, dict) else None,
+            "raw_payload": payload,
+        },
+        timeout=10,
+    )
+
+    # ── Processa baseado no tipo ────────────────────────────────────────────
+    try:
+        if event_type in ("payment", "payment.created", "payment.updated"):
+            # Busca pagamento detalhado
+            if data_id:
+                payment = await mp.get_payment(str(data_id))
+                await _process_payment_event(payment)
+        elif "preapproval" in event_type.lower():
+            if data_id:
+                preapproval = await mp.get_preapproval(str(data_id))
+                await _process_subscription_event(preapproval)
+    except Exception as exc:
+        logging.exception("[MP webhook] erro processando evento %s: %s", event_type, exc)
+        # Marca como erro mas retorna 200 (MP não fica retentando)
+        _req.patch(
+            sb_evt_url,
+            headers={
+                "apikey": key, "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            },
+            params={"mp_event_id": f"eq.{event_key}"},
+            json={"error_message": str(exc)[:500]},
+            timeout=10,
+        )
+        return {"status": "error", "message": "logged"}
+
+    # Marca como processado
+    _req.patch(
+        sb_evt_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        params={"mp_event_id": f"eq.{event_key}"},
+        json={"processed_at": datetime.now().isoformat()},
+        timeout=10,
+    )
+    return {"status": "ok"}
+
+
+async def _process_payment_event(payment: dict) -> None:
+    """Salva transação de pagamento + atualiza subscription se necessário."""
+    import requests as _req
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/payment_transactions"
+
+    ext_ref = payment.get("external_reference")  # nosso subscription_id
+    amount_cents = int(round(float(payment.get("transaction_amount", 0)) * 100))
+
+    payload = {
+        "mp_payment_id": str(payment.get("id")),
+        "subscription_id": ext_ref if ext_ref else None,
+        "amount_cents": amount_cents,
+        "currency": payment.get("currency_id", "BRL"),
+        "status": payment.get("status"),
+        "payment_method": payment.get("payment_method_id"),
+        "payment_type": payment.get("payment_type_id"),
+        "description": payment.get("description"),
+        "paid_at": payment.get("date_approved"),
+        "raw_payload": payment,
+    }
+    # Tenta achar user_id via subscription
+    if ext_ref:
+        sub_resp = _req.get(
+            f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            params={"id": f"eq.{ext_ref}", "limit": "1"},
+            timeout=10,
+        )
+        if sub_resp.ok and sub_resp.json():
+            payload["user_id"] = sub_resp.json()[0]["user_id"]
+
+    if not payload.get("user_id"):
+        logging.warning("[MP webhook] payment sem user_id resolúvel: %s", payment.get("id"))
+        return
+
+    _req.post(
+        sb_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        params={"on_conflict": "mp_payment_id"},
+        json=payload,
+        timeout=10,
+    )
+
+
+async def _process_subscription_event(preapproval: dict) -> None:
+    """Sincroniza status da subscription com MP."""
+    import requests as _req
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
+
+    mp_id = preapproval.get("id")
+    if not mp_id:
+        return
+
+    # Mapeia status MP → nosso
+    mp_status = preapproval.get("status", "").lower()
+    status_map = {
+        "authorized": "authorized",
+        "pending": "pending",
+        "paused": "paused",
+        "cancelled": "cancelled",
+        "finished": "finished",
+    }
+    local_status = status_map.get(mp_status, "pending")
+
+    update = {
+        "status": local_status,
+        "last_synced_at": datetime.now().isoformat(),
+    }
+    if preapproval.get("next_payment_date"):
+        update["current_period_end"] = preapproval["next_payment_date"]
+
+    _req.patch(
+        sb_url,
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        params={"mp_preapproval_id": f"eq.{mp_id}"},
+        json=update,
+        timeout=10,
+    )
 
 def send_push_notification(
     subscription_info: dict,

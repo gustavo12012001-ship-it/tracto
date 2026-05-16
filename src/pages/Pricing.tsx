@@ -1,326 +1,324 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+// src/pages/Pricing.tsx — Tela de planos + assinatura via Mercado Pago
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../services/api';
+import BillingProfileModal from '../components/BillingProfileModal';
 
-interface Entitlements {
+interface Plan {
+  id: string;
+  name: string;
+  description: string | null;
+  price_monthly_brl: number;
+  price_yearly_brl: number;
   max_fields: number;
-  can_use_whatsapp: boolean;
-  can_use_push: boolean;
+  max_farms: number;
+  has_ia_chat: boolean;
+  has_satellite: boolean;
+  has_whatsapp: boolean;
+  has_push: boolean;
+  display_order: number;
+  is_active: boolean;
 }
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
+interface Subscription {
+  id: string;
+  plan_id: string;
+  status: string;
+  billing_cycle: 'monthly' | 'yearly';
+  current_period_end: string | null;
+  trial_end_at: string | null;
+  mp_preapproval_id: string | null;
 }
 
-// ── Plan definitions ──────────────────────────────────────────────────────────
-const PLANS = [
-  {
-    id: 'free',
-    name: 'Gratuito',
-    price: 'R$ 0',
-    period: '/mês',
-    description: 'Para começar a explorar',
-    color: '#64748b',
-    features: [
-      '1 Talhão Ativo',
-      'Análises Básicas de IA',
-      'Chat Agronômico Limitado',
-      'Alertas Climáticos',
-      'Mapa de Talhões',
-    ],
-    missing: ['WhatsApp IA', 'Push Notifications', 'Exportação de Mapas'],
-    cta: 'Plano Atual',
-    planKey: null,
-    highlighted: false,
-  },
-  {
-    id: 'familiar',
-    name: 'Familiar',
-    price: 'R$ 199',
-    period: '/mês',
-    description: 'Para pequenas propriedades',
-    color: '#3b82f6',
-    badge: 'Popular',
-    features: [
-      'Até 5 Talhões',
-      'Análises Completas de IA',
-      'Chat Agronômico Ilimitado',
-      'Alertas Climáticos + Pragas',
-      'Histórico de Conversas',
-      'Relatórios em PDF',
-    ],
-    missing: ['WhatsApp IA', 'Push Notifications'],
-    cta: 'Assinar Familiar',
-    planKey: 'familiar',
-    highlighted: false,
-  },
-  {
-    id: 'pro',
-    name: 'Profissional',
-    price: 'R$ 499',
-    period: '/mês',
-    description: 'Para produtores exigentes',
-    color: '#ec5b13',
-    badge: 'Recomendado',
-    features: [
-      'Talhões Ilimitados',
-      'IA Completa + Imagens Satélite',
-      'Chat Agronômico Ilimitado',
-      'Alertas em Tempo Real',
-      'WhatsApp IA (Em breve)',
-      'Push Notifications',
-      'Relatórios Avançados',
-      'Exportação de Mapas',
-    ],
-    missing: [],
-    cta: 'Assinar Profissional',
-    planKey: 'pro',
-    highlighted: true,
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: 'Sob consulta',
-    period: '',
-    description: 'Para cooperativas e grandes grupos',
-    color: '#a855f7',
-    features: [
-      'Tudo do Profissional',
-      'Multi-Usuários e Equipes',
-      'Integrações Customizadas',
-      'API de Dados Agronômicos',
-      'Suporte Dedicado 24/7',
-      'SLA Garantido',
-      'Onboarding Personalizado',
-    ],
-    missing: [],
-    cta: 'Falar com Comercial',
-    planKey: 'enterprise',
-    highlighted: false,
-  },
-];
+interface BillingProfile {
+  full_name: string;
+  document_type: 'CPF' | 'CNPJ';
+  document_number: string;
+  email: string;
+}
 
-// ── Component ─────────────────────────────────────────────────────────────────
+interface CheckoutResponse {
+  subscription_id: string;
+  mp_preapproval_id: string;
+  checkout_url: string;
+  sandbox_url?: string;
+  environment: 'sandbox' | 'production';
+}
+
+const PLAN_COLORS: Record<string, { color: string; bg: string }> = {
+  free:       { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
+  pro:        { color: '#ec5b13', bg: 'rgba(236,91,19,0.10)' },
+  enterprise: { color: '#a855f7', bg: 'rgba(168,85,247,0.10)' },
+};
+
 export default function Pricing() {
-  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-  const [loading, setLoading] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const navigate = useNavigate();
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
+  const [currentPlanId, setCurrentPlanId] = useState<string>('free');
+  const [billingProfile, setBillingProfile] = useState<BillingProfile | null>(null);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
 
-  useEffect(() => {
-    apiFetch<Entitlements>('/api/billing/entitlements')
-      .then(setEntitlements)
-      .catch(console.error);
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [plansRes, subRes, profRes] = await Promise.allSettled([
+        apiFetch<{ plans: Plan[] }>('/api/billing/plans'),
+        apiFetch<{ subscription: Subscription | null; plan_id: string }>('/api/billing/subscription'),
+        apiFetch<{ profile: BillingProfile | null }>('/api/billing/profile'),
+      ]);
+
+      if (plansRes.status === 'fulfilled') {
+        setPlans(plansRes.value.plans);
+      }
+      if (subRes.status === 'fulfilled') {
+        setCurrentSubscription(subRes.value.subscription);
+        setCurrentPlanId(subRes.value.plan_id);
+      }
+      if (profRes.status === 'fulfilled') {
+        setBillingProfile(profRes.value.profile);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao carregar planos.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const currentPlanId = (): string => {
-    if (!entitlements) return 'free';
-    if (entitlements.max_fields > 5) return 'pro';
-    if (entitlements.max_fields > 1) return 'familiar';
-    return 'free';
-  };
+  useEffect(() => {
+    void fetchAll();
+  }, [fetchAll]);
 
-  const handleCheckout = async (planKey: string) => {
-    if (planKey === 'enterprise') {
-      window.open('mailto:contato@tractoagro.com.br?subject=Interesse%20Enterprise', '_blank');
+  const startCheckout = async (planId: string) => {
+    setError(null);
+    // Precisa ter perfil de cobrança completo
+    if (!billingProfile) {
+      setPendingPlanId(planId);
+      setShowProfileModal(true);
       return;
     }
-    setLoading(planKey);
-    setMessage(null);
+    setCheckoutLoading(planId);
     try {
-      const res = await apiFetch<{ checkout_url: string; message: string }>('/api/billing/checkout', {
+      const resp = await apiFetch<CheckoutResponse>('/api/billing/checkout', {
         method: 'POST',
-        body: JSON.stringify({ plan_id: planKey, payment_method: 'pix' }),
+        body: JSON.stringify({ plan_id: planId, billing_cycle: billingCycle }),
       });
-      if (res.checkout_url && res.checkout_url !== '#') {
-        window.location.href = res.checkout_url;
-      } else {
-        setMessage({ text: res.message + ' — Integração aguardando ativação do gateway de pagamento.', ok: false });
-      }
-    } catch (e: unknown) {
-      setMessage({ text: e instanceof Error ? e.message : 'Erro ao iniciar checkout.', ok: false });
-    } finally {
-      setLoading(null);
+      const url = resp.environment === 'sandbox' && resp.sandbox_url
+        ? resp.sandbox_url
+        : resp.checkout_url;
+      // Redirect pro Mercado Pago checkout
+      window.location.href = url;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Falha ao iniciar checkout.';
+      setError(msg);
+      setCheckoutLoading(null);
     }
   };
 
-  const subscribePush = async () => {
-    setMessage(null);
+  const cancelSubscription = async () => {
+    if (!confirm('Tem certeza? Seu acesso aos recursos premium será encerrado ao fim do período atual.')) return;
     try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        setMessage({ text: 'Seu navegador não suporta Web Push.', ok: false });
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        setMessage({ text: 'Permissão para notificações negada.', ok: false });
-        return;
-      }
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
-      const rawVapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-      if (!rawVapidKey) throw new Error('VITE_VAPID_PUBLIC_KEY não configurada.');
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(rawVapidKey),
-      });
-      const subJson = subscription.toJSON();
-      await apiFetch('/api/push/subscribe', {
-        method: 'POST',
-        body: JSON.stringify({ endpoint: subJson.endpoint, p256dh: subJson.keys?.p256dh || '', auth: subJson.keys?.auth || '' }),
-      });
-      setMessage({ text: 'Aparelho registrado para notificações Push!', ok: true });
-    } catch (err: unknown) {
-      setMessage({ text: err instanceof Error ? err.message : 'Erro ao registrar Push.', ok: false });
+      await apiFetch('/api/billing/cancel', { method: 'POST' });
+      await fetchAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao cancelar.');
     }
   };
 
-  const activePlan = currentPlanId();
+  const onProfileSaved = async (planId: string | null) => {
+    setShowProfileModal(false);
+    await fetchAll();
+    if (planId) await startCheckout(planId);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando planos…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin p-6" style={{ background: 'var(--bg)' }}>
-      <div className="max-w-5xl mx-auto flex flex-col gap-8">
+    <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: 'var(--bg)' }}>
+      <div className="max-w-6xl mx-auto px-6 py-8">
 
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-black text-white">Assinatura e Planos</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-            Escolha o plano ideal para sua operação agrícola.
-          </p>
+        <div className="flex items-center justify-between mb-2">
+          <button onClick={() => navigate(-1)}
+            className="flex items-center gap-1 text-xs hover:opacity-80"
+            style={{ color: 'var(--muted)' }}>
+            <span className="material-symbols-outlined text-base">arrow_back</span>
+            Voltar
+          </button>
+          <span className="text-[10px] font-bold px-2 py-1 rounded-full"
+            style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+            7 DIAS DE TRIAL GRÁTIS
+          </span>
         </div>
 
-        {/* Current plan banner */}
-        {entitlements && (
-          <div
-            className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-          >
-            <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined" style={{ color: 'var(--primary)' }}>verified</span>
-              <div>
-                <p className="text-xs uppercase font-bold tracking-widest" style={{ color: 'var(--muted)' }}>Seu Plano Atual</p>
-                <p className="text-sm font-black text-white capitalize">{activePlan === 'free' ? 'Gratuito' : activePlan === 'familiar' ? 'Familiar' : 'Profissional'}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-4 text-xs">
-              <span className="text-white">
-                <span style={{ color: 'var(--muted)' }}>Talhões: </span>
-                <strong>{entitlements.max_fields === 9999 ? 'Ilimitados' : entitlements.max_fields}</strong>
-              </span>
-              <span className="text-white">
-                <span style={{ color: 'var(--muted)' }}>WhatsApp: </span>
-                <strong>{entitlements.can_use_whatsapp ? '✅ Ativo' : '⛔ Bloqueado'}</strong>
-              </span>
-              <span className="text-white">
-                <span style={{ color: 'var(--muted)' }}>Push: </span>
-                <strong>{entitlements.can_use_push ? '✅ Ativo' : '⛔ Bloqueado'}</strong>
-              </span>
-            </div>
-            {activePlan === 'free' && (
-              <div className="w-full text-[11px] font-bold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(234,179,8,0.1)', color: '#fbbf24' }}>
-                ⚠️ Você está no plano gratuito. Faça upgrade para remover os limites e acessar todas as funcionalidades.
-              </div>
-            )}
-          </div>
-        )}
+        <h1 className="text-3xl font-black mb-2" style={{ color: 'var(--text)' }}>
+          Escolha seu plano
+        </h1>
+        <p className="text-sm mb-6" style={{ color: 'var(--muted)' }}>
+          Tecnologia AgTech profissional. Cancele quando quiser.
+        </p>
 
-        {/* Feedback */}
-        {message && (
-          <div
-            className="flex items-center gap-3 p-4 rounded-xl text-sm font-semibold"
+        {/* Toggle mensal/anual */}
+        <div className="flex items-center gap-2 mb-8">
+          <button
+            onClick={() => setBillingCycle('monthly')}
+            className="px-4 py-2 rounded-xl text-xs font-bold transition-all"
             style={{
-              background: message.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-              border: `1px solid ${message.ok ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
-              color: message.ok ? '#4ade80' : '#f87171',
-            }}
-          >
-            <span className="material-symbols-outlined text-base">{message.ok ? 'check_circle' : 'error'}</span>
-            {message.text}
+              background: billingCycle === 'monthly' ? 'var(--primary)' : 'var(--surface)',
+              color: billingCycle === 'monthly' ? '#fff' : 'var(--muted)',
+              border: `1px solid ${billingCycle === 'monthly' ? 'var(--primary)' : 'var(--border)'}`,
+            }}>
+            Mensal
+          </button>
+          <button
+            onClick={() => setBillingCycle('yearly')}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+            style={{
+              background: billingCycle === 'yearly' ? 'var(--primary)' : 'var(--surface)',
+              color: billingCycle === 'yearly' ? '#fff' : 'var(--muted)',
+              border: `1px solid ${billingCycle === 'yearly' ? 'var(--primary)' : 'var(--border)'}`,
+            }}>
+            Anual
+            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
+              style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>-20%</span>
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-xl flex items-center gap-2"
+            style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.3)' }}>
+            <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>error</span>
+            <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>
           </div>
         )}
 
-        {/* Plans grid */}
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {PLANS.map((plan) => {
-            const isCurrent = plan.id === activePlan;
-            const isHighlighted = plan.highlighted;
+        {/* Subscription atual (se ativa) */}
+        {currentSubscription && currentSubscription.status !== 'cancelled' && (
+          <div className="mb-6 rounded-2xl p-4"
+            style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)' }}>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-sm font-bold" style={{ color: '#22c55e' }}>
+                  ✓ Assinatura ativa: {plans.find(p => p.id === currentSubscription.plan_id)?.name || currentSubscription.plan_id}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
+                  Ciclo: {currentSubscription.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}
+                  {currentSubscription.current_period_end && (
+                    <> · Próxima cobrança: {new Date(currentSubscription.current_period_end).toLocaleDateString('pt-BR')}</>
+                  )}
+                  {currentSubscription.status === 'pending' && <> · Aguardando pagamento</>}
+                </p>
+              </div>
+              <button onClick={() => void cancelSubscription()}
+                className="text-[11px] font-bold px-3 py-1.5 rounded-lg"
+                style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}>
+                Cancelar assinatura
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Grid de planos */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {plans.map((plan) => {
+            const color = PLAN_COLORS[plan.id] ?? PLAN_COLORS.free;
+            const price = billingCycle === 'monthly' ? plan.price_monthly_brl : plan.price_yearly_brl;
+            const monthlyEquivalent = billingCycle === 'yearly' ? price / 12 : price;
+            const isCurrent = plan.id === currentPlanId;
+            const isHighlighted = plan.id === 'pro';
+            const isFree = plan.id === 'free';
+
             return (
-              <div
-                key={plan.id}
-                className="relative flex flex-col rounded-2xl p-5"
+              <div key={plan.id}
+                className="rounded-2xl p-6 flex flex-col"
                 style={{
-                  background: isHighlighted ? 'rgba(236,91,19,0.05)' : 'var(--surface)',
-                  border: `1px solid ${isHighlighted ? 'rgba(236,91,19,0.35)' : isCurrent ? `${plan.color}44` : 'var(--border)'}`,
-                }}
-              >
-                {/* Badge */}
-                {plan.badge && (
-                  <div
-                    className="absolute -top-3 left-1/2 -translate-x-1/2 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full"
-                    style={{ background: plan.color }}
-                  >
-                    {plan.badge}
-                  </div>
-                )}
-                {isCurrent && !plan.badge && (
-                  <div
-                    className="absolute -top-3 left-1/2 -translate-x-1/2 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full"
-                    style={{ background: plan.color }}
-                  >
-                    Plano Atual
-                  </div>
+                  background: 'var(--surface)',
+                  border: `2px solid ${isHighlighted ? color.color : 'var(--border)'}`,
+                  boxShadow: isHighlighted ? `0 4px 20px ${color.color}25` : 'none',
+                }}>
+
+                {isHighlighted && (
+                  <span className="self-start text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full mb-3"
+                    style={{ background: color.bg, color: color.color }}>
+                    Mais popular
+                  </span>
                 )}
 
-                {/* Plan header */}
+                <h3 className="text-xl font-black mb-1" style={{ color: 'var(--text)' }}>{plan.name}</h3>
+                <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>{plan.description}</p>
+
+                {/* Preço */}
                 <div className="mb-4">
-                  <h3 className="text-base font-black text-white">{plan.name}</h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>{plan.description}</p>
-                  <p className="text-2xl font-light text-white mt-3">
-                    {plan.price}
-                    {plan.period && <span className="text-sm" style={{ color: 'var(--muted)' }}>{plan.period}</span>}
-                  </p>
+                  {isFree ? (
+                    <p className="text-3xl font-black" style={{ color: 'var(--text)' }}>R$ 0</p>
+                  ) : (
+                    <>
+                      <p className="text-3xl font-black" style={{ color: 'var(--text)' }}>
+                        R$ {monthlyEquivalent.toFixed(2).replace('.', ',')}
+                        <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>/mês</span>
+                      </p>
+                      {billingCycle === 'yearly' && (
+                        <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
+                          R$ {price.toFixed(2).replace('.', ',')} cobrados anualmente
+                        </p>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {/* Features */}
-                <ul className="flex-1 space-y-2 mb-6 text-xs">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <span className="material-symbols-outlined text-sm mt-0.5 flex-shrink-0" style={{ color: plan.color }}>check_circle</span>
-                      <span style={{ color: '#cbd5e1' }}>{f}</span>
-                    </li>
-                  ))}
-                  {plan.missing.map((f) => (
-                    <li key={f} className="flex items-start gap-2 opacity-40">
-                      <span className="material-symbols-outlined text-sm mt-0.5 flex-shrink-0" style={{ color: 'var(--muted)' }}>cancel</span>
-                      <span style={{ color: 'var(--muted)' }}>{f}</span>
-                    </li>
-                  ))}
+                <ul className="flex-1 space-y-2 mb-6">
+                  <FeatureItem ok={plan.max_fields > 0}>
+                    {plan.max_fields >= 999 ? 'Talhões ilimitados' : `${plan.max_fields} talhão(ões)`}
+                  </FeatureItem>
+                  <FeatureItem ok={plan.has_ia_chat}>Tracto IA agronômica</FeatureItem>
+                  <FeatureItem ok={plan.has_satellite}>Imagens Sentinel-2 e NDVI</FeatureItem>
+                  <FeatureItem ok={plan.has_push}>Notificações em tempo real</FeatureItem>
+                  <FeatureItem ok={plan.has_whatsapp}>Alertas via WhatsApp</FeatureItem>
                 </ul>
 
                 {/* CTA */}
-                {isCurrent && plan.id === 'free' ? (
-                  <button disabled className="w-full py-2.5 rounded-xl text-xs font-bold" style={{ background: 'rgba(255,255,255,0.05)', color: '#475569', cursor: 'not-allowed' }}>
-                    Plano Atual
+                {isCurrent ? (
+                  <button disabled
+                    className="w-full py-2.5 rounded-xl text-sm font-bold"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                    ✓ Plano atual
+                  </button>
+                ) : isFree ? (
+                  <button disabled
+                    className="w-full py-2.5 rounded-xl text-sm font-bold opacity-60"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                    Sem necessidade de pagamento
                   </button>
                 ) : (
                   <button
-                    onClick={() => plan.planKey && void handleCheckout(plan.planKey)}
-                    disabled={loading === plan.planKey || isCurrent}
-                    className="w-full py-2.5 rounded-xl text-xs font-bold transition-all hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2"
-                    style={{
-                      background: isCurrent ? `${plan.color}22` : plan.color,
-                      color: isCurrent ? plan.color : '#fff',
-                      border: isCurrent ? `1px solid ${plan.color}44` : 'none',
-                    }}
-                  >
-                    {loading === plan.planKey && (
-                      <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                    onClick={() => void startCheckout(plan.id)}
+                    disabled={checkoutLoading === plan.id}
+                    className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-60"
+                    style={{ background: color.color, boxShadow: `0 2px 12px ${color.color}40` }}>
+                    {checkoutLoading === plan.id ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                        Redirecionando…
+                      </span>
+                    ) : (
+                      `Assinar ${plan.name}`
                     )}
-                    {isCurrent ? 'Plano Atual' : plan.cta}
                   </button>
                 )}
               </div>
@@ -328,37 +326,51 @@ export default function Pricing() {
           })}
         </div>
 
-        {/* Push notifications panel */}
-        <div
-          className="p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-4"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-        >
-          <div className="flex-1">
-            <p className="text-sm font-bold text-white flex items-center gap-2">
-              <span className="material-symbols-outlined text-base" style={{ color: 'var(--primary)' }}>notifications_active</span>
-              Ativar Notificações Push neste Dispositivo
-            </p>
-            <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-              Receba alertas agronômicos mesmo com o navegador fechado. Requer plano Profissional.
-            </p>
-          </div>
-          <button
-            onClick={() => void subscribePush()}
-            className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all hover:opacity-90"
-            style={{ background: 'var(--primary-dim)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}
-          >
-            <span className="material-symbols-outlined text-base">add_alert</span>
-            Registrar Este Dispositivo
-          </button>
+        {/* Trust info */}
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <TrustBadge icon="lock" title="Pagamento seguro" desc="Processado pelo Mercado Pago" />
+          <TrustBadge icon="schedule" title="Sem fidelidade" desc="Cancele quando quiser" />
+          <TrustBadge icon="receipt_long" title="Nota fiscal" desc="Emitida automaticamente" />
         </div>
 
-        {/* Settings link */}
-        <p className="text-xs text-center" style={{ color: 'var(--muted)' }}>
-          Para configurar alertas por e-mail e WhatsApp, acesse{' '}
-          <Link to="/app/settings" style={{ color: 'var(--primary)' }} className="font-bold">
-            Configurações → Notificações
-          </Link>
+        <p className="text-[10px] text-center mt-6" style={{ color: 'var(--muted)' }}>
+          Métodos aceitos: cartão de crédito (Visa, Mastercard, Elo, Hipercard, American Express).
+          Cobrança recorrente automática. Suporte: contato@tractoagro.com.br
         </p>
+      </div>
+
+      {/* Modal de cadastro de cobrança */}
+      {showProfileModal && (
+        <BillingProfileModal
+          initialProfile={billingProfile}
+          onClose={() => { setShowProfileModal(false); setPendingPlanId(null); }}
+          onSaved={() => void onProfileSaved(pendingPlanId)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FeatureItem({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2 text-xs" style={{ color: ok ? 'var(--text)' : 'var(--muted)', opacity: ok ? 1 : 0.5 }}>
+      <span className="material-symbols-outlined flex-shrink-0 mt-0.5"
+        style={{ fontSize: 16, color: ok ? '#22c55e' : '#94a3b8' }}>
+        {ok ? 'check_circle' : 'remove_circle_outline'}
+      </span>
+      <span className="leading-tight">{children}</span>
+    </li>
+  );
+}
+
+function TrustBadge({ icon, title, desc }: { icon: string; title: string; desc: string }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      <span className="material-symbols-outlined" style={{ fontSize: 20, color: 'var(--primary)' }}>{icon}</span>
+      <div>
+        <p className="text-[11px] font-bold" style={{ color: 'var(--text)' }}>{title}</p>
+        <p className="text-[10px]" style={{ color: 'var(--muted)' }}>{desc}</p>
       </div>
     </div>
   );

@@ -31,6 +31,9 @@ const Seasons = lazy(() => import('./pages/Seasons'));
 const Caderno = lazy(() => import('./pages/Caderno'));
 const Germoplasma = lazy(() => import('./pages/Germoplasma'));
 const Images = lazy(() => import('./pages/Images'));
+const BillingSuccess = lazy(() => import('./pages/BillingResult').then(m => ({ default: m.BillingSuccess })));
+const BillingFailed = lazy(() => import('./pages/BillingResult').then(m => ({ default: m.BillingFailed })));
+const BillingPending = lazy(() => import('./pages/BillingResult').then(m => ({ default: m.BillingPending })));
 
 // Fallback enquanto chunk lazy carrega
 function RouteFallback() {
@@ -84,6 +87,10 @@ function App() {
           <Route path="caderno" element={<Caderno />} />
           <Route path="germoplasma" element={<Germoplasma />} />
           <Route path="images" element={<Images />} />
+          {/* Páginas de retorno do checkout Mercado Pago */}
+          <Route path="billing/success" element={<BillingSuccess />} />
+          <Route path="billing/failed" element={<BillingFailed />} />
+          <Route path="billing/pending" element={<BillingPending />} />
         </Route>
       </Routes>
     </BrowserRouter>
