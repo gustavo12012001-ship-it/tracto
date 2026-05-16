@@ -1,35 +1,52 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Weather from './pages/Weather';
-import Chat from './pages/Chat';
-import Alerts from './pages/Alerts';
-import Reports from './pages/Reports';
-import Market from './pages/Market';
-import Services from './pages/Services';
 import Layout from './components/Layout';
-import LandingPage from './pages/LandingPage';
+import ProtectedRoute from './components/ProtectedRoute';
+
+// Páginas públicas: eagerly loaded (login flow precisa ser instantâneo)
+import Login from './pages/Login';
 import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
-import Pricing from './pages/Pricing';
-import Settings from './pages/Settings';
-import Maps from './pages/Maps';
-import Research from './pages/Research';
-import SoilData from './pages/SoilData';
-import FieldLog from './pages/FieldLog';
-import Calculator from './pages/Calculator';
-import Seasons from './pages/Seasons';
-import Caderno from './pages/Caderno';
-import Germoplasma from './pages/Germoplasma';
-import Images from './pages/Images';
-import ProtectedRoute from './components/ProtectedRoute';
+import LandingPage from './pages/LandingPage';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
+
+// Páginas internas: lazy loaded — reduz bundle inicial drasticamente.
+// Cada chunk só é baixado quando o usuário navega pra rota correspondente.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Weather = lazy(() => import('./pages/Weather'));
+const Chat = lazy(() => import('./pages/Chat'));
+const Alerts = lazy(() => import('./pages/Alerts'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Market = lazy(() => import('./pages/Market'));
+const Services = lazy(() => import('./pages/Services'));
+const Pricing = lazy(() => import('./pages/Pricing'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Maps = lazy(() => import('./pages/Maps'));
+const Research = lazy(() => import('./pages/Research'));
+const SoilData = lazy(() => import('./pages/SoilData'));
+const FieldLog = lazy(() => import('./pages/FieldLog'));
+const Calculator = lazy(() => import('./pages/Calculator'));
+const Seasons = lazy(() => import('./pages/Seasons'));
+const Caderno = lazy(() => import('./pages/Caderno'));
+const Germoplasma = lazy(() => import('./pages/Germoplasma'));
+const Images = lazy(() => import('./pages/Images'));
+
+// Fallback enquanto chunk lazy carrega
+function RouteFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center gap-3" style={{ background: 'var(--bg)' }}>
+      <div className="w-6 h-6 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+      <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando…</p>
+    </div>
+  );
+}
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Públicas — não lazy pra UX rápida no login */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
@@ -37,11 +54,14 @@ function App() {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
+        {/* App autenticado — todas lazy */}
         <Route
           path="/app"
           element={
             <ProtectedRoute>
-              <Layout />
+              <Suspense fallback={<RouteFallback />}>
+                <Layout />
+              </Suspense>
             </ProtectedRoute>
           }
         >

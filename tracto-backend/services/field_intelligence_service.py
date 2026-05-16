@@ -389,8 +389,10 @@ async def build_field_intelligence_snapshot(
 	lng = _first_or_default(field.get("longitude"))
 	boundaries = _safe_boundaries(field.get("boundaries"))
 
-	weather, weather_status = await _resolve_weather(lat, lng, field_id)
-	satellite, satellite_status = await _resolve_satellite(
+	# PARALELIZAÇÃO: weather + satellite são independentes — gather reduz latência
+	# de ~16s (sequencial: 5s weather + 8s satélite) pra ~8s (max dos dois).
+	weather_task = _resolve_weather(lat, lng, field_id)
+	satellite_task = _resolve_satellite(
 		lat,
 		lng,
 		boundaries,
@@ -399,6 +401,13 @@ async def build_field_intelligence_snapshot(
 		field_id,
 		force_refresh,
 	)
+	(weather_result, satellite_result) = await asyncio.gather(
+		weather_task,
+		satellite_task,
+		return_exceptions=False,  # erros parciais já são tratados internamente
+	)
+	weather, weather_status = weather_result
+	satellite, satellite_status = satellite_result
 
 	try:
 		analysis = await asyncio.wait_for(

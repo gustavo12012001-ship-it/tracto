@@ -555,20 +555,40 @@ export const useAppStore = create<AppState>()(
           return currentSnapshot;
         }
 
+        // ── Anti-race-condition ──────────────────────────────────────────
+        // Se já há uma fetch em andamento pra ESTE field, aborta a antiga.
+        // Evita: usuário troca rapidamente entre fields, requisição antiga
+        // termina DEPOIS da nova e sobrescreve com dados velhos.
+        const pendingMap = ((globalThis as unknown as {
+          __tracto_fetchAborters?: Map<string, AbortController>
+        }).__tracto_fetchAborters ??= new Map<string, AbortController>());
+        const previous = pendingMap.get(fieldId);
+        if (previous) previous.abort();
+        const ctrl = new AbortController();
+        pendingMap.set(fieldId, ctrl);
+
         set((state) => ({
           fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: true },
           fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: null },
         }));
 
         try {
-          const snapshot = await fetchFieldIntelligenceSnapshot(fieldId, forceRefresh);
+          const snapshot = await fetchFieldIntelligenceSnapshot(fieldId, forceRefresh, ctrl.signal);
+          // Se o controller foi abortado durante a request, descarta o resultado
+          if (ctrl.signal.aborted) return currentSnapshot ?? null;
           set((state) => ({
             fieldIntelligenceById: { ...state.fieldIntelligenceById, [fieldId]: snapshot },
             fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
             fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: null },
           }));
+          pendingMap.delete(fieldId);
           return snapshot;
         } catch (error) {
+          // Aborto silencioso — usuário trocou de field
+          if (ctrl.signal.aborted) {
+            pendingMap.delete(fieldId);
+            return currentSnapshot ?? null;
+          }
           const message = error instanceof Error ? error.message : 'Falha ao carregar snapshot do talhão.';
           if (isFieldNotFoundError(message)) {
             set((state) => {
@@ -586,6 +606,7 @@ export const useAppStore = create<AppState>()(
                 },
               };
             });
+            pendingMap.delete(fieldId);
             return null;
           }
 
@@ -593,6 +614,7 @@ export const useAppStore = create<AppState>()(
             fieldIntelligenceLoadingById: { ...state.fieldIntelligenceLoadingById, [fieldId]: false },
             fieldIntelligenceErrorById: { ...state.fieldIntelligenceErrorById, [fieldId]: message },
           }));
+          pendingMap.delete(fieldId);
           return currentSnapshot ?? null;
         }
       },

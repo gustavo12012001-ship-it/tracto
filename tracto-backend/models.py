@@ -5,23 +5,29 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "model"]
-    text: str
+    # Limita mensagem individual a 32KB de texto pra evitar abuso/DoS
+    text: str = Field(min_length=1, max_length=32_000)
 
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    field_id: str = Field(validation_alias=AliasChoices("field_id", "activeFieldId"))
-    messages: list[ChatMessage]
-    farm_context: str | None = "Fazenda sem dados especificos no momento."
-    image_base64: str | None = None
-    image_mime_type: str | None = "image/jpeg"
+    field_id: str = Field(
+        validation_alias=AliasChoices("field_id", "activeFieldId"),
+        min_length=1,
+        max_length=64,
+    )
+    # Histórico capped em 100 mensagens (Anthropic API tem limites próprios também)
+    messages: list[ChatMessage] = Field(min_length=1, max_length=100)
+    farm_context: str | None = Field(default="Fazenda sem dados especificos no momento.", max_length=64_000)
+    # image_base64 em até ~5MB (5MB * 1.37 base64 overhead = ~6.8M chars)
+    image_base64: str | None = Field(default=None, max_length=7_500_000)
+    image_mime_type: str | None = Field(default="image/jpeg", max_length=64)
     hourly_weather: dict | None = None
     satellite_context: dict[str, Any] | None = None
     # Perfil do usuário: 'produtor' | 'pesquisador' | None
-    user_profile: str | None = None
-    # Contexto de pesquisa (RAG): experimentos, ANOVA, germoplasma serializados
-    research_context: str | None = None
+    user_profile: Literal["produtor", "pesquisador"] | None = None
+    research_context: str | None = Field(default=None, max_length=128_000)
 
 
 class ChatResponse(BaseModel):
@@ -37,14 +43,15 @@ class ChatResponse(BaseModel):
 
 
 class AlertRequest(BaseModel):
-    temperature: float
-    humidity: float
-    rain_accumulation: float
-    wind_speed: float
-    et0: float | None = None
-    crop_type: str | None = None
-    fields: list[dict]
-    weather_forecast: str | None = None
+    # Bounds físicos realistas — protege contra payloads absurdos
+    temperature: float = Field(ge=-50.0, le=60.0)
+    humidity: float = Field(ge=0.0, le=100.0)
+    rain_accumulation: float = Field(ge=0.0, le=2000.0)  # mm/dia, recorde mundial ~1825
+    wind_speed: float = Field(ge=0.0, le=500.0)          # km/h
+    et0: float | None = Field(default=None, ge=0.0, le=50.0)
+    crop_type: str | None = Field(default=None, max_length=64)
+    fields: list[dict] = Field(max_length=500)
+    weather_forecast: str | None = Field(default=None, max_length=8_000)
 
 
 class FieldAnalysisRequest(BaseModel):

@@ -23,11 +23,45 @@ dist-ssr
 *.sln
 *.sw?
 
-# Dotenv
+# Dotenv — TODOS os .env (exceto .env.example que é template)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env*.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Secrets e credenciais
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+*-credentials.json
+service-account*.json
 
 # Python
 __pycache__
 *.pyc
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.tsbuildinfo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Tracto-specific
+.cache/
+satellite-cache-tmp/

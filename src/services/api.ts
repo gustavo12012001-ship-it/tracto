@@ -56,7 +56,33 @@ function buildFieldWeatherPayload(weatherCache: WeatherCache | null | undefined)
   };
 }
 
-export const apiFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+// ── Configuração de resilência ───────────────────────────────────────────────
+const DEFAULT_TIMEOUT_MS = 30_000; // 30s — generoso pra Sentinel/AI
+const DEFAULT_RETRIES = 2;          // 1 tentativa + 2 retries = 3 totais
+const RETRY_DELAY_MS = 800;         // base, dobra a cada retry
+
+/**
+ * Opções estendidas além de RequestInit padrão.
+ */
+export interface ApiFetchOptions extends RequestInit {
+  /** Timeout em ms. Default 30000. Use 0 pra desabilitar. */
+  timeoutMs?: number;
+  /** Quantos retries em 5xx/timeout/network. Default 2. */
+  retries?: number;
+  /** AbortSignal externo (ex: pra cancelar quando user troca de field). */
+  abortSignal?: AbortSignal;
+}
+
+function isRetryableStatus(status: number): boolean {
+  // 408 Request Timeout, 429 Too Many Requests, 5xx
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): Promise<T> => {
   if (!API_URL) {
     throw new Error('Backend não configurado. Defina VITE_API_URL no .env');
   }
@@ -70,64 +96,133 @@ export const apiFetch = async <T>(path: string, options: RequestInit = {}): Prom
 
   Object.entries(authHeaders).forEach(([key, value]) => headers.set(key, value));
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxRetries = options.retries ?? DEFAULT_RETRIES;
 
-    const contentType = response.headers.get('content-type') || '';
-    const isJson = contentType.includes('application/json');
+  const { timeoutMs: _t, retries: _r, abortSignal: externalSignal, ...fetchInit } = options;
+  void _t; void _r;
 
-    if (!response.ok) {
-      let detail = response.statusText;
+  let lastError: unknown = null;
 
-      try {
-        if (isJson) {
-          const payload = (await response.json()) as { detail?: string };
-          detail = payload.detail || detail;
-        } else {
-          detail = await response.text();
-        }
-      } catch {
-        detail = response.statusText;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // AbortController por tentativa — encadeia signal externo se houver
+    const controller = new AbortController();
+    const timeoutId = timeoutMs > 0
+      ? setTimeout(() => controller.abort(new Error(`Timeout após ${timeoutMs}ms`)), timeoutMs)
+      : null;
+
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort(externalSignal.reason);
+      } else {
+        externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
       }
-
-      if (response.status === 401) {
-        throw new Error('Sua sessao expirou. Entre novamente para continuar.');
-      }
-
-      throw new Error(`Erro na API (${response.status} ${response.statusText}): ${detail}`);
     }
 
-    if (!isJson) {
-      return (await response.text()) as T;
-    }
-
-    // Trata corretamente 204 No Content e respostas com body vazio
-    // (DELETE muitas vezes retorna body vazio → response.json() throw)
-    if (response.status === 204) {
-      return undefined as T;
-    }
-    const text = await response.text();
-    if (!text) {
-      return undefined as T;
-    }
     try {
-      return JSON.parse(text) as T;
-    } catch {
-      return undefined as T;
+      const response = await fetch(url, {
+        ...fetchInit,
+        headers,
+        signal: controller.signal,
+      });
+      if (timeoutId) clearTimeout(timeoutId);
+
+      // 204 No Content: nunca tem body, retorna undefined imediatamente
+      // (antes de qualquer parse pra evitar "Unexpected end of JSON input")
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+
+      if (!response.ok) {
+        // Retry em status retryável e se ainda há tentativas
+        if (isRetryableStatus(response.status) && attempt < maxRetries) {
+          lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
+          await delay(RETRY_DELAY_MS * Math.pow(2, attempt));
+          continue;
+        }
+
+        let detail = response.statusText;
+        try {
+          if (isJson) {
+            const payload = (await response.json()) as { detail?: string };
+            detail = payload.detail || detail;
+          } else {
+            detail = await response.text();
+          }
+        } catch {
+          detail = response.statusText;
+        }
+
+        if (response.status === 401) {
+          throw new Error('Sua sessao expirou. Entre novamente para continuar.');
+        }
+        if (response.status === 403) {
+          throw new Error(`Acesso negado: ${detail}`);
+        }
+        if (response.status === 404) {
+          throw new Error(`Não encontrado: ${detail}`);
+        }
+        if (response.status === 422) {
+          throw new Error(`Dados inválidos: ${detail}`);
+        }
+
+        throw new Error(`Erro na API (${response.status} ${response.statusText}): ${detail}`);
+      }
+
+      if (!isJson) {
+        return (await response.text()) as T;
+      }
+
+      // Trata corretamente 204 No Content e respostas com body vazio
+      if (response.status === 204) {
+        return undefined as T;
+      }
+      const text = await response.text();
+      if (!text) {
+        return undefined as T;
+      }
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        return undefined as T;
+      }
+    } catch (err) {
+      if (timeoutId) clearTimeout(timeoutId);
+
+      // Aborto externo NUNCA faz retry — propaga imediatamente
+      if (externalSignal?.aborted) {
+        throw new Error('Requisição cancelada');
+      }
+
+      // Network error ou timeout — retry se permitido
+      const isNetworkError = err instanceof TypeError && err.message === 'Failed to fetch';
+      const isAbortError = err instanceof DOMException && err.name === 'AbortError';
+
+      if ((isNetworkError || isAbortError) && attempt < maxRetries) {
+        lastError = err;
+        console.warn(`[API] tentativa ${attempt + 1}/${maxRetries + 1} falhou (${url}):`, err);
+        await delay(RETRY_DELAY_MS * Math.pow(2, attempt));
+        continue;
+      }
+
+      console.error('[API] fetch error:', url, err);
+      if (isNetworkError) {
+        throw new Error(`Falha de conexão com o backend em ${url}. Verifique sua internet.`);
+      }
+      if (isAbortError) {
+        throw new Error(`Requisição excedeu o tempo limite (${timeoutMs}ms).`);
+      }
+      if (err instanceof Error) {
+        throw err; // mantém a mensagem original (incluindo as específicas 401/403/etc)
+      }
+      throw new Error(`Erro de requisição para ${url}`);
     }
-  } catch (err) {
-    console.error('[API] fetch error:', url, err);
-    if (err instanceof TypeError && err.message === 'Failed to fetch') {
-      throw new Error(`Falha de conexão com o backend em ${url}. Verifique se o servidor está online, se a URL/API está correta e se o CORS está configurado corretamente.`);
-    }
-    if (err instanceof Error) {
-      throw new Error(`Erro de requisição para ${url}: ${err.message}`);
-    }
-    throw err;
   }
+
+  throw lastError instanceof Error ? lastError : new Error('Falha após retries');
 };
 
 export interface FieldAnalysisResult {
@@ -226,10 +321,16 @@ export async function analyzeField(
   });
 }
 
-export async function fetchFieldIntelligenceSnapshot(fieldId: string, forceRefresh = false) {
+export async function fetchFieldIntelligenceSnapshot(
+  fieldId: string,
+  forceRefresh = false,
+  abortSignal?: AbortSignal,
+) {
   const query = forceRefresh ? '?force_refresh=true' : '';
   return apiFetch<FieldIntelligenceSnapshot>(`/api/fields/${fieldId}/intelligence${query}`, {
     method: 'GET',
+    abortSignal,
+    timeoutMs: 45_000, // snapshot é pesado (Sentinel + Weather + IA) — timeout maior
   });
 }
 

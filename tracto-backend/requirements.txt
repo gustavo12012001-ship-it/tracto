@@ -1,17 +1,44 @@
-fastapi
-uvicorn[standard]
-supabase
-python-dotenv
-httpx
-pydantic
-pydantic-settings
-python-multipart
-slowapi
-limits
-requests
-anthropic
-Pillow
-rasterio
-yfinance
-pywebpush
-scipy>=1.11.0
+# Web framework
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+python-multipart>=0.0.20
+
+# Pydantic (modelos + settings)
+pydantic>=2.9,<3.0
+pydantic-settings>=2.7,<3.0
+
+# HTTP clients
+httpx>=0.27,<1.0
+requests>=2.32,<3.0
+
+# Rate limiting
+slowapi>=0.1.9
+limits>=3.13
+
+# Retry/resiliência em APIs externas (Sentinel, Anthropic, Z-API)
+tenacity>=9.0,<10.0
+
+# Auth / data
+supabase>=2.10,<3.0
+python-dotenv>=1.0
+
+# IA
+anthropic>=0.40,<1.0
+
+# Imagens / GIS
+Pillow>=11.0,<12.0
+rasterio>=1.3,<2.0
+
+# Mercado financeiro
+yfinance>=0.2.50
+
+# Push notifications
+pywebpush>=2.0
+
+# Cálculo científico
+scipy>=1.11,<2.0
+numpy>=1.26,<3.0
+
+# Testes (dev)
+pytest>=8.3
+pytest-asyncio>=0.24

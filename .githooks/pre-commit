@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Pre-commit hook do Tracto — bloqueia commits que vazariam secrets.
+# Ative via: git config core.hooksPath .githooks
+
+set -e
+
+# Cores
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+fail=0
+
+# 1) Bloqueia .env (exceto .env.example)
+staged_envs=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)\.env(\..*)?$' | grep -v '\.example$' || true)
+if [ -n "$staged_envs" ]; then
+  echo -e "${RED}✗ pre-commit: tentativa de commitar arquivos .env:${NC}"
+  echo "$staged_envs"
+  echo -e "${YELLOW}  Adicione no .gitignore ou use .env.example.${NC}"
+  fail=1
+fi
+
+# 2) Bloqueia padrões de secrets conhecidos no DIFF (não em arquivos inteiros)
+patterns=(
+  'sk-ant-api03-[A-Za-z0-9_-]{20,}'              # Anthropic
+  'sk-[A-Za-z0-9]{32,}'                          # OpenAI legacy
+  'gsk_[A-Za-z0-9]{20,}'                         # Groq
+  'AKIA[0-9A-Z]{16}'                             # AWS access key
+  'AIza[0-9A-Za-z_-]{35}'                        # Google API key
+  'eyJhbGciOiJI[A-Za-z0-9_-]{50,}'               # JWT (Supabase service key)
+  'xox[baprs]-[A-Za-z0-9-]{10,}'                 # Slack
+  'github_pat_[A-Za-z0-9_]{82}'                  # GitHub PAT
+  'glpat-[A-Za-z0-9_-]{20}'                      # GitLab PAT
+)
+
+diff_text=$(git diff --cached --no-color || true)
+for pat in "${patterns[@]}"; do
+  matches=$(echo "$diff_text" | grep -E "$pat" || true)
+  if [ -n "$matches" ]; then
+    echo -e "${RED}✗ pre-commit: padrão de secret detectado (${pat}):${NC}"
+    echo "$matches" | head -3
+    fail=1
+  fi
+done
+
+# 3) Bloqueia tokens commitados em qualquer arquivo .js .ts .tsx .py .json
+high_risk_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(js|jsx|ts|tsx|py|json|yml|yaml|env)$' || true)
+if [ -n "$high_risk_files" ]; then
+  while IFS= read -r file; do
+    [ -f "$file" ] || continue
+    # Procura por strings que parecem chaves longas hardcoded
+    if grep -nE '(api_key|apikey|secret|password|token)\s*[:=]\s*["\047][A-Za-z0-9_-]{20,}["\047]' "$file" > /tmp/_secret_check 2>/dev/null; then
+      # Filtra falsos positivos comuns
+      real=$(grep -v -E '(example|placeholder|YOUR_|<\w+>|test_|mock|dummy|fake|sua_chave|insira_aqui)' /tmp/_secret_check || true)
+      if [ -n "$real" ]; then
+        echo -e "${YELLOW}⚠ pre-commit: possível secret hardcoded em $file:${NC}"
+        echo "$real" | head -3
+        # warning, não bloqueia
+      fi
+    fi
+  done <<< "$high_risk_files"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo -e "${RED}Commit bloqueado. Resolva os problemas acima.${NC}"
+  echo -e "${YELLOW}Pra contornar emergencial (NÃO recomendado): git commit --no-verify${NC}"
+  exit 1
+fi
+
+exit 0

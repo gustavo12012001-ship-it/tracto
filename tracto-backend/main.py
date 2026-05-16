@@ -124,21 +124,41 @@ app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", ve
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+# ── Startup: inicia background tasks ────────────────────────────────────────
+@app.on_event("startup")
+async def _on_startup():
+    """Tarefas executadas uma vez quando o servidor sobe."""
+    try:
+        from services.cache_service import start_cache_gc_task
+        # GC do cache em arquivo a cada 1h — remove entradas expiradas
+        # e evita que .cache/analysis_cache.json cresça indefinidamente.
+        start_cache_gc_task(interval_seconds=3600)
+    except Exception as exc:
+        logging.warning("[startup] Falha ao iniciar cache GC task: %s", exc)
+
 # --- Structured Logging Middleware ---
 @app.middleware("http")
 async def structured_log_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.time()
-    
-    # ExtraÃ§Ã£o leve do sub_claim para contexto (nao confiavel ate verificado pelo auth_service)
-    unverified_uid = get_unverified_user_id_from_header(request.headers.get("Authorization")) or "anonymous"
+
+    # IMPORTANTE: extrai 'sub' do JWT SEM verificar assinatura. NÃO use pra
+    # autorização. Apenas pra correlacionar logs e métricas. O auth_service
+    # faz a verificação real via Supabase quando o endpoint usa get_current_user.
+    unverified_context_uid = get_unverified_user_id_from_header(
+        request.headers.get("Authorization")
+    ) or "anonymous"
 
     response = await call_next(request)
-    
+
     duration = time.time() - start_time
     log_data = {
         "request_id": request_id,
-        "context_user_id": unverified_uid, # Nomeado explicitamente como contexto
+        # Prefixo 'unverified_' deixa explícito que o claim não foi validado.
+        # Auditorias post-incident não devem confiar nesse campo.
+        "unverified_context_uid": unverified_context_uid,
+        "is_verified_uid": False,
         "method": request.method,
         "path": request.url.path,
         "status_code": response.status_code,
@@ -177,12 +197,19 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 
+# CORS — whitelist EXPLÍCITA. Regex foi removido pra evitar que subdomínios
+# arbitrários do *.vercel.app (incluindo previews de forks maliciosos)
+# consigam fazer requisições autenticadas.
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 if allowed_origins_env:
     allow_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
 else:
     allow_origins = [
+        # Produção
         "https://tracto-eta.vercel.app",
+        "https://tractoagro.com.br",
+        "https://www.tractoagro.com.br",
+        # Desenvolvimento local
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:5174",
@@ -195,9 +222,13 @@ else:
         "http://127.0.0.1:5176",
     ]
 
-# Matches all Vercel preview and production deployments for the tracto project
-# e.g. tracto-eta.vercel.app, tracto-git-main-abc123.vercel.app
-allow_origin_regex = os.getenv("ALLOWED_ORIGINS_REGEX", r"https://tracto[-a-z0-9]*\.vercel\.app")
+# Regex restrito SOMENTE pra deploys preview do projeto Tracto (mesma org Vercel).
+# Pattern: tracto-<hash>-gustavo12012001-ship-its-projects.vercel.app
+# Se quiser desabilitar previews completamente, defina ALLOWED_ORIGINS_REGEX=""
+allow_origin_regex = os.getenv(
+    "ALLOWED_ORIGINS_REGEX",
+    r"^https://tracto-[a-z0-9-]+-gustavo12012001-ship-its-projects\.vercel\.app$",
+) or None
 
 app.add_middleware(
     CORSMiddleware,
@@ -207,6 +238,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key", "Accept", "Origin", "X-Request-ID"],
     expose_headers=["X-Scene-Bounds", "X-Scene-Id", "X-Cache", "X-Cache-Source", "X-Source", "X-Scene-Date", "X-Mode", "X-Request-ID", "X-Provider", "X-Resolution", "X-Asset-Status"],
+    max_age=600,  # cache de preflight CORS
 )
 
 
@@ -2375,7 +2407,8 @@ async def get_field_analyses_endpoint(
 
 
 @app.post("/api/verify-recaptcha")
-async def verify_recaptcha(request: RecaptchaRequest):
+@limiter.limit("10/minute")  # anti-brute-force em fluxos de auth
+async def verify_recaptcha(request: Request, body: RecaptchaRequest):
     try:
         secret_key = os.getenv("RECAPTCHA_SECRET_KEY")
         if not secret_key:
@@ -2389,7 +2422,7 @@ async def verify_recaptcha(request: RecaptchaRequest):
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 "https://www.google.com/recaptcha/api/siteverify",
-                data={"secret": secret_key, "response": request.token},
+                data={"secret": secret_key, "response": body.token},
             )
             data = response.json()
 

@@ -86,5 +86,56 @@ class AnalysisCache:
             self._save_cache()
             return len(keys_to_remove)
 
+    def gc(self) -> int:
+        """
+        Remove TODAS as entradas expiradas. Chamado por background task.
+        Retorna número de entradas removidas.
+        """
+        now = time.time()
+        with self._lock:
+            expired = [k for k, v in self._cache.items()
+                       if not isinstance(v, dict) or "expire_at" not in v
+                       or v["expire_at"] <= now]
+            if not expired:
+                return 0
+            for k in expired:
+                del self._cache[k]
+            self._save_cache()
+            return len(expired)
+
+    def stats(self) -> dict:
+        """Métricas pra observabilidade."""
+        with self._lock:
+            now = time.time()
+            total = len(self._cache)
+            expired = sum(
+                1 for v in self._cache.values()
+                if isinstance(v, dict) and v.get("expire_at", 0) <= now
+            )
+            return {"total": total, "expired": expired, "active": total - expired}
+
+
 # Global instance
 analysis_cache = AnalysisCache()
+
+
+def start_cache_gc_task(interval_seconds: int = 3600) -> None:
+    """
+    Inicia thread daemon que roda gc() a cada N segundos.
+    Chame uma vez na startup do FastAPI (lifespan ou startup event).
+    """
+    import logging
+
+    def _loop():
+        while True:
+            time.sleep(interval_seconds)
+            try:
+                removed = analysis_cache.gc()
+                if removed > 0:
+                    logging.info("[cache_gc] removed %d expired entries", removed)
+            except Exception as exc:
+                logging.warning("[cache_gc] erro durante GC: %s", exc)
+
+    t = threading.Thread(target=_loop, daemon=True, name="cache-gc")
+    t.start()
+    logging.info("[cache_gc] background task started, interval=%ds", interval_seconds)

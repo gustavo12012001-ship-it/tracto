@@ -122,3 +122,42 @@ def verify_access_token(access_token: str) -> AuthenticatedUser:
 def get_current_user(authorization: str | None = Header(default=None)) -> AuthenticatedUser:
     token = _extract_bearer_token(authorization)
     return verify_access_token(token)
+
+
+# ── Ownership guards (anti-IDOR) ─────────────────────────────────────────────
+# Como o backend usa SUPABASE_SERVICE_KEY (bypassa RLS), TODO endpoint que
+# recebe path param de recurso DEVE validar ownership manualmente. Estas
+# dependências centralizam a checagem pra evitar bugs de omissão.
+
+def require_field_ownership(field_id: str, user: AuthenticatedUser) -> dict:
+    """
+    Confirma que o user é dono do field e retorna o registro. 404 caso
+    contrário. Use como dependency FastAPI.
+    """
+    from fastapi import HTTPException, status as _status
+    from services import farm_service
+    if not field_id or not field_id.strip():
+        raise HTTPException(status_code=_status.HTTP_400_BAD_REQUEST, detail="field_id inválido.")
+    field = farm_service.get_field_by_id(user.id, field_id.strip())
+    if not field:
+        # 404 (não 403) — não revela existência de field de outro usuário
+        raise HTTPException(
+            status_code=_status.HTTP_404_NOT_FOUND,
+            detail="Talhão não encontrado ou sem permissão de acesso.",
+        )
+    return field
+
+
+def require_farm_ownership(farm_id: str, user: AuthenticatedUser) -> dict:
+    """Mesma ideia pra farms."""
+    from fastapi import HTTPException, status as _status
+    from services import farm_service
+    if not farm_id or not farm_id.strip():
+        raise HTTPException(status_code=_status.HTTP_400_BAD_REQUEST, detail="farm_id inválido.")
+    farm = farm_service.get_farm_by_id(user.id, farm_id.strip()) if hasattr(farm_service, "get_farm_by_id") else None
+    if not farm:
+        raise HTTPException(
+            status_code=_status.HTTP_404_NOT_FOUND,
+            detail="Fazenda não encontrada ou sem permissão de acesso.",
+        )
+    return farm
