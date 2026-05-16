@@ -1565,8 +1565,7 @@ export default function FieldMap() {
         <div className="absolute inset-0 z-[600] flex items-center justify-center pointer-events-auto"
           style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
           onClick={(e) => { if (e.target === e.currentTarget) { setShowNewFarmModal(false); setNewFarmName(''); setNewFarmCity(''); } }}>
-          <div className="flex flex-col gap-4 rounded-2xl px-6 py-5 w-full max-w-md mx-4"
-            style={{ background: 'rgba(8,8,9,0.98)', border: '1px solid rgba(255,255,255,0.10)', backdropFilter: 'blur(20px)' }}>
+          <div className="glass-overlay flex flex-col gap-4 rounded-2xl px-6 py-5 w-full max-w-md mx-4">
 
             {/* Header */}
             <div className="flex items-center justify-between">

@@ -355,9 +355,9 @@ export default function Layout() {
           --primary-border: rgba(212,78,10,0.22);
           --bg: #f4f3ef;
           --sidebar: #ffffff;
-          --surface: rgba(0,0,0,0.03);
-          --border: rgba(0,0,0,0.09);
-          --border-strong: rgba(0,0,0,0.18);
+          --surface: rgba(0,0,0,0.04);
+          --border: rgba(15,23,42,0.18);
+          --border-strong: rgba(15,23,42,0.28);
           --muted: #475569;
           --text: #0f172a;
           --text-secondary: #334155;
@@ -417,7 +417,7 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(255,255,255,0.03)"] { background: rgba(0,0,0,0.04) !important; }
         [data-theme="light"] [style*="rgba(255,255,255,0.05)"] { background: rgba(0,0,0,0.05) !important; }
         [data-theme="light"] [style*="rgba(255,255,255,0.06)"] { background: rgba(0,0,0,0.06) !important; }
-        /* Bordas claras → bordas escuras suaves (PERSISTE em todas as áreas) */
+        /* Bordas claras → bordas escuras VISÍVEIS (PERSISTE em todas as áreas) */
         [data-theme="light"] [style*="rgba(255,255,255,0.05)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.06)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.07)"],
@@ -426,14 +426,14 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(255,255,255,0.10)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.12)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.15)"] {
-          border-color: rgba(15,23,42,0.12) !important;
+          border-color: rgba(15,23,42,0.18) !important;
         }
         /* Bordas explícitas Tailwind (border-white/N) → visíveis no light mode */
         [data-theme="light"] .border-white\/5,
         [data-theme="light"] .border-white\/10,
         [data-theme="light"] .border-white\/15,
         [data-theme="light"] .border-white\/20 {
-          border-color: rgba(15,23,42,0.12) !important;
+          border-color: rgba(15,23,42,0.18) !important;
         }
         /* Divider lines em <hr> e elementos com border-t/b/l/r usando rgba branco */
         [data-theme="light"] [style*="borderColor: rgba(255,255,255"],
@@ -442,7 +442,13 @@ export default function Layout() {
         [data-theme="light"] [style*="border-bottom: 1px solid rgba(255,255,255"],
         [data-theme="light"] [style*="borderTop: '1px solid rgba(255,255,255"],
         [data-theme="light"] [style*="borderBottom: '1px solid rgba(255,255,255"] {
-          border-color: rgba(15,23,42,0.12) !important;
+          border-color: rgba(15,23,42,0.18) !important;
+        }
+        /* Cards/seções com border solid var(--border) ganham sombra leve pra destacar */
+        [data-theme="light"] .card-glass,
+        [data-theme="light"] [class*="rounded-2xl"][style*="var(--surface)"],
+        [data-theme="light"] [class*="rounded-xl"][style*="var(--surface)"] {
+          box-shadow: 0 1px 3px rgba(15,23,42,0.05);
         }
         /* Scrollbar */
         [data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
