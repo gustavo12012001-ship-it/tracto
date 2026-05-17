@@ -9,6 +9,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // skipWaiting + clientsClaim garantem que novo SW assume controle imediatamente
+      // sem precisar fechar todas as abas. Pareado com NetworkFirst em /api/ e em
+      // index.html, garante que código novo é entregue na primeira navegação.
+      injectRegister: 'auto',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
         name: 'Tracto — Plataforma AgTech',
@@ -25,6 +29,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        // index.html via NetworkFirst pra sempre buscar versão nova primeiro
+        navigateFallback: '/index.html',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           // Open-Meteo — cache 30 min
