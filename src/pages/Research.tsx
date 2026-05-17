@@ -1075,7 +1075,7 @@ function AnovaPanel({ exp }: { exp: Experiment }) {
 
           {/* Tabela de médias */}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                   {['Tratamento', 'Média', 'Desvio', 'n', 'Letra'].map(h => (

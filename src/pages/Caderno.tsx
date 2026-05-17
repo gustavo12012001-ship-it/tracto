@@ -249,7 +249,7 @@ function FitossanitarioTab() {
       {/* Form */}
       <div className="p-4 pb-2">
         <div className="rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className={labelCls}>{cat === 'weed' ? 'Espécie' : 'Nome comum'}</label>
               <input className={inputCls} value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} placeholder="Ex: Lagarta-do-cartucho" />
@@ -259,7 +259,7 @@ function FitossanitarioTab() {
               <input className={inputCls} value={form.scientific_name} onChange={e => setForm(p => ({...p, scientific_name: e.target.value}))} placeholder="Opcional" />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
             <div>
               <label className={labelCls}>Data</label>
               <input type="date" className={inputCls} value={form.occurred_at} onChange={e => setForm(p => ({...p, occurred_at: e.target.value}))} />
@@ -411,7 +411,7 @@ function AplicacoesTab() {
 
       <div className="p-4 pb-2">
         <div className="rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className={labelCls}>Produto / Insumo *</label>
               <input className={inputCls} value={form.product} onChange={e => setForm(p => ({...p, product: e.target.value}))} placeholder="Ex: Vertimec" />
@@ -423,7 +423,7 @@ function AplicacoesTab() {
           </div>
           {type === 'application' && (
             <>
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className={labelCls}>Ingrediente ativo</label>
                   <input className={inputCls} value={form.active_ingredient} onChange={e => setForm(p => ({...p, active_ingredient: e.target.value}))} />
@@ -436,7 +436,7 @@ function AplicacoesTab() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className={labelCls}>Dose (L/ha ou kg/ha)</label>
                   <input className={inputCls} value={form.dose} onChange={e => setForm(p => ({...p, dose: e.target.value}))} />
@@ -453,7 +453,7 @@ function AplicacoesTab() {
             </>
           )}
           {type === 'fertilization' && (
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <label className={labelCls}>Dose (kg/ha)</label>
                 <input className={inputCls} value={form.dose} onChange={e => setForm(p => ({...p, dose: e.target.value}))} />
@@ -465,7 +465,7 @@ function AplicacoesTab() {
             </div>
           )}
           {type === 'irrigation' && (
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <label className={labelCls}>Duração (h)</label>
                 <input className={inputCls} value={form.dose} onChange={e => setForm(p => ({...p, dose: e.target.value}))} />
@@ -476,7 +476,7 @@ function AplicacoesTab() {
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className={labelCls}>Data</label>
               <input type="date" className={inputCls} value={form.occurred_at} onChange={e => setForm(p => ({...p, occurred_at: e.target.value}))} />
@@ -586,7 +586,7 @@ function ColheitaTab() {
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       <div className="p-4 pb-2">
         <div className="rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className={labelCls}>Início da colheita</label>
               <input type="date" className={inputCls} value={form.start_date} onChange={e => setForm(p => ({...p, start_date: e.target.value}))} />
@@ -596,7 +596,7 @@ function ColheitaTab() {
               <input type="date" className={inputCls} value={form.end_date} onChange={e => setForm(p => ({...p, end_date: e.target.value}))} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
             <div>
               <label className={labelCls}>Produtividade estimada (sc/ha)</label>
               <input type="number" className={inputCls} value={form.estimated_yield_sc_ha} onChange={e => setForm(p => ({...p, estimated_yield_sc_ha: e.target.value}))} />
@@ -686,12 +686,24 @@ export default function Caderno() {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
-      {/* ── Tab bar — full-width, tabs distribuídas igualmente ──────────────── */}
+      {/* ── Tab bar — mobile: select dropdown · desktop: tabs distribuídas ─── */}
       <div
-        className="flex-shrink-0 overflow-x-auto scrollbar-thin"
+        className="flex-shrink-0"
         style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--border)' }}
       >
-        <div className="flex items-stretch w-full px-2 py-1">
+        {/* Mobile: native select pra economizar espaço */}
+        <div className="md:hidden px-3 py-2">
+          <select
+            className="tracto-select w-full rounded-lg px-3 py-2 text-sm font-bold"
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as CadernoTab)}>
+            {TABS.map((tab) => (
+              <option key={tab.id} value={tab.id}>{tab.label}</option>
+            ))}
+          </select>
+        </div>
+        {/* Desktop: tabs horizontais distribuídas */}
+        <div className="hidden md:flex items-stretch w-full px-2 py-1 overflow-x-auto scrollbar-thin">
         {TABS.map((tab) => (
           <button
             key={tab.id}

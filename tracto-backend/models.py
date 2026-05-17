@@ -22,7 +22,9 @@ class ChatRequest(BaseModel):
     farm_context: str | None = Field(default="Fazenda sem dados especificos no momento.", max_length=64_000)
     # image_base64 em até ~5MB (5MB * 1.37 base64 overhead = ~6.8M chars)
     image_base64: str | None = Field(default=None, max_length=7_500_000)
-    image_mime_type: str | None = Field(default="image/jpeg", max_length=64)
+    # Whitelist explícita de mime types — evita que cliente envie tipos arbitrários
+    # que a IA possa interpretar mal ou que pra contornar validação
+    image_mime_type: Literal["image/jpeg", "image/png", "image/webp", "image/gif"] | None = "image/jpeg"
     hourly_weather: dict | None = None
     satellite_context: dict[str, Any] | None = None
     # Perfil do usuário: 'produtor' | 'pesquisador' | None

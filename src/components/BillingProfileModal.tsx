@@ -147,7 +147,7 @@ export default function BillingProfileModal({ initialProfile, onClose, onSaved }
       style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}>
       <div
-        className="glass-overlay rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-thin"
+        className="glass-overlay rounded-2xl w-full max-w-sm md:max-w-2xl max-h-[95vh] md:max-h-[90vh] overflow-y-auto scrollbar-thin"
         onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}

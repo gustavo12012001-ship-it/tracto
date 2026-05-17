@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { jsPDF } from 'jspdf';
+// jsPDF lazy-loaded só quando user clica "Gerar PDF" — economiza ~390KB no bundle inicial
+// Import dinâmico embedded em generatePDF() abaixo.
 import {
   LineChart,
   Line,
@@ -156,10 +157,12 @@ function NdviTooltip({ active, payload, label }: CustomTooltipProps) {
 }
 
 // ── PDF export ────────────────────────────────────────────────────────────────
-function exportPDF(
+// jsPDF (~390KB) lazy-loaded via dynamic import — só baixa quando user clica "Gerar PDF"
+async function exportPDF(
   fields: ReturnType<typeof useAppStore.getState>['fields'],
   activeFieldName?: string | null
 ) {
+  const { jsPDF } = await import('jspdf');
   const doc = new jsPDF();
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
@@ -522,7 +525,7 @@ export default function Reports() {
             </button>
             {/* Exportar PDF */}
             <button
-              onClick={() => exportPDF(fields, activeField?.name ?? null)}
+              onClick={() => void exportPDF(fields, activeField?.name ?? null)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
               style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.28)' }}
             >
@@ -864,7 +867,7 @@ export default function Reports() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[600px]">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Relatório', 'Talhão', 'Área', 'Data', 'Status', ''].map((h) => (
@@ -893,7 +896,7 @@ export default function Reports() {
                       </td>
                       <td className="px-5 py-3">
                         <button
-                          onClick={() => exportPDF([fields[i]], activeField?.name ?? null)}
+                          onClick={() => void exportPDF([fields[i]], activeField?.name ?? null)}
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
                           style={{ background: 'rgba(236,91,19,0.1)', color: '#ec5b13', border: '1px solid rgba(236,91,19,0.15)' }}
                         >
@@ -941,7 +944,7 @@ export default function Reports() {
               <>
                 {/* Tabela */}
                 <div className="overflow-x-auto mb-4">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm min-w-[600px]">
                     <thead>
                       <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                         {['Safra', 'Cultura', 'Plantio', 'Colheita', 'Área (ha)', 'sc/ha', 'Total (sc)'].map(h => (

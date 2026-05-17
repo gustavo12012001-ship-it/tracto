@@ -214,8 +214,8 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Sidebar de Inteligência */}
-      <aside className="w-72 flex-shrink-0 flex flex-col overflow-y-auto scrollbar-thin" style={{ background: 'rgba(255,255,255,0.015)', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
+      {/* Sidebar de Inteligência — escondida em mobile (< 1024px) */}
+      <aside className="hidden lg:flex w-72 flex-shrink-0 flex-col overflow-y-auto scrollbar-thin" style={{ background: 'rgba(255,255,255,0.015)', borderLeft: '1px solid rgba(255,255,255,0.07)' }}>
         <div className="p-4 flex flex-col gap-4">
 
           {/* Cards de Métricas */}

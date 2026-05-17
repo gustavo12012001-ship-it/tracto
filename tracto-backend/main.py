@@ -767,12 +767,20 @@ async def _process_payment_event(payment: dict) -> None:
     key = os.getenv("SUPABASE_SERVICE_KEY", "")
     sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/payment_transactions"
 
-    ext_ref = payment.get("external_reference")  # nosso subscription_id
+    # ── ANTI-FRAUD: NÃO confia no external_reference ──────────────────────
+    # Atacante poderia forjar external_reference apontando pra subscription
+    # de outro usuário. Resolve user_id e subscription via:
+    #   1º mp_preapproval_id (vem do MP, autêntico)
+    #   2º payer.id ou payer.email do payment (cross-check)
+    mp_preapproval_id = payment.get("preapproval_id") or (
+        payment.get("metadata") or {}
+    ).get("preapproval_id")
+    payer_email = (payment.get("payer") or {}).get("email")
+    ext_ref = payment.get("external_reference")
     amount_cents = int(round(float(payment.get("transaction_amount", 0)) * 100))
 
     payload = {
         "mp_payment_id": str(payment.get("id")),
-        "subscription_id": ext_ref if ext_ref else None,
         "amount_cents": amount_cents,
         "currency": payment.get("currency_id", "BRL"),
         "status": payment.get("status"),
@@ -782,20 +790,42 @@ async def _process_payment_event(payment: dict) -> None:
         "paid_at": payment.get("date_approved"),
         "raw_payload": payment,
     }
-    # Tenta achar user_id via subscription
-    if ext_ref:
-        sub_resp = _req.get(
+    # Resolve subscription pela ORDEM SEGURA:
+    sub_row = None
+    if mp_preapproval_id:
+        sr = _req.get(
             f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
             headers={"apikey": key, "Authorization": f"Bearer {key}"},
-            params={"id": f"eq.{ext_ref}", "limit": "1"},
+            params={"mp_preapproval_id": f"eq.{mp_preapproval_id}", "limit": "1"},
             timeout=10,
         )
-        if sub_resp.ok and sub_resp.json():
-            payload["user_id"] = sub_resp.json()[0]["user_id"]
+        if sr.ok and sr.json():
+            sub_row = sr.json()[0]
+    if not sub_row and ext_ref and payer_email:
+        # Fallback: external_reference + cross-check do email
+        sr = _req.get(
+            f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            params={
+                "id": f"eq.{ext_ref}",
+                "mp_payer_email": f"eq.{payer_email}",
+                "limit": "1",
+            },
+            timeout=10,
+        )
+        if sr.ok and sr.json():
+            sub_row = sr.json()[0]
 
-    if not payload.get("user_id"):
-        logging.warning("[MP webhook] payment sem user_id resolúvel: %s", payment.get("id"))
+    if not sub_row:
+        logging.warning(
+            "[MP webhook] payment %s sem subscription resolvível (preapproval=%s, ext_ref=%s, email=%s)",
+            payment.get("id"), mp_preapproval_id, ext_ref, payer_email,
+        )
         return
+
+    payload["subscription_id"] = sub_row["id"]
+    payload["user_id"] = sub_row["user_id"]
+    payload["mp_preapproval_id"] = sub_row.get("mp_preapproval_id")
 
     _req.post(
         sb_url,

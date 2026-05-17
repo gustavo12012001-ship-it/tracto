@@ -92,10 +92,17 @@ def verify_webhook_signature(
         True se a assinatura é válida, False caso contrário.
     """
     secret = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()
+    is_production = os.getenv("ENVIRONMENT", "").lower() in ("production", "prod")
     if not secret:
-        # Em desenvolvimento sem webhook secret configurado, aceita (warn)
+        if is_production:
+            # PRODUÇÃO sem secret = REJEITA. Não dá pra arriscar fraude monetária.
+            logging.error(
+                "[MP] MERCADO_PAGO_WEBHOOK_SECRET ausente em produção — webhook REJEITADO."
+            )
+            return False
+        # Apenas em dev/sandbox: avisa mas aceita
         logging.warning(
-            "[MP] MERCADO_PAGO_WEBHOOK_SECRET não configurada — webhook aceito sem verificação. "
+            "[MP] MERCADO_PAGO_WEBHOOK_SECRET não configurada (modo dev). "
             "CONFIGURE EM PRODUÇÃO."
         )
         return True

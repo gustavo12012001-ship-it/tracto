@@ -694,9 +694,9 @@ export default function Images() {
   return (
     <div className="flex flex-1 w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
-      {/* ── Sidebar: lista de talhões ─────────────────────────────────────── */}
+      {/* ── Sidebar: lista de talhões — escondida em mobile (< 768px) ────── */}
       <aside
-        className="w-52 flex-shrink-0 flex flex-col border-r overflow-y-auto scrollbar-thin"
+        className="hidden md:flex w-52 flex-shrink-0 flex-col border-r overflow-y-auto scrollbar-thin"
         style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
 
         <div className="px-3 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
@@ -809,6 +809,30 @@ export default function Images() {
             <div
               className="flex-shrink-0 px-4 py-3 border-b"
               style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}>
+              {/* Dropdown mobile pra trocar de talhão (substitui a sidebar oculta) */}
+              <div className="md:hidden mb-3">
+                <label className="block text-[10px] uppercase font-bold tracking-widest mb-1" style={{ color: 'var(--muted)' }}>
+                  Talhão
+                </label>
+                <select
+                  className="tracto-select w-full rounded-lg px-3 py-2 text-sm"
+                  value={selectedFieldId}
+                  onChange={(e) => handleSelectField(e.target.value)}>
+                  {farms.map((farm) => {
+                    const farmFields = fields.filter((f) => f.farm_id === farm.id);
+                    if (farmFields.length === 0) return null;
+                    return (
+                      <optgroup key={farm.id} label={farm.name}>
+                        {farmFields.map((f) => (
+                          <option key={f.id} value={f.id ?? ''}>
+                            {f.name}{f.areaHa ? ` — ${f.areaHa.toFixed(2)} ha` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
               <div className="flex items-start gap-3 flex-wrap">
                 <span className="material-symbols-outlined text-2xl flex-shrink-0" style={{ color: 'var(--primary)' }}>
                   crop_square

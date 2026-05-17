@@ -573,9 +573,9 @@ export default function Chat() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── Sidebar: Histórico ──────────────────────────────────────────── */}
+      {/* ── Sidebar: Histórico — escondida em mobile (< 1024px) ─────────── */}
       <div
-        className="w-64 flex-shrink-0 flex flex-col border-r"
+        className="hidden lg:flex w-64 flex-shrink-0 flex-col border-r"
         style={{ background: 'rgba(255,255,255,0.01)', borderColor: 'rgba(255,255,255,0.07)' }}
       >
         {/* New conversation button */}

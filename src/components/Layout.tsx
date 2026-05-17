@@ -4,6 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
 import { FALLBACK_LOCATION } from '../utils/geolocation';
 import { preloadWeather } from '../services/api';
+import { ToastProvider } from './ui/Toast';
 
 // ── Theme helpers ─────────────────────────────────────────────────────────────
 type Theme = 'dark' | 'light';
@@ -598,6 +599,64 @@ export default function Layout() {
           color: inherit !important;
         }
 
+        /* ── A11y: focus rings em todos elementos interativos ── */
+        /* WCAG 2.1: focus visível é obrigatório pra navegação por teclado */
+        button:focus-visible,
+        a:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        [role="button"]:focus-visible {
+          outline: 2px solid #ec5b13;
+          outline-offset: 2px;
+          border-radius: 6px;
+        }
+        /* Sobrescreve focus:outline-none de Tailwind apenas quando keyboard nav */
+        :focus:not(:focus-visible) {
+          outline: none;
+        }
+
+        /* ── A11y: touch targets mínimo 44px em mobile ── */
+        @media (max-width: 768px) {
+          button, a[role="button"], a.btn, [role="button"] {
+            min-height: 36px;
+            min-width: 36px;
+          }
+        }
+
+        /* ── A11y: screen reader only utility ── */
+        .sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+        .focus\\:not-sr-only:focus {
+          position: static;
+          width: auto;
+          height: auto;
+          padding: inherit;
+          margin: inherit;
+          overflow: visible;
+          clip: auto;
+          white-space: normal;
+        }
+
+        /* ── Reduced motion: respeita preferência do usuário ── */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
         /* ── Tracto Input/Select/Label — classes reutilizáveis adaptativas ── */
         .tracto-input, .tracto-select {
           background: rgba(255,255,255,0.05) !important;
@@ -1041,12 +1100,22 @@ export default function Layout() {
             </div>
           </header>
 
-          {/* Page Content â€" scrolls correctly on mobile */}
-          <main className="flex-1 flex overflow-hidden min-h-0">
+          {/* Skip to content (a11y) */}
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[6000] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-orange-500 focus:text-white">
+            Pular para o conteúdo
+          </a>
+
+          {/* Page Content — scrolls correctly on mobile */}
+          <main id="main-content" className="flex-1 flex overflow-hidden min-h-0" role="main">
             <Outlet />
           </main>
         </div>
       </div>
+
+      {/* Toast notifications globais */}
+      <ToastProvider />
     </>
   );
 }
