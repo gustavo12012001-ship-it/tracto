@@ -866,49 +866,77 @@ export default function Reports() {
               <p className="text-xs" style={{ color: '#64748b' }}>Vá ao mapa e desenhe um talhão para gerar relatórios automáticos.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[600px]">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Relatório', 'Talhão', 'Área', 'Data', 'Status', ''].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {fieldRows.map((row, i) => (
-                    <tr key={i} className="transition-colors hover:bg-white/[0.02]" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(236,91,19,0.12)' }}>
-                            <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>{row.icon}</span>
-                          </div>
-                          <span className="font-medium text-white truncate max-w-[140px]">{row.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{row.field}</td>
-                      <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{row.area}</td>
-                      <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{row.date}</td>
-                      <td className="px-5 py-3">
-                        <span className="px-2 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3">
-                        <button
-                          onClick={() => void exportPDF([fields[i]], activeField?.name ?? null)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
-                          style={{ background: 'rgba(236,91,19,0.1)', color: '#ec5b13', border: '1px solid rgba(236,91,19,0.15)' }}
-                        >
-                          <span className="material-symbols-outlined text-xs">download</span>
-                          PDF
-                        </button>
-                      </td>
+            <>
+              {/* Mobile: cards */}
+              <div className="md:hidden divide-y" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+                {fieldRows.map((row, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(236,91,19,0.12)' }}>
+                        <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>{row.icon}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-white truncate">{row.name}</p>
+                        <p className="text-[10px] mt-0.5 truncate" style={{ color: '#64748b' }}>{row.field} · {row.area} · {row.date}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => void exportPDF([fields[i]], activeField?.name ?? null)}
+                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-[10px] font-semibold flex-shrink-0 transition-all hover:opacity-80"
+                      style={{ background: 'rgba(236,91,19,0.1)', color: '#ec5b13', border: '1px solid rgba(236,91,19,0.15)' }}
+                    >
+                      <span className="material-symbols-outlined text-xs">download</span>
+                      PDF
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-xs min-w-[600px]">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      {['Relatório', 'Talhão', 'Área', 'Data', 'Status', ''].map((h) => (
+                        <th key={h} className="px-5 py-3 text-left font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {fieldRows.map((row, i) => (
+                      <tr key={i} className="transition-colors hover:bg-white/[0.02]" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(236,91,19,0.12)' }}>
+                              <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>{row.icon}</span>
+                            </div>
+                            <span className="font-medium text-white truncate max-w-[140px]">{row.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{row.field}</td>
+                        <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{row.area}</td>
+                        <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{row.date}</td>
+                        <td className="px-5 py-3">
+                          <span className="px-2 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <button
+                            onClick={() => void exportPDF([fields[i]], activeField?.name ?? null)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
+                            style={{ background: 'rgba(236,91,19,0.1)', color: '#ec5b13', border: '1px solid rgba(236,91,19,0.15)' }}
+                          >
+                            <span className="material-symbols-outlined text-xs">download</span>
+                            PDF
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 

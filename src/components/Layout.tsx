@@ -723,7 +723,7 @@ export default function Layout() {
         }
         .drawer-panel {
           position: fixed; top: 0; left: 0; bottom: 0;
-          width: 240px; z-index: 50;
+          width: min(240px, 80vw); z-index: 50;
           transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
         }
         .drawer-panel.open { transform: translateX(0); }
@@ -768,7 +768,7 @@ export default function Layout() {
               {/* Hamburguer â€" mobile only */}
               <button
                 onClick={() => setDrawerOpen(true)}
-                className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg transition-all"
+                className="md:hidden flex items-center justify-center w-11 h-11 rounded-lg transition-all"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                 aria-label="Abrir menu"
               >
@@ -799,7 +799,7 @@ export default function Layout() {
 
                 {selectorOpen && (
                   <div className="glass-overlay absolute top-full left-0 mt-1.5 z-[600] rounded-xl flex flex-col"
-                    style={{ minWidth: 300, maxHeight: 480, overflowY: 'auto' }}>
+                    style={{ minWidth: 300, maxHeight: 'min(480px, 75vh)', overflowY: 'auto' }}>
 
                     {farms.length === 0 ? (
                       <p className="px-4 py-4 text-[11px]" style={{ color: '#475569' }}>Nenhuma fazenda cadastrada.</p>

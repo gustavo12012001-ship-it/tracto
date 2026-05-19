@@ -272,7 +272,7 @@ export default function Weather() {
             key={`${loc.lat}-${loc.lng}-${windyOverlay}`}
             src={`https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&metricWind=km/h&lat=${loc.lat}&lon=${loc.lng}&zoom=8&level=surface&overlay=${windyOverlay}&menu=false&message=true&marker=true&calendar=now&pressure=true&type=map&detail=false&detailLat=${loc.lat}&detailLon=${loc.lng}&distIndicator=false&dMap=0`}
             className="w-full"
-            style={{ height: 480, border: 'none', display: 'block' }}
+            style={{ height: 'clamp(260px, 55vh, 480px)', border: 'none', display: 'block' }}
             title="Mapa Meteorológico"
             allowFullScreen
           />

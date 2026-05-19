@@ -211,6 +211,7 @@ export default function Chat() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [contextUsedLabel, setContextUsedLabel] = useState<string | null>(null);
   const [showHint, setShowHint] = useState<boolean>(() => !sessionStorage.getItem('chat-hint-dismissed'));
+  const [showHistory, setShowHistory] = useState(false);
 
   // Sidebar: saved conversations
   const [savedConversations, setSavedConversations] = useState<SavedConversation[]>([]);
@@ -342,6 +343,7 @@ export default function Chat() {
 
   // ── Load a saved conversation ──────────────────────────────────────────────
   const loadConversation = (conv: SavedConversation) => {
+    setShowHistory(false);
     setActiveConversationId(conv.conversation_id);
     setConversationId(conv.conversation_id);
     setConversationCreatedAt(conv.created_at);
@@ -573,10 +575,28 @@ export default function Chat() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── Sidebar: Histórico — escondida em mobile (< 1024px) ─────────── */}
+      {/* ── Mobile overlay backdrop ─────────────────────────────────────── */}
+      {showHistory && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setShowHistory(false)}
+        />
+      )}
+
+      {/* ── Sidebar: Histórico ───────────────────────────────────────────── */}
+      {/* Desktop: always visible; Mobile: slide-in drawer when showHistory */}
       <div
-        className="hidden lg:flex w-64 flex-shrink-0 flex-col border-r"
-        style={{ background: 'rgba(255,255,255,0.01)', borderColor: 'rgba(255,255,255,0.07)' }}
+        className={`flex-shrink-0 flex-col border-r transition-transform duration-200
+          ${showHistory
+            ? 'flex fixed inset-y-0 left-0 z-50 lg:relative lg:translate-x-0'
+            : 'hidden lg:flex'
+          }`}
+        style={{
+          width: 'min(256px, 80vw)',
+          background: '#0d1117',
+          borderColor: 'rgba(255,255,255,0.07)',
+        }}
       >
         {/* New conversation button */}
         <div className="p-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
@@ -747,18 +767,33 @@ export default function Chat() {
               )}
             </div>
           </div>
-          <button
-            onClick={startNewConversation}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-            style={{
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: '#94a3b8',
-            }}
-          >
-            <span className="material-symbols-outlined text-sm">refresh</span>
-            Reiniciar
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Histórico button — mobile only */}
+            <button
+              onClick={() => setShowHistory(true)}
+              className="lg:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: 'rgba(236,91,19,0.1)',
+                border: '1px solid rgba(236,91,19,0.2)',
+                color: '#ec5b13',
+              }}
+            >
+              <span className="material-symbols-outlined text-sm">history</span>
+              Histórico
+            </button>
+            <button
+              onClick={startNewConversation}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#94a3b8',
+              }}
+            >
+              <span className="material-symbols-outlined text-sm">refresh</span>
+              Reiniciar
+            </button>
+          </div>
         </div>
 
         {/* Hint banner */}
@@ -885,7 +920,13 @@ export default function Chat() {
         </div>
 
         {/* ── Input bar ────────────────────────────────────────────────────── */}
-        <div className="p-4 border-t flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+        <div
+          className="p-4 border-t flex-shrink-0"
+          style={{
+            borderColor: 'rgba(255,255,255,0.07)',
+            paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+          }}
+        >
           {/* Badge: imagem satelital disponível no mapa */}
           {currentSatelliteScene && currentSatelliteScene.fieldId === activeFieldId && !pendingImage && (
             <div className="mb-3">
@@ -968,7 +1009,8 @@ export default function Chat() {
             />
 
             <input
-              className="flex-1 bg-transparent border-none text-sm focus:outline-none text-slate-200 placeholder:text-slate-600 px-1"
+              className="flex-1 bg-transparent border-none focus:outline-none text-slate-200 placeholder:text-slate-600 px-1"
+              style={{ fontSize: 16 }}
               placeholder={
                 pendingImage
                   ? 'Adicione uma pergunta ou envie só a foto...'

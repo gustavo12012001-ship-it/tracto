@@ -171,7 +171,7 @@ export default function Alerts() {
             </div>
           </div>
         ) : (
-        <div className="flex-1 overflow-y-auto alert-scrollbar p-10">
+        <div className="flex-1 overflow-y-auto alert-scrollbar px-4 py-6 md:px-8 md:py-10">
 
           {/* ── Janela de Pulverização ── */}
           <SprayWindow weatherCache={weatherCache} />
@@ -222,7 +222,7 @@ export default function Alerts() {
                       const st = TYPE_STYLE[a.type];
                       return (
                         <div key={a.id} className={`glass-card-alert rounded-xl overflow-hidden flex flex-col items-stretch border-l-4 ${st.border}`}>
-                          <div className="p-6">
+                          <div className="p-4 md:p-6">
                             <div className="flex flex-col gap-2">
                               <span className={`px-2 py-0.5 ${st.badge} text-[10px] font-bold rounded uppercase w-fit`}>
                                 {st.badgeText}
@@ -311,7 +311,7 @@ export default function Alerts() {
               </h3>
 
               {criticalCount > 0 && (
-                <div className="glass-card-alert rounded-xl p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border-l-4 border-orange-500/50" style={{ background: 'rgba(236,91,19,0.05)' }}>
+                <div className="glass-card-alert rounded-xl p-4 md:p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border-l-4 border-orange-500/50" style={{ background: 'rgba(236,91,19,0.05)' }}>
                   <div>
                     <h4 className="text-white font-bold flex items-center gap-2">
                       <span className="material-symbols-outlined text-orange-500">satellite_alt</span>
@@ -337,7 +337,7 @@ export default function Alerts() {
                       key={a.id}
                       className={`glass-card-alert rounded-xl overflow-hidden flex flex-col md:flex-row items-stretch border-l-4 ${st.border}`}
                     >
-                      <div className="p-6 flex-1 flex flex-col justify-between">
+                      <div className="p-4 md:p-6 flex-1 flex flex-col justify-between">
                         <div className="flex flex-col xl:flex-row justify-between items-start gap-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
