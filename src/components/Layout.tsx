@@ -716,14 +716,14 @@ export default function Layout() {
 
         /* Mobile drawer overlay */
         .drawer-overlay {
-          position: fixed; inset: 0; z-index: 40;
+          position: fixed; inset: 0; z-index: 590;
           background: rgba(0,0,0,0.7);
           backdrop-filter: blur(4px);
           transition: opacity 0.2s ease;
         }
         .drawer-panel {
           position: fixed; top: 0; left: 0; bottom: 0;
-          width: min(240px, 80vw); z-index: 50;
+          width: min(240px, 80vw); z-index: 600;
           transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
         }
         .drawer-panel.open { transform: translateX(0); }
@@ -767,13 +767,25 @@ export default function Layout() {
             <div className="flex items-center gap-4 md:gap-5">
               {/* Hamburguer â€" mobile only */}
               <button
-                onClick={() => setDrawerOpen(true)}
+                onClick={() => setDrawerOpen((v) => !v)}
                 className="md:hidden flex items-center justify-center w-11 h-11 rounded-lg transition-all"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-                aria-label="Abrir menu"
+                aria-label={drawerOpen ? 'Fechar menu' : 'Abrir menu'}
               >
-                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>menu</span>
+                <span className="material-symbols-outlined text-base" style={{ color: 'var(--muted)' }}>
+                  {drawerOpen ? 'close' : 'menu'}
+                </span>
               </button>
+
+              {/* Fazenda ativa — mobile only (desktop usa o seletor abaixo) */}
+              {activeFarm && (
+                <div className="md:hidden flex items-center gap-1.5 min-w-0">
+                  <span className="material-symbols-outlined text-sm flex-shrink-0" style={{ color: 'var(--primary)' }}>home_work</span>
+                  <span className="text-xs font-bold truncate max-w-[130px]" style={{ color: 'var(--text, #e2e8f0)' }}>
+                    {activeFarm.name}
+                  </span>
+                </div>
+              )}
 
               {/* FAZENDA ATIVA — clickable dropdown */}
               <div className="relative" ref={selectorRef}>

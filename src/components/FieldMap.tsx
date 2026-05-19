@@ -1168,7 +1168,7 @@ export default function FieldMap() {
 
       {/* Barra de busca */}
       {drawMode === 'none' && !editingField && (
-        <form onSubmit={handleSearch} className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto" style={{ minWidth: 300 }}>
+        <form onSubmit={handleSearch} className="absolute top-[60px] md:top-4 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto md:min-w-[300px]">
           <div className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
             style={searchError ? { borderColor: 'rgba(239,68,68,0.4)' } : undefined}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
@@ -1201,7 +1201,7 @@ export default function FieldMap() {
             <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>
               {mapLayer === 'osm' ? 'map' : mapLayer === 'esri' ? 'public' : 'travel_explore'}
             </span>
-            {mapLayer === 'osm' ? 'Mapa' : mapLayer === 'esri' ? 'Esri' : 'Satélite HD'}
+            <span className="hidden md:inline">{mapLayer === 'osm' ? 'Mapa' : mapLayer === 'esri' ? 'Esri' : 'Satélite HD'}</span>
             <span className="material-symbols-outlined text-sm transition-transform duration-150"
               style={{ transform: layerDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', color: '#94a3b8' }}>
               expand_more
@@ -1245,7 +1245,7 @@ export default function FieldMap() {
             <span className="material-symbols-outlined text-base">
               {actionsOpen ? 'close' : 'add'}
             </span>
-            {actionsOpen ? 'Fechar' : 'Ações'}
+            <span className="hidden md:inline">{actionsOpen ? 'Fechar' : 'Ações'}</span>
             <span
               className="material-symbols-outlined text-base transition-transform duration-200"
               style={{ transform: actionsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
