@@ -215,9 +215,10 @@ function InitialCenterController() {
 function ZoomControls() {
   const map = useMap();
   return (
-    <div className="absolute bottom-4 right-4 z-[500] flex flex-col gap-1.5 pointer-events-auto">
+    <div className="absolute right-3 z-[500] flex flex-col gap-1.5 pointer-events-auto"
+      style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
       {[{ s: '+', a: () => map.zoomIn() }, { s: '−', a: () => map.zoomOut() }].map(({ s, a }) => (
-        <button key={s} onClick={a} className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
+        <button key={s} onClick={a} className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:text-white"
           style={{ background: 'rgba(8,8,9,0.85)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
           {s}
         </button>
@@ -366,8 +367,8 @@ function ScenesPanel({
   const currentScenes = tab === 's2' ? scenes.s2 : tab === 's1' ? scenes.s1 : scenes.up42;
 
   return (
-    <div className="absolute top-4 right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
-      style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 280, maxHeight: 'calc(100vh - 100px)' }}>
+    <div className="absolute top-2 right-2 md:top-4 md:right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
+      style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 'min(280px, calc(100vw - 16px))', maxHeight: 'calc(100vh - 100px)' }}>
       <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
         <div>
           <p className="text-xs font-bold text-white">Imagens Satelitais</p>
@@ -1136,7 +1137,7 @@ export default function FieldMap() {
 
       {/* Badge loading/erro do overlay */}
       {(overlay.loading || overlay.error) && (
-        <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
+        <div className="absolute z-[500] pointer-events-none top-[104px] left-1 md:top-[52px] md:left-1">
           {overlay.loading && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-white"
               style={{ background: 'rgba(8,8,9,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(236,91,19,0.3)' }}>
@@ -1156,7 +1157,7 @@ export default function FieldMap() {
 
       {/* Badge overlay ativo */}
       {overlay.url && !overlay.loading && overlay.sceneKey && (
-        <div className="absolute z-[500] pointer-events-none" style={{ top: 52, left: 4 }}>
+        <div className="absolute z-[500] pointer-events-none top-[104px] left-1 md:top-[52px] md:left-1">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold"
             style={{ background: 'rgba(8,8,9,0.82)', backdropFilter: 'blur(12px)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
             🛰 {overlay.sceneKey?.includes('|s1|') ? 'Sentinel-1 · Radar SAR' : overlay.sceneKey?.includes('|up42|') ? 'Up42 · Imagem Alta Resolução' : 'Sentinel-2 · Cor Natural'}
@@ -1168,12 +1169,12 @@ export default function FieldMap() {
 
       {/* Barra de busca */}
       {drawMode === 'none' && !editingField && (
-        <form onSubmit={handleSearch} className="absolute top-[60px] md:top-4 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto md:min-w-[300px]">
+        <form onSubmit={handleSearch} className="absolute top-[52px] md:top-4 left-2 right-2 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[500] flex items-center gap-2 pointer-events-auto md:min-w-[300px]">
           <div className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl flex-1"
             style={searchError ? { borderColor: 'rgba(239,68,68,0.4)' } : undefined}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: '#64748b', fontSize: 18 }}>search</span>
-            <input className="flex-1 bg-transparent border-none text-xs focus:outline-none"
-              style={{ color: 'inherit' }}
+            <input className="flex-1 bg-transparent border-none focus:outline-none"
+              style={{ color: 'inherit', fontSize: 16 }}
               placeholder="Buscar cidade ou coordenadas..." value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setSearchError(null); }} />
             {searchLoading && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />}
@@ -1184,19 +1185,20 @@ export default function FieldMap() {
       )}
 
       {searchError && drawMode === 'none' && !editingField && (
-        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none"
-          style={{ top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+        <div className="absolute z-[500] text-[10px] font-semibold px-3 py-1.5 rounded-lg pointer-events-none top-[96px] left-1/2 md:top-[60px]"
+          style={{ transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
           {searchError}
         </div>
       )}
 
       {/* Seletor de camadas — dropdown */}
       {drawMode === 'none' && !editingField && (
-        <div className="absolute top-4 left-4 z-[500] pointer-events-auto">
+        <div className="absolute top-2 left-2 md:top-4 md:left-4 z-[500] pointer-events-auto">
           {/* Botão principal */}
           <button
             onClick={() => setLayerDropdownOpen((v) => !v)}
             className="glass-overlay flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+            style={{ minHeight: 36 }}
           >
             <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>
               {mapLayer === 'osm' ? 'map' : mapLayer === 'esri' ? 'public' : 'travel_explore'}
@@ -1236,18 +1238,18 @@ export default function FieldMap() {
 
       {/* Botões de ação no mapa — dropdown colapsável */}
       {drawMode === 'none' && !editingField && (
-        <div className="absolute top-4 right-4 z-[500] flex flex-col items-end gap-1 pointer-events-auto">
+        <div className="absolute top-2 right-2 md:top-4 md:right-4 z-[500] flex flex-col items-end gap-1 pointer-events-auto">
           {/* Botão principal / toggle */}
           <button
             onClick={() => setActionsOpen((v) => !v)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-all"
-            style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)' }}>
+            className="flex items-center gap-1.5 md:gap-2 px-2.5 md:px-3 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-all"
+            style={{ background: '#ec5b13', boxShadow: '0 4px 20px rgba(236,91,19,0.35)', minHeight: 36 }}>
             <span className="material-symbols-outlined text-base">
               {actionsOpen ? 'close' : 'add'}
             </span>
             <span className="hidden md:inline">{actionsOpen ? 'Fechar' : 'Ações'}</span>
             <span
-              className="material-symbols-outlined text-base transition-transform duration-200"
+              className="hidden md:inline material-symbols-outlined text-base transition-transform duration-200"
               style={{ transform: actionsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
               expand_more
             </span>
@@ -1291,8 +1293,8 @@ export default function FieldMap() {
 
       {/* Seletor de talhão pai para bloco de pesquisa */}
       {showBlockPicker && (
-        <div className="absolute top-20 right-4 z-[500] flex flex-col gap-2 px-4 py-3 rounded-2xl pointer-events-auto"
-          style={{ background: 'rgba(8,8,9,0.97)', backdropFilter: 'blur(20px)', border: '1px solid rgba(52,211,153,0.3)', minWidth: 220, maxHeight: 320, overflowY: 'auto' }}>
+        <div className="absolute top-[80px] right-2 md:top-20 md:right-4 z-[500] flex flex-col gap-2 px-4 py-3 rounded-2xl pointer-events-auto"
+          style={{ background: 'rgba(8,8,9,0.97)', backdropFilter: 'blur(20px)', border: '1px solid rgba(52,211,153,0.3)', width: 'min(220px, calc(100vw - 16px))', maxHeight: 320, overflowY: 'auto' }}>
           <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#34d399' }}>
             <span className="material-symbols-outlined text-xs align-middle mr-1">biotech</span>
             Selecione o talhão principal
@@ -1316,7 +1318,7 @@ export default function FieldMap() {
 
       {/* Instrução de desenho */}
       {drawMode !== 'none' && (
-        <div className="glass-overlay absolute top-4 left-1/2 -translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold pointer-events-none"
+        <div className="glass-overlay absolute top-2 left-2 right-2 md:top-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold pointer-events-none"
           style={{
             borderColor: drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : drawMode === 'drawing_farm' ? 'rgba(255,255,255,0.3)' : 'rgba(236,91,19,0.3)',
           }}>
