@@ -13,8 +13,12 @@ def test_chat_message_role_required():
 def test_chat_request_field_id_required():
     from models import ChatRequest, ChatMessage
     msg = ChatMessage(role="user", text="oi")
-    # field_id NÃO é obrigatório no schema, mas o endpoint rejeita ausente
-    req = ChatRequest(messages=[msg])
+    # field_id é obrigatório tanto no schema quanto no endpoint
+    with pytest.raises(ValidationError):
+        ChatRequest(messages=[msg])  # type: ignore[call-arg]
+    # Com field_id válido deve funcionar
+    req = ChatRequest(field_id="abc123", messages=[msg])
+    assert req.field_id == "abc123"
     assert req.messages[0].text == "oi"
 
 

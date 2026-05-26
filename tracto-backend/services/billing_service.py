@@ -8,6 +8,9 @@ Fallback: free plan se sem assinatura ou plan_id desconhecido.
 
 import logging
 import os
+import threading
+import time as _time
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
@@ -39,7 +42,63 @@ _FREE_FALLBACK: dict[str, Any] = {
     "billing_cycle": None,
     "current_period_end": None,
     "trial_end_at": None,
+    "is_trial": False,
 }
+
+# Cache simples de entitlements por user_id com TTL de 60 segundos.
+# Evita 2 HTTP requests ao Supabase por request ao /api/chat.
+_ent_cache: dict[str, tuple[dict, float]] = {}
+_ent_cache_ttl: float = 60.0
+_ent_cache_lock = threading.Lock()
+
+
+def _is_trial_active(trial_end_at: str | None) -> bool:
+    """Retorna True somente se trial_end_at existe e ainda não expirou (UTC)."""
+    if not trial_end_at:
+        return False
+    try:
+        end = datetime.fromisoformat(trial_end_at.replace("Z", "+00:00"))
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        return end > datetime.now(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def validate_cpf(cpf: str) -> bool:
+    """Valida CPF com dígitos verificadores (Módulo 11). Rejeita sequências uniformes."""
+    digits = "".join(c for c in cpf if c.isdigit())
+    if len(digits) != 11 or len(set(digits)) == 1:
+        return False
+    # Primeiro dígito verificador
+    total = sum(int(digits[i]) * (10 - i) for i in range(9))
+    r = (total * 10) % 11
+    if r == 10:
+        r = 0
+    if r != int(digits[9]):
+        return False
+    # Segundo dígito verificador
+    total = sum(int(digits[i]) * (11 - i) for i in range(10))
+    r = (total * 10) % 11
+    if r == 10:
+        r = 0
+    return r == int(digits[10])
+
+
+def validate_cnpj(cnpj: str) -> bool:
+    """Valida CNPJ com dígitos verificadores (Módulo 11). Rejeita sequências uniformes."""
+    digits = "".join(c for c in cnpj if c.isdigit())
+    if len(digits) != 14 or len(set(digits)) == 1:
+        return False
+
+    def _check(d: str, weights: list[int]) -> bool:
+        total = sum(int(d[i]) * weights[i] for i in range(len(weights)))
+        r = total % 11
+        expected = 0 if r < 2 else 11 - r
+        return expected == int(d[len(weights)])
+
+    return _check(digits, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) and \
+           _check(digits, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
 
 
 class BillingService:
@@ -89,20 +148,13 @@ class BillingService:
             logging.warning("[billing] exceção get_plan_details: %s", exc)
             return None
 
-    def get_entitlements(self, user_id: str) -> dict:
-        """
-        Retorna o conjunto de entitlements (features + limites) do usuário,
-        baseado na assinatura ATIVA. Cai pra Free se sem assinatura.
-
-        Frontend usa pra mostrar/esconder features. Backend usa pra enforcement
-        em endpoints sensíveis (criar field se max_fields atingido, etc).
-        """
+    def _compute_entitlements(self, user_id: str) -> dict:
+        """Busca entitlements frescos no Supabase (sem cache)."""
         sub = self.get_user_plan(user_id)
         plan_id = sub.get("plan_id", "free")
         plan = self.get_plan_details(plan_id)
 
         if not plan:
-            # Plano desconhecido — fallback Free
             return _FREE_FALLBACK.copy()
 
         return {
@@ -118,8 +170,33 @@ class BillingService:
             "billing_cycle": sub.get("billing_cycle"),
             "current_period_end": sub.get("current_period_end"),
             "trial_end_at": sub.get("trial_end_at"),
-            "is_trial": bool(sub.get("trial_end_at")),
+            # is_trial = True somente enquanto a data de término ainda não chegou
+            "is_trial": _is_trial_active(sub.get("trial_end_at")),
         }
+
+    def get_entitlements(self, user_id: str) -> dict:
+        """
+        Retorna o conjunto de entitlements do usuário com cache TTL de 60s.
+
+        Frontend usa pra mostrar/esconder features. Backend usa pra enforcement
+        em endpoints sensíveis (satélite, IA, WhatsApp, limite de talhões).
+        """
+        with _ent_cache_lock:
+            cached = _ent_cache.get(user_id)
+            if cached and _time.monotonic() < cached[1]:
+                return cached[0].copy()
+
+        result = self._compute_entitlements(user_id)
+
+        with _ent_cache_lock:
+            _ent_cache[user_id] = (result, _time.monotonic() + _ent_cache_ttl)
+
+        return result.copy()
+
+    def invalidate_cache(self, user_id: str) -> None:
+        """Remove entitlements do cache (chamar após webhook de billing confirmado)."""
+        with _ent_cache_lock:
+            _ent_cache.pop(user_id, None)
 
     def check_field_limit(self, user_id: str, current_count: int) -> tuple[bool, str | None]:
         """

@@ -107,8 +107,10 @@ async def create_genotype(user_id: str, data: dict) -> dict:
     return result[0] if isinstance(result, list) and result else (result if isinstance(result, dict) else payload)
 
 
-async def get_genotypes(user_id: str) -> list[dict]:
-    """Retorna todos os genótipos do usuário ordenados por nome."""
+async def get_genotypes(user_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
+    """Retorna genótipos do usuário paginados (padrão: 100, máx 500)."""
+    limit = min(max(limit, 1), 500)
+    offset = max(offset, 0)
     try:
         url = _url("genotypes")
         if not url.startswith("http"):
@@ -116,7 +118,7 @@ async def get_genotypes(user_id: str) -> list[dict]:
         resp = requests.get(
             url,
             headers=_headers(True),
-            params={"user_id": f"eq.{user_id}", "order": "name.asc"},
+            params={"user_id": f"eq.{user_id}", "order": "name.asc", "limit": str(limit), "offset": str(offset)},
             timeout=_REQUEST_TIMEOUT,
         )
         resp.raise_for_status()

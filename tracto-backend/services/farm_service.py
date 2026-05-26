@@ -220,3 +220,41 @@ def ensure_default_farm(user_id: str) -> Dict[str, Any]:
     except Exception as exc:
         logging.error("Erro no bootstrap de fazenda: %s", exc)
         raise
+
+
+# ── Async wrappers ────────────────────────────────────────────────────────────
+# Permitem chamar as funções síncronas acima a partir de endpoints async FastAPI
+# sem bloquear o event loop de uvicorn (asyncio.to_thread delega para thread pool).
+import asyncio as _asyncio
+
+
+async def async_get_farms(user_id: str) -> List[Dict[str, Any]]:
+    return await _asyncio.to_thread(get_farms, user_id)
+
+
+async def async_get_fields(user_id: str, farm_id: str | None = None) -> List[Dict[str, Any]]:
+    return await _asyncio.to_thread(get_fields, user_id, farm_id)
+
+
+async def async_get_field_by_id(user_id: str, field_id: str) -> Dict[str, Any] | None:
+    return await _asyncio.to_thread(get_field_by_id, user_id, field_id)
+
+
+async def async_save_field(user_id: str, field_data: Dict[str, Any]) -> Dict[str, Any]:
+    return await _asyncio.to_thread(save_field, user_id, field_data)
+
+
+async def async_delete_field(field_id: str, user_id: str) -> bool:
+    return await _asyncio.to_thread(delete_field, field_id, user_id)
+
+
+async def async_save_farm(user_id: str, farm_data: Dict[str, Any]) -> Dict[str, Any]:
+    return await _asyncio.to_thread(save_farm, user_id, farm_data)
+
+
+async def async_delete_farm(farm_id: str, user_id: str) -> bool:
+    return await _asyncio.to_thread(delete_farm, farm_id, user_id)
+
+
+async def async_ensure_default_farm(user_id: str) -> Dict[str, Any]:
+    return await _asyncio.to_thread(ensure_default_farm, user_id)

@@ -133,7 +133,10 @@ def save_conversation(
         raise
 
 
-def get_conversations(user_id: str) -> list:
+def get_conversations(user_id: str, limit: int = 50, offset: int = 0) -> list:
+    """Retorna conversas paginadas (padrão: 50 mais recentes). limit máx 100."""
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
     # ── Attempt 1: full select (includes field_id) ───────────────────────────
     try:
         response = requests.get(
@@ -143,6 +146,8 @@ def get_conversations(user_id: str) -> list:
                 "user_id": f"eq.{user_id}",
                 "order": "updated_at.desc",
                 "select": "conversation_id,title,messages,field_id,farm_context,created_at,updated_at",
+                "limit": str(limit),
+                "offset": str(offset),
             },
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
@@ -175,6 +180,8 @@ def get_conversations(user_id: str) -> list:
                 "user_id": f"eq.{user_id}",
                 "order": "updated_at.desc",
                 "select": "conversation_id,title,messages,farm_context,created_at,updated_at",
+                "limit": str(limit),
+                "offset": str(offset),
             },
             timeout=REQUEST_TIMEOUT_SECONDS,
         )

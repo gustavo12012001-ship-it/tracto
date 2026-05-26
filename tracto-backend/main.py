@@ -2,7 +2,8 @@
 import json
 import logging
 import os
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import httpx
 from dotenv import load_dotenv
@@ -56,7 +57,7 @@ from models import (
     NotebookEventUpdate,
 )
 from services import supabase_service, farm_service
-from services.billing_service import billing_service
+from services.billing_service import billing_service, validate_cpf, validate_cnpj
 from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
@@ -120,15 +121,12 @@ from services.germoplasm_service import (
 limiter = Limiter(key_func=get_remote_address)
 APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
 
-app = FastAPI(title="Tracto API", description="O motor da plataforma Tracto", version=APP_VERSION)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
-# ── Startup: inicia background tasks ────────────────────────────────────────
-@app.on_event("startup")
-async def _on_startup():
-    """Tarefas executadas uma vez quando o servidor sobe."""
+# ── Lifespan: substitui @app.on_event("startup") deprecado ──────────────────
+@asynccontextmanager
+async def _lifespan(app_: FastAPI):
+    """Tarefas de startup e shutdown do servidor."""
+    # --- startup ---
     try:
         from services.cache_service import start_cache_gc_task
         # GC do cache em arquivo a cada 1h — remove entradas expiradas
@@ -136,6 +134,20 @@ async def _on_startup():
         start_cache_gc_task(interval_seconds=3600)
     except Exception as exc:
         logging.warning("[startup] Falha ao iniciar cache GC task: %s", exc)
+
+    yield  # servidor em execução
+
+    # --- shutdown (extensão futura: fechar conexões, flush buffers) ---
+
+
+app = FastAPI(
+    title="Tracto API",
+    description="O motor da plataforma Tracto",
+    version=APP_VERSION,
+    lifespan=_lifespan,
+)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- Structured Logging Middleware ---
 @app.middleware("http")
@@ -448,14 +460,14 @@ async def upsert_billing_profile(
     import requests as _req
     sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/billing_profiles"
     key = os.getenv("SUPABASE_SERVICE_KEY", "")
-    # Validações simples
+    # Validações com dígitos verificadores (Módulo 11)
     if body.document_type not in ("CPF", "CNPJ"):
         raise HTTPException(status_code=422, detail="document_type deve ser CPF ou CNPJ.")
     doc = body.document_number.replace(".", "").replace("-", "").replace("/", "").strip()
-    if body.document_type == "CPF" and len(doc) != 11:
-        raise HTTPException(status_code=422, detail="CPF inválido.")
-    if body.document_type == "CNPJ" and len(doc) != 14:
-        raise HTTPException(status_code=422, detail="CNPJ inválido.")
+    if body.document_type == "CPF" and not validate_cpf(doc):
+        raise HTTPException(status_code=422, detail="CPF inválido. Verifique os dígitos e tente novamente.")
+    if body.document_type == "CNPJ" and not validate_cnpj(doc):
+        raise HTTPException(status_code=422, detail="CNPJ inválido. Verifique os dígitos e tente novamente.")
 
     payload = {
         "user_id": user.id,
@@ -494,6 +506,15 @@ async def upsert_billing_profile(
 class CheckoutCreateRequest(_BM):
     plan_id: str
     billing_cycle: str  # 'monthly' or 'yearly'
+
+
+def _checkout_trial_end(trial_days: int) -> str | None:
+    """Retorna ISO UTC da data de fim do trial, ou None se trial_days <= 0."""
+    if trial_days <= 0:
+        return None
+    from datetime import timedelta
+    end = datetime.now(timezone.utc) + timedelta(days=trial_days)
+    return end.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 @app.post("/api/billing/checkout")
@@ -584,7 +605,9 @@ async def create_checkout(
         "mp_init_point": mp_resp.get("init_point"),
         "mp_payer_email": profile["email"],
         "started_at": datetime.now().isoformat(),
-        "trial_end_at": None,  # MP gerencia
+        # trial_days=7 está passado para o create_preapproval acima.
+        # Salvar a data real permite que is_trial expire corretamente no billing_service.
+        "trial_end_at": _checkout_trial_end(trial_days=7),
     }
     sb_sub_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
     _req.post(
@@ -652,6 +675,7 @@ async def cancel_subscription(request: Request, user: AuthenticatedUser = Depend
 
 
 @app.post("/api/billing/mercadopago-webhook")
+@limiter.limit("120/minute")
 async def mercadopago_webhook(request: Request):
     """
     Webhook do Mercado Pago. NÃO usa auth — valida via signature HMAC.
@@ -841,14 +865,30 @@ async def _process_payment_event(payment: dict) -> None:
 
 
 async def _process_subscription_event(preapproval: dict) -> None:
-    """Sincroniza status da subscription com MP."""
+    """Sincroniza status da subscription com MP e invalida cache de entitlements."""
     import requests as _req
     key = os.getenv("SUPABASE_SERVICE_KEY", "")
     sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
+    _sb_headers = {"apikey": key, "Authorization": f"Bearer {key}"}
 
     mp_id = preapproval.get("id")
     if not mp_id:
         return
+
+    # Resolve user_id ANTES do PATCH para poder invalidar o cache depois
+    _affected_user_id: str | None = None
+    try:
+        _r = await asyncio.to_thread(
+            _req.get,
+            sb_url,
+            headers=_sb_headers,
+            params={"mp_preapproval_id": f"eq.{mp_id}", "select": "user_id"},
+            timeout=10,
+        )
+        if _r.ok and _r.json():
+            _affected_user_id = _r.json()[0].get("user_id")
+    except Exception as _exc:
+        logging.warning("[billing] falha ao resolver user_id para mp_id=%s: %s", mp_id, _exc)
 
     # Mapeia status MP → nosso
     mp_status = preapproval.get("status", "").lower()
@@ -863,22 +903,24 @@ async def _process_subscription_event(preapproval: dict) -> None:
 
     update = {
         "status": local_status,
-        "last_synced_at": datetime.now().isoformat(),
+        "last_synced_at": datetime.now(timezone.utc).isoformat(),
     }
     if preapproval.get("next_payment_date"):
         update["current_period_end"] = preapproval["next_payment_date"]
 
-    _req.patch(
+    await asyncio.to_thread(
+        _req.patch,
         sb_url,
-        headers={
-            "apikey": key, "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        },
+        headers={**_sb_headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
         params={"mp_preapproval_id": f"eq.{mp_id}"},
         json=update,
         timeout=10,
     )
+
+    # Invalida cache de entitlements — o próximo request do usuário reflete o novo plano
+    if _affected_user_id:
+        billing_service.invalidate_cache(_affected_user_id)
+        logging.info("[billing] cache invalidado para user_id=%s após evento MP %s→%s", _affected_user_id, mp_status, local_status)
 
 def send_push_notification(
     subscription_info: dict,
@@ -924,15 +966,26 @@ def send_push_notification(
 async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = Depends(get_current_user)):
     # Salva a subscription na tabela push_subscriptions (upsert por endpoint)
     try:
-        billing_service.supabase.table("push_subscriptions").upsert(
-            {
+        import requests as _req
+        _sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+        _sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/push_subscriptions"
+        _req.post(
+            _sb_url,
+            headers={
+                "apikey": _sb_key,
+                "Authorization": f"Bearer {_sb_key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            params={"on_conflict": "endpoint"},
+            json={
                 "user_id": user.id,
                 "endpoint": req.endpoint,
                 "p256dh": req.p256dh,
                 "auth": req.auth,
             },
-            on_conflict="endpoint",
-        ).execute()
+            timeout=8,
+        )
     except Exception as exc:
         logging.warning("[push/subscribe] Falha ao salvar subscription no Supabase: %s", exc)
     return {"status": "ok", "message": "Inscricao de push salva com sucesso na base de dados."}
@@ -943,6 +996,26 @@ async def whatsapp_webhook(request: Request):
     Webhook Z-API para mensagens WhatsApp recebidas.
     Suporta JSON (Z-API) e form-urlencoded (Twilio legado).
     """
+    # ── Autenticação da Z-API ─────────────────────────────────────────────────
+    # Valida o token enviado pela Z-API no header 'client-token'.
+    # Configure ZAPI_WEBHOOK_SECRET nas variáveis de ambiente (Railway).
+    # Em produção, a ausência do secret rejeita todas as requisições.
+    import hmac as _hmac
+    _zapi_secret = os.getenv("ZAPI_WEBHOOK_SECRET", "").strip()
+    _is_prod = os.getenv("ENVIRONMENT", "development").strip().lower() in ("production", "prod")
+    if _zapi_secret:
+        _token_received = (
+            request.headers.get("client-token")
+            or request.headers.get("x-client-token")
+            or ""
+        ).strip()
+        if not _hmac.compare_digest(_token_received, _zapi_secret):
+            logging.warning("[whatsapp] Webhook recebido com token inválido — rejeitado.")
+            raise HTTPException(status_code=401, detail="Token de webhook inválido.")
+    elif _is_prod:
+        logging.error("[whatsapp] ZAPI_WEBHOOK_SECRET não configurada em produção — rejeitando requisição.")
+        raise HTTPException(status_code=401, detail="Webhook não configurado. Contate o administrador.")
+
     phone = ""
     body = ""
     try:
@@ -998,10 +1071,20 @@ async def whatsapp_webhook(request: Request):
         logging.info("[whatsapp] Número %s não registrado na Tracto — ignorando.", phone)
         return {"status": "ok", "message": "Número não registrado. Mensagem ignorada."}
 
+    # ── Verifica entitlement can_use_whatsapp ─────────────────────────────────
+    try:
+        _wa_ent = await asyncio.to_thread(billing_service.get_entitlements, user_id)
+        if not _wa_ent.get("can_use_whatsapp", False):
+            logging.info("[whatsapp] user_id=%s plano não inclui WhatsApp — ignorando.", user_id)
+            return {"status": "ok", "message": "Plano não inclui atendimento via WhatsApp."}
+    except Exception as _ent_exc:
+        logging.warning("[whatsapp] Erro ao verificar entitlement user_id=%s: %s — bloqueando por segurança.", user_id, _ent_exc)
+        return {"status": "ok", "message": "Não foi possível verificar o plano. Tente novamente."}
+
     # Busca contexto agronômico da fazenda do usuário
     farm_context_str = "Fazenda sem dados disponíveis no momento."
     try:
-        farms = farm_service.get_farms(user_id)
+        farms = await farm_service.async_get_farms(user_id)
         if farms:
             farm_names = [f.get("name", "") for f in farms if f.get("name")]
             farm_context_str = f"Fazendas do produtor: {', '.join(farm_names)}."
@@ -1203,10 +1286,118 @@ def _build_farm_context_from_metadata(metadata: dict, snapshot: FieldIntelligenc
     ])
 
 
+# ── Controle de limite diário de mensagens de chat por usuário ────────────────
+# Primário: Supabase (tabela chat_usage) — sobrevive a restarts e múltiplas instâncias.
+# Fallback: dict em memória com lock (usado quando Supabase está indisponível).
+#
+# Schema necessário no Supabase (executar uma vez):
+#   CREATE TABLE IF NOT EXISTS chat_usage (
+#     user_id    TEXT NOT NULL,
+#     usage_date DATE NOT NULL,
+#     count      INTEGER NOT NULL DEFAULT 0,
+#     updated_at TIMESTAMPTZ DEFAULT NOW(),
+#     PRIMARY KEY (user_id, usage_date)
+#   );
+import threading as _threading
+_chat_usage: dict[str, tuple[int, str]] = {}  # user_id → (count, date_str)
+_chat_lock = _threading.Lock()
+
+_CHAT_LIMIT_429 = (
+    "Limite diário de {limit} mensagens atingido. "
+    "Seu contador reinicia à meia-noite (UTC). "
+    "Faça upgrade para um plano com mais mensagens."
+)
+
+
+def _check_daily_chat_limit_memory(user_id: str, daily_limit: int) -> None:
+    """Fallback em memória (single-instance, reseta com restart)."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    with _chat_lock:
+        count, date = _chat_usage.get(user_id, (0, today))
+        if date != today:
+            count = 0
+        count += 1
+        _chat_usage[user_id] = (count, today)
+        if count > daily_limit:
+            raise HTTPException(
+                status_code=429,
+                detail=_CHAT_LIMIT_429.format(limit=daily_limit),
+            )
+
+
+async def _check_daily_chat_limit(user_id: str, daily_limit: int) -> None:
+    """
+    Incrementa e verifica o contador diário no Supabase.
+    Fallback para memória se Supabase estiver indisponível.
+
+    Race condition em multi-instância é tolerada: a tabela chat_usage
+    garante persistência entre restarts, que é o risco mais crítico.
+    """
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    try:
+        import requests as _req_chat
+        _key = os.getenv("SUPABASE_SERVICE_KEY", "")
+        _sb = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/chat_usage"
+        _hdrs = {"apikey": _key, "Authorization": f"Bearer {_key}"}
+
+        # Lê contagem atual
+        get_resp = await asyncio.to_thread(
+            _req_chat.get, _sb,
+            headers=_hdrs,
+            params={"user_id": f"eq.{user_id}", "usage_date": f"eq.{today}", "select": "count"},
+            timeout=3,
+        )
+        current = 0
+        if get_resp.ok:
+            rows = get_resp.json()
+            if isinstance(rows, list) and rows:
+                current = int(rows[0].get("count", 0))
+
+        new_count = current + 1
+
+        # Upsert com novo valor
+        await asyncio.to_thread(
+            _req_chat.post, _sb,
+            headers={**_hdrs, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"},
+            params={"on_conflict": "user_id,usage_date"},
+            json={"user_id": user_id, "usage_date": today, "count": new_count, "updated_at": datetime.utcnow().isoformat()},
+            timeout=3,
+        )
+
+        if new_count > daily_limit:
+            raise HTTPException(
+                status_code=429,
+                detail=_CHAT_LIMIT_429.format(limit=daily_limit),
+            )
+        return
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.warning("[chat_limit] Supabase indisponível — usando fallback em memória: %s", exc)
+
+    _check_daily_chat_limit_memory(user_id, daily_limit)
+
+
 @app.post("/api/chat")
 @limiter.limit("5/minute")
 async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: AuthenticatedUser = Depends(get_current_user)) -> ChatResponse:
     try:
+        # ── Verificação de entitlement: plano precisa ter has_ia_chat ──────────
+        # asyncio.to_thread evita bloquear o event loop (billing_service usa requests síncrono)
+        ent = await asyncio.to_thread(billing_service.get_entitlements, _user.id)
+        if not ent.get("has_ia_chat", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Acesso à Tracto IA não está incluído no seu plano atual. Faça upgrade para continuar.",
+            )
+
+        # ── Limite diário de mensagens por usuário ─────────────────────────────
+        # Pro: 100 msgs/dia | enterprise: 200 | outros planos com IA: 30
+        plan_id = ent.get("plan_id", "free")
+        daily_limit = 100 if plan_id == "pro" else 200 if plan_id == "enterprise" else 30
+        await _check_daily_chat_limit(_user.id, daily_limit)
+
         # field_id canônico e obrigatório
         if not chat_req.field_id or not chat_req.field_id.strip():
             raise HTTPException(status_code=400, detail="field_id inválido ou ausente. Selecione um talhão ativo antes de enviar a pergunta.")
@@ -1214,7 +1405,7 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
         canonical_field_id = chat_req.field_id.strip()
 
         # ownership validado no backend (nunca confiar no cliente)
-        field_data = farm_service.get_field_by_id(_user.id, canonical_field_id)
+        field_data = await farm_service.async_get_field_by_id(_user.id, canonical_field_id)
         if not field_data:
             raise HTTPException(
                 status_code=404,
@@ -1342,7 +1533,7 @@ async def sentinel_scenes_endpoint(
     try:
         lookback_days = min(max(lookback_days, 7), 180)
 
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(
                 status_code=404,
@@ -1401,8 +1592,16 @@ async def sentinel_overlay_endpoint(
     if mode not in ("truecolor", "ndvi", "ndre", "evi", "ndmi", "falsecolor", "agriculture"):
         raise HTTPException(status_code=400, detail="mode inválido.")
 
+    # Verifica entitlement de satélite antes de qualquer chamada externa paga
+    _sat_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id)
+    if not _sat_ent.get("has_satellite", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Imagens de satélite não estão incluídas no seu plano atual. Faça upgrade para acessar Sentinel, Planet e UP42.",
+        )
+
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(
                 status_code=404,
@@ -1498,7 +1697,7 @@ async def sentinel_preload_endpoint(
     Gera a imagem e salva no Supabase Storage + satellite_artifacts se ainda não existir.
     """
     try:
-        field_data = farm_service.get_field_by_id(user.id, body.field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, body.field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
@@ -1557,7 +1756,7 @@ async def planet_scenes_endpoint(
 ):
     try:
         lookback_days = min(max(lookback_days, 7), 90)
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado.")
         lat = float(field_data.get("latitude", 0))
@@ -1609,7 +1808,7 @@ async def planet_tile_session_endpoint(
     scene_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    field_data = farm_service.get_field_by_id(user.id, field_id)
+    field_data = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field_data:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
 
@@ -1684,7 +1883,14 @@ async def _planet_overlay_response(
     scene_id: str,
     user: AuthenticatedUser,
 ) -> Response:
-    field_data = farm_service.get_field_by_id(user.id, field_id)
+    _planet_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id)
+    if not _planet_ent.get("has_satellite", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Imagens de satélite não estão incluídas no seu plano atual. Faça upgrade para acessar Planet.",
+        )
+
+    field_data = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field_data:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
 
@@ -1746,7 +1952,7 @@ async def up42_scenes_endpoint(
     """Busca cenas disponíveis no marketplace Up42 para o talhão."""
     try:
         lookback_days = min(max(lookback_days, 7), 180)
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado.")
         lat = float(field_data.get("latitude", 0))
@@ -1774,7 +1980,14 @@ async def up42_overlay_endpoint(
 ):
     """Retorna preview/thumbnail da cena Up42 como PNG, recortada ao talhão."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        _up42_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id)
+        if not _up42_ent.get("has_satellite", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Imagens de satélite não estão incluídas no seu plano atual. Faça upgrade para acessar UP42.",
+            )
+
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado.")
         lat = float(field_data.get("latitude", 0))
@@ -1849,7 +2062,7 @@ async def list_plots(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Lista parcelas do talhão."""
-    field = farm_service.get_field_by_id(user.id, field_id)
+    field = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
     plots = get_plots_by_field(field_id, user.id)
@@ -1865,7 +2078,7 @@ async def create_plot_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Cria uma parcela/microtalhão."""
-    field = farm_service.get_field_by_id(user.id, field_id)
+    field = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
     try:
@@ -1917,7 +2130,7 @@ async def list_notebook_events(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Lista eventos do caderno de campo."""
-    field = farm_service.get_field_by_id(user.id, field_id)
+    field = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
     events = await get_notebook_events(field_id, user.id, category=category, plot_id=plot_id, limit=limit)
@@ -1933,7 +2146,7 @@ async def create_notebook_event_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Cria um evento no caderno de campo."""
-    field = farm_service.get_field_by_id(user.id, field_id)
+    field = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
     try:
@@ -1986,7 +2199,7 @@ async def satellite_history_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Retorna histórico de imagens de satélite cacheadas para o talhão."""
-    field = farm_service.get_field_by_id(user.id, field_id)
+    field = await farm_service.async_get_field_by_id(user.id, field_id)
     if not field:
         raise HTTPException(status_code=404, detail="Talhão não encontrado.")
     history = get_satellite_history(field_id, user.id, source=source, limit=limit)
@@ -2095,7 +2308,7 @@ async def create_field_log_endpoint(
 ):
     """Cria um novo registro no caderno de campo para o talhão."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
@@ -2123,7 +2336,7 @@ async def get_field_logs_endpoint(
 ):
     """Retorna o caderno de campo do talhão (logs ordenados por data desc)."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
@@ -2149,7 +2362,7 @@ async def delete_field_log_endpoint(
     """Deleta um registro do caderno de campo verificando pertencimento ao usuário."""
     try:
         # Verifica que o talhão pertence ao usuário
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
@@ -2239,7 +2452,7 @@ async def create_season_endpoint(
 ):
     """Cria uma safra para o talhão."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
         season = await create_season(field_id=field_id, user_id=user.id, data=body.model_dump(exclude_none=True))
@@ -2260,7 +2473,7 @@ async def get_seasons_endpoint(
 ):
     """Lista safras do talhão."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
         seasons = await get_field_seasons(field_id=field_id, user_id=user.id)
@@ -2283,7 +2496,7 @@ async def update_season_endpoint(
 ):
     """Atualiza uma safra."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
         updated = await update_season(season_id=season_id, user_id=user.id, data=body.model_dump(exclude_none=True))
@@ -2307,7 +2520,7 @@ async def delete_season_endpoint(
 ):
     """Remove uma safra."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
         await delete_season(season_id=season_id, user_id=user.id)
@@ -2382,7 +2595,7 @@ async def parcel_ndvi_endpoint(
 ):
     """Calcula o NDVI médio de uma parcela usando suas boundaries."""
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão.")
 
@@ -2601,8 +2814,16 @@ async def analyze_field_endpoint(request: Request, field_req: FieldAnalysisReque
         try:
             critical_alerts = [a for a in (alerts or []) if isinstance(a, dict) and a.get("severity") in ("critical", "high", "alta", "critico")]
             if critical_alerts:
-                push_res = billing_service.supabase.table("push_subscriptions").select("endpoint,p256dh,auth").eq("user_id", _user.id).execute()
-                for row in (push_res.data or []):
+                import requests as _req_push
+                _sb_key_push = os.getenv("SUPABASE_SERVICE_KEY", "")
+                _push_resp = _req_push.get(
+                    f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/push_subscriptions",
+                    headers={"apikey": _sb_key_push, "Authorization": f"Bearer {_sb_key_push}"},
+                    params={"user_id": f"eq.{_user.id}", "select": "endpoint,p256dh,auth"},
+                    timeout=5,
+                )
+                _push_rows = _push_resp.json() if _push_resp.ok and isinstance(_push_resp.json(), list) else []
+                for row in _push_rows:
                     try:
                         sub_info = {
                             "endpoint": row["endpoint"],
@@ -2721,9 +2942,15 @@ async def save_conversation_endpoint(
 
 
 @app.get("/api/conversations")
-async def get_conversations_endpoint(user: AuthenticatedUser = Depends(get_current_user)):
+async def get_conversations_endpoint(
+    user: AuthenticatedUser = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0,
+):
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
     try:
-        return {"conversations": supabase_service.get_conversations(user.id)}
+        return {"conversations": supabase_service.get_conversations(user.id, limit=limit, offset=offset)}
     except Exception as exc:
         logging.error("Erro ao buscar conversas: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar conversas.") from exc
@@ -2755,18 +2982,16 @@ async def delete_conversation_endpoint(
 @app.get("/api/farms")
 async def get_farms_endpoint(user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return {"farms": farm_service.get_farms(user.id)}
+        return {"farms": await farm_service.async_get_farms(user.id)}
     except Exception as exc:
         logging.error("Erro ao buscar fazendas: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar fazendas.") from exc
 
 @app.post("/api/farms/bootstrap")
 async def bootstrap_farm_endpoint(user: AuthenticatedUser = Depends(get_current_user)):
-    """
-    Endpoint explÃ­cito para garantir a criaÃ§Ã£o da fazenda padrÃ£o (idempotente).
-    """
+    """Garante a criação da fazenda padrão (idempotente)."""
     try:
-        return farm_service.ensure_default_farm(user.id)
+        return await farm_service.async_ensure_default_farm(user.id)
     except Exception as exc:
         logging.error("Erro no bootstrap de fazenda: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao inicializar fazenda padrao.") from exc
@@ -2774,7 +2999,7 @@ async def bootstrap_farm_endpoint(user: AuthenticatedUser = Depends(get_current_
 @app.post("/api/farms")
 async def save_farm_endpoint(request: FarmCreate, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return farm_service.save_farm(user.id, request.model_dump())
+        return await farm_service.async_save_farm(user.id, request.model_dump())
     except Exception as exc:
         logging.error("Erro ao salvar fazenda: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao salvar fazenda.") from exc
@@ -2784,7 +3009,7 @@ async def update_farm_endpoint(farm_id: str, request: FarmBase, user: Authentica
     try:
         data = request.model_dump()
         data["id"] = farm_id
-        return farm_service.save_farm(user.id, data)
+        return await farm_service.async_save_farm(user.id, data)
     except Exception as exc:
         logging.error("Erro ao atualizar fazenda: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao atualizar fazenda.") from exc
@@ -2792,7 +3017,7 @@ async def update_farm_endpoint(farm_id: str, request: FarmBase, user: Authentica
 @app.delete("/api/farms/{farm_id}")
 async def delete_farm_endpoint(farm_id: str, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return {"success": farm_service.delete_farm(farm_id, user.id)}
+        return {"success": await farm_service.async_delete_farm(farm_id, user.id)}
     except Exception as exc:
         logging.error("Erro ao deletar fazenda: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao deletar fazenda.") from exc
@@ -2803,7 +3028,7 @@ async def delete_farm_endpoint(farm_id: str, user: AuthenticatedUser = Depends(g
 @app.get("/api/fields")
 async def get_fields_endpoint(farm_id: str | None = None, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        return {"fields": farm_service.get_fields(user.id, farm_id)}
+        return {"fields": await farm_service.async_get_fields(user.id, farm_id)}
     except Exception as exc:
         logging.error("Erro ao buscar talhoes: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao buscar talhoes.") from exc
@@ -2835,12 +3060,14 @@ async def get_field_intelligence_endpoint(
 @app.post("/api/fields")
 async def save_field_endpoint(request: FieldCreate, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        # Bloqueio HTTP Explicito (Entitlements)
-        # [DESATIVADO TEMPORARIAMENTE] Limitador de plano
-        # if not billing_service.check_field_limit(user.id):
-        #     raise HTTPException(status_code=403, detail="Limite de talhes do seu plano atingido.")
-            
-        return farm_service.save_field(user.id, request.model_dump(mode='json', exclude_none=True))
+        # Verificação de limite de talhões pelo plano do usuário
+        current_fields = await farm_service.async_get_fields(user.id)
+        current_count = len(current_fields) if current_fields else 0
+        allowed, err_msg = await asyncio.to_thread(billing_service.check_field_limit, user.id, current_count)
+        if not allowed:
+            raise HTTPException(status_code=403, detail=err_msg)
+
+        return await farm_service.async_save_field(user.id, request.model_dump(mode='json', exclude_none=True))
     except HTTPException:
         raise
     except Exception as exc:
@@ -2848,7 +3075,7 @@ async def save_field_endpoint(request: FieldCreate, user: AuthenticatedUser = De
         err_msg = str(exc)
         if "Plan limit exceeded" in err_msg:
              raise HTTPException(status_code=403, detail="Limite do plano excedido (Bloqueio DB).")
-             
+
         logging.error("Erro ao salvar talhao: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao salvar talhao.") from exc
 
@@ -2857,7 +3084,7 @@ async def update_field_endpoint(field_id: str, request: FieldBase, user: Authent
     try:
         data = request.model_dump(mode='json', exclude_none=True)
         data["id"] = field_id
-        return farm_service.save_field(user.id, data)
+        return await farm_service.async_save_field(user.id, data)
     except Exception as exc:
         logging.error("Erro ao atualizar talhao: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao atualizar talhao.") from exc
@@ -2865,7 +3092,7 @@ async def update_field_endpoint(field_id: str, request: FieldBase, user: Authent
 @app.delete("/api/fields/{field_id}")
 async def delete_field_endpoint(field_id: str, user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
@@ -2875,7 +3102,7 @@ async def delete_field_endpoint(field_id: str, user: AuthenticatedUser = Depends
         analysis_cache.delete(f"field_intelligence:satellite:{field_id}")
         analysis_cache.delete(f"field_intelligence:weather:{field_id}")
         supabase_service.delete_conversations_by_field(user.id, field_id)
-        return {"success": farm_service.delete_field(field_id, user.id)}
+        return {"success": await farm_service.async_delete_field(field_id, user.id)}
     except HTTPException:
         raise
     except Exception as exc:
@@ -2912,7 +3139,7 @@ async def get_field_analyses_endpoint(
     O talhão precisa pertencer ao usuário autenticado.
     """
     try:
-        field_data = farm_service.get_field_by_id(user.id, field_id)
+        field_data = await farm_service.async_get_field_by_id(user.id, field_id)
         if not field_data:
             raise HTTPException(status_code=404, detail="Talhão não encontrado ou sem permissão de acesso.")
 
@@ -3010,8 +3237,10 @@ async def api_create_genotype(
 @app.get("/api/germoplasma/genotypes")
 async def api_get_genotypes(
     user: AuthenticatedUser = Depends(get_current_user_or_api_key),
+    limit: int = 100,
+    offset: int = 0,
 ):
-    return await get_genotypes(user.id)
+    return await get_genotypes(user.id, limit=min(max(limit, 1), 500), offset=max(offset, 0))
 
 
 @app.patch("/api/germoplasma/genotypes/{genotype_id}")

@@ -1,0 +1,11 @@
+# Dependências extras apenas para o ambiente de testes.
+# Instale com: pip install -r requirements.txt -r requirements-test.txt
+#
+# httpx 0.25.2 é necessário porque starlette>=0.35 quebra o TestClient
+# com httpx>=0.27 (argumento `app=` removido do construtor do Client).
+# Quando starlette corrigir a compatibilidade, este pin pode ser removido.
+httpx==0.25.2
+
+# pytest + asyncio
+pytest>=8.3
+pytest-asyncio>=0.24
