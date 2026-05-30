@@ -21,6 +21,9 @@ tenacity>=9.0,<10.0
 # Auth / data
 supabase>=2.10,<3.0
 python-dotenv>=1.0
+# Verificação local de JWT (assinatura HS256, exp, audience) — evita round-trip
+# ao Supabase Auth a cada request quando SUPABASE_JWT_SECRET está configurada.
+PyJWT>=2.9,<3.0
 
 # IA
 anthropic>=0.40,<1.0
@@ -34,6 +37,9 @@ yfinance>=0.2.50
 
 # Push notifications
 pywebpush>=2.0
+
+# Observabilidade (A-10) — só ativa se SENTRY_DSN estiver definido.
+sentry-sdk[fastapi]>=2.0,<3.0
 
 # Cálculo científico
 scipy>=1.11,<2.0

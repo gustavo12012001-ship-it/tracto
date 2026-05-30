@@ -60,6 +60,27 @@ def get_farms(user_id: str) -> List[Dict[str, Any]]:
         raise
 
 
+def get_farm_by_id(user_id: str, farm_id: str) -> Dict[str, Any] | None:
+    """Retorna a fazenda se pertencer ao usuário, senão None (anti-IDOR)."""
+    try:
+        response = requests.get(
+            _supabase_url("farms"),
+            headers=_get_supabase_headers(),
+            params={
+                "id": f"eq.{farm_id}",
+                "user_id": f"eq.{user_id}",
+                "select": "*",
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data[0] if data else None
+    except Exception as exc:
+        logging.error("Erro ao buscar fazenda por ID farm_id=%s: %s", farm_id, exc)
+        return None
+
+
 def save_farm(user_id: str, farm_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         payload = {**farm_data, "user_id": user_id}
@@ -238,6 +259,10 @@ async def async_get_fields(user_id: str, farm_id: str | None = None) -> List[Dic
 
 async def async_get_field_by_id(user_id: str, field_id: str) -> Dict[str, Any] | None:
     return await _asyncio.to_thread(get_field_by_id, user_id, field_id)
+
+
+async def async_get_farm_by_id(user_id: str, farm_id: str) -> Dict[str, Any] | None:
+    return await _asyncio.to_thread(get_farm_by_id, user_id, farm_id)
 
 
 async def async_save_field(user_id: str, field_data: Dict[str, Any]) -> Dict[str, Any]:

@@ -121,6 +121,14 @@ from services.germoplasm_service import (
 limiter = Limiter(key_func=get_remote_address)
 APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
 
+# (A-10) Observabilidade: inicializa Sentry ANTES de criar o app (no-op sem
+# SENTRY_DSN). As integrações FastAPI/Starlette capturam exceções não tratadas.
+try:
+    from services.monitoring import init_sentry
+    init_sentry()
+except Exception as _exc:  # noqa: BLE001
+    logging.warning("[startup] init_sentry falhou: %s", _exc)
+
 
 # ── Lifespan: substitui @app.on_event("startup") deprecado ──────────────────
 @asynccontextmanager
@@ -712,36 +720,50 @@ async def mercadopago_webhook(request: Request):
     ):
         raise HTTPException(status_code=401, detail="Assinatura de webhook inválida.")
 
-    # ── Idempotência: usa request-id ou data.id como chave ──────────────────
+    # ── Idempotência (A-09) ──────────────────────────────────────────────────
+    # Chave = request-id (preferido) ou type:data.id. Regras:
+    #   • Evento com processed_at != NULL  → duplicado REAL, ignora (200).
+    #   • Evento existente com processed_at == NULL → tentativa anterior falhou
+    #     ou não concluiu → REPROCESSA (sem reinserir, pra não violar UNIQUE).
+    #   • Evento inexistente → registra e processa.
+    #   • Falha transitória → mantém processed_at NULL e responde 503 para o
+    #     Mercado Pago RETENTAR; no retry o evento é reprocessado.
     event_key = headers.get("x-request-id") or f"{event_type}:{data_id}"
     key = os.getenv("SUPABASE_SERVICE_KEY", "")
     sb_evt_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/mp_webhook_events"
+    _sb_headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+
     existing = _req.get(
         sb_evt_url,
-        headers={"apikey": key, "Authorization": f"Bearer {key}"},
-        params={"mp_event_id": f"eq.{event_key}", "limit": "1"},
+        headers=_sb_headers,
+        params={
+            "mp_event_id": f"eq.{event_key}",
+            "select": "mp_event_id,processed_at",
+            "limit": "1",
+        },
         timeout=10,
     )
+    already_registered = False
     if existing.ok and existing.json():
-        logging.info("[MP webhook] evento %s já processado, ignorando", event_key)
-        return {"status": "duplicate"}
+        already_registered = True
+        if existing.json()[0].get("processed_at"):
+            logging.info("[MP webhook] evento %s já processado, ignorando", event_key)
+            return {"status": "duplicate"}
+        logging.info("[MP webhook] reprocessando evento %s (processed_at NULL)", event_key)
 
-    # Registra evento
-    _req.post(
-        sb_evt_url,
-        headers={
-            "apikey": key, "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        },
-        json={
-            "mp_event_id": event_key,
-            "event_type": event_type,
-            "action": payload.get("action") if isinstance(payload, dict) else None,
-            "raw_payload": payload,
-        },
-        timeout=10,
-    )
+    # Registra evento somente se ainda não existir (evita conflito de UNIQUE).
+    if not already_registered:
+        _req.post(
+            sb_evt_url,
+            headers={**_sb_headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
+            json={
+                "mp_event_id": event_key,
+                "event_type": event_type,
+                "action": payload.get("action") if isinstance(payload, dict) else None,
+                "raw_payload": payload,
+            },
+            timeout=10,
+        )
 
     # ── Processa baseado no tipo ────────────────────────────────────────────
     try:
@@ -756,30 +778,26 @@ async def mercadopago_webhook(request: Request):
                 await _process_subscription_event(preapproval)
     except Exception as exc:
         logging.exception("[MP webhook] erro processando evento %s: %s", event_type, exc)
-        # Marca como erro mas retorna 200 (MP não fica retentando)
+        # Registra o erro mas MANTÉM processed_at NULL → permite reprocesso.
         _req.patch(
             sb_evt_url,
-            headers={
-                "apikey": key, "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal",
-            },
+            headers={**_sb_headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
             params={"mp_event_id": f"eq.{event_key}"},
             json={"error_message": str(exc)[:500]},
             timeout=10,
         )
-        return {"status": "error", "message": "logged"}
+        # 503 → Mercado Pago reentrega o evento; reprocessamos no próximo POST.
+        raise HTTPException(
+            status_code=503,
+            detail="Falha transitória ao processar webhook; retente.",
+        )
 
-    # Marca como processado
+    # Sucesso: marca processed_at e limpa erro de tentativas anteriores.
     _req.patch(
         sb_evt_url,
-        headers={
-            "apikey": key, "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        },
+        headers={**_sb_headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
         params={"mp_event_id": f"eq.{event_key}"},
-        json={"processed_at": datetime.now().isoformat()},
+        json={"processed_at": datetime.now(timezone.utc).isoformat(), "error_message": None},
         timeout=10,
     )
     return {"status": "ok"}
@@ -3327,4 +3345,47 @@ async def api_delete_generation(
     if not deleted:
         raise HTTPException(status_code=404, detail="Geração não encontrada.")
     return {"deleted": True}
+
+
+# ── (A-01) user_app_data: persistência genérica por usuário/namespace ────────
+# Substitui o localStorage como fonte de verdade dos dados de melhoramento/
+# pesquisa/solo. Tudo escopado por user.id (anti-IDOR), namespace validado.
+from typing import Any as _Any  # noqa: E402
+from services import user_data_service as _uds  # noqa: E402
+
+
+class _UserDataPayload(_BM):
+    data: _Any
+
+
+@app.get("/api/user-data/{namespace}")
+async def api_get_user_data(
+    namespace: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    if not _uds.is_valid_namespace(namespace):
+        raise HTTPException(status_code=400, detail="Namespace inválido.")
+    try:
+        data = await _uds.async_get_user_data(user.id, namespace)
+        # 'data' None → ainda não existe no backend; devolve null pro cliente decidir migração.
+        return {"namespace": namespace, "data": data}
+    except Exception as exc:
+        logging.error("[user_data] GET %s: %s", namespace, exc)
+        raise HTTPException(status_code=502, detail="Erro ao carregar dados.") from exc
+
+
+@app.put("/api/user-data/{namespace}")
+async def api_put_user_data(
+    namespace: str,
+    body: _UserDataPayload,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    if not _uds.is_valid_namespace(namespace):
+        raise HTTPException(status_code=400, detail="Namespace inválido.")
+    try:
+        saved = await _uds.async_upsert_user_data(user.id, namespace, body.data)
+        return {"namespace": namespace, "data": saved}
+    except Exception as exc:
+        logging.error("[user_data] PUT %s: %s", namespace, exc)
+        raise HTTPException(status_code=502, detail="Erro ao salvar dados.") from exc
 

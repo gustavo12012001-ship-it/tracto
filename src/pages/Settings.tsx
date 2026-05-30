@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useAppStore } from '../store/useAppStore';
 import { apiFetch } from '../services/api';
+import { useConfirm } from '../components/ui/useConfirm';
+import { toast as showToast } from '../components/ui/Toast';
 
 type Tab = 'perfil' | 'fazenda' | 'seguranca' | 'privacidade' | 'notificacoes' | 'times';
 
@@ -257,6 +259,7 @@ function PerfilTab() {
 // TAB: FAZENDA
 // ═══════════════════════════════════════════════════════════════════════════════
 function FazendaTab() {
+  const confirm = useConfirm();
   const { farms, fields, updateFarmInfo, deleteFarm, updateField, removeField } = useAppStore();
   const [editingFarmId, setEditingFarmId] = useState<string | null>(null);
   const [editFarmName, setEditFarmName] = useState('');
@@ -285,13 +288,21 @@ function FazendaTab() {
   };
 
   const handleDeleteFarm = async (farmId: string, farmName: string) => {
-    if (!window.confirm(`Excluir a fazenda "${farmName}" e todos os seus talhões?`)) return;
+    const ok = await confirm({
+      title: `Excluir "${farmName}"?`,
+      message: 'Todos os talhões dessa fazenda também serão removidos. Esta ação não pode ser desfeita.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
     setLoading(true);
     try {
       await deleteFarm(farmId);
       setToast({ msg: 'Fazenda excluída.', type: 'ok' });
+      showToast.success(`Fazenda "${farmName}" excluída.`);
     } catch {
       setToast({ msg: 'Erro ao excluir fazenda.', type: 'err' });
+      showToast.error('Erro ao excluir fazenda.');
     } finally {
       setLoading(false);
     }
@@ -311,13 +322,21 @@ function FazendaTab() {
   };
 
   const handleDeleteField = async (farmId: string, fieldId: string, fieldName: string) => {
-    if (!window.confirm(`Excluir o talhão "${fieldName}"?`)) return;
+    const ok = await confirm({
+      title: `Excluir talhão "${fieldName}"?`,
+      message: 'Histórico, registros e imagens vinculadas serão perdidas.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
     setLoading(true);
     try {
       await removeField(farmId, fieldId);
       setToast({ msg: 'Talhão excluído.', type: 'ok' });
+      showToast.success(`Talhão "${fieldName}" excluído.`);
     } catch {
       setToast({ msg: 'Erro ao excluir talhão.', type: 'err' });
+      showToast.error('Erro ao excluir talhão.');
     } finally {
       setLoading(false);
     }
@@ -851,6 +870,7 @@ const ROLE_LABELS: Record<string, { label: string; color: string; bg: string }> 
 };
 
 function TimesTab() {
+  const confirm = useConfirm();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -910,7 +930,13 @@ function TimesTab() {
   };
 
   const handleRemoveMember = async (member: TeamMember) => {
-    if (!window.confirm(`Remover ${member.name || member.email} da equipe?`)) return;
+    const ok = await confirm({
+      title: `Remover ${member.name || member.email}?`,
+      message: 'O membro perderá acesso a todos os talhões e dados da equipe.',
+      confirmLabel: 'Remover',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await apiFetch(`/api/team/members/${member.id}`, { method: 'DELETE' });
       setToast({ msg: 'Membro removido.', type: 'ok' });

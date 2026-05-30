@@ -16,6 +16,44 @@ Execute **na ordem** no Supabase SQL Editor:
 | 7 | `07_farm_boundaries.sql` | Polígono boundaries em farms | Geo |
 | 8 | `08_plots_notebook_satellite.sql` | Plots (microtalhões) + notebook_events + Up42 source | Caderno |
 | 9 | `09_satellite_artifact_mode_cache_key.sql` | Constraint unique inclui mode+bbox_hash (NDVI/RGB coexistem) | Cache |
+| 10 | `10_billing.sql` | Plans/subscriptions/billing_profiles/payment_transactions/mp_webhook_events | Billing |
+| 11 | `11_chat_usage.sql` | Contagem diária de uso do chat IA (limites por plano) | Chat IA |
+| 12 | `12_postgis_fields.sql` | (A-07) PostGIS: coluna `geom` + índice GiST + área, preservando `boundaries` JSONB | Geo |
+| 13 | `13_user_app_data.sql` | (A-01) `user_app_data` (JSONB por usuário/namespace) — fim do localStorage como fonte de verdade | Dados |
+
+## Runner automatizado (A-08)
+
+Há um runner versionado em `tracto-backend/migrate.py` que aplica os `.sql`
+pendentes em ordem e registra cada um em `public.schema_migrations`
+(idempotente — pula os já aplicados).
+
+Pré-requisitos:
+
+```bash
+pip install 'psycopg[binary]'
+# DATABASE_URL = Supabase > Settings > Database > Connection string > URI
+export DATABASE_URL="postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres"   # NUNCA commite
+```
+
+Comandos:
+
+```bash
+# Desenvolvimento — ver estado e simular
+python migrate.py --status     # aplicadas x pendentes
+python migrate.py --dry-run    # mostra o que seria aplicado, sem executar
+
+# Aplicar pendentes (dev ou produção)
+python migrate.py
+```
+
+Em **produção** (Railway), rode o mesmo comando a partir de um shell com
+`DATABASE_URL` setada (ou como passo de deploy). Cada migration roda em
+transação; em erro, faz rollback e aborta sem registrar a versão.
+
+> Bancos já existentes: o `schema_migrations` começa vazio, então o runner
+> tentaria reaplicar tudo. Como todas as migrations são idempotentes
+> (`IF NOT EXISTS`), isso é seguro; alternativamente, faça um INSERT manual das
+> versões já aplicadas em `schema_migrations` para o runner pulá-las.
 
 ## Como aplicar do zero (banco novo)
 

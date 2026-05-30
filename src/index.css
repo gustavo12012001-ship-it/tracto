@@ -40,6 +40,26 @@ body {
   @apply font-sans antialiased;
 }
 
+/* Acessibilidade: foco visível APENAS para navegação por teclado (não no clique
+   de mouse), garantindo contraste do indicador de foco em qualquer tema. */
+:focus-visible {
+  outline: 2px solid #f97316; /* orange-500 — combina com a marca */
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respeita usuários que preferem menos animação (vestibular/acessibilidade). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Leaflet maps custom resets */
 .leaflet-container {
   width: 100%;

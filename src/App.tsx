@@ -2,6 +2,9 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
+import { ConfirmProvider } from './components/ui/useConfirm';
+import { captureException } from './services/monitoring';
 
 // Páginas públicas: eagerly loaded (login flow precisa ser instantâneo)
 import Login from './pages/Login';
@@ -48,6 +51,8 @@ function RouteFallback() {
 function App() {
   return (
     <BrowserRouter>
+      <ErrorBoundary onError={(error, info) => captureException(error, { componentStack: info.componentStack })}>
+      <ConfirmProvider>
       <Routes>
         {/* Públicas — não lazy pra UX rápida no login */}
         <Route path="/" element={<LandingPage />} />
@@ -93,6 +98,8 @@ function App() {
           <Route path="billing/pending" element={<BillingPending />} />
         </Route>
       </Routes>
+      </ConfirmProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

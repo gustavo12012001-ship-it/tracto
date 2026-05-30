@@ -1,7 +1,10 @@
+import hashlib
 import logging
 import os
 import json
 import base64
+import threading
+import time as _time
 from dataclasses import dataclass
 
 import requests
@@ -12,6 +15,72 @@ from fastapi import Header, HTTPException, status
 class AuthenticatedUser:
     id: str
     email: str | None = None
+
+
+# ── Cache token→user (A-04) ──────────────────────────────────────────────────
+# Evita um round-trip HTTP ao Supabase Auth a CADA request autenticado.
+# Chave = sha256(token) (nunca guardamos o token cru). TTL curto (60s) para
+# manter a janela de revogação pequena. Cacheamos apenas verificações OK.
+_AUTH_CACHE_TTL = float(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
+_auth_cache: dict[str, tuple[AuthenticatedUser, float]] = {}
+_auth_cache_lock = threading.Lock()
+
+
+def _token_key(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _auth_cache_get(token: str) -> AuthenticatedUser | None:
+    key = _token_key(token)
+    with _auth_cache_lock:
+        entry = _auth_cache.get(key)
+        if entry and _time.monotonic() < entry[1]:
+            return entry[0]
+        if entry:
+            _auth_cache.pop(key, None)
+    return None
+
+
+def _auth_cache_put(token: str, user: AuthenticatedUser) -> None:
+    key = _token_key(token)
+    with _auth_cache_lock:
+        _auth_cache[key] = (user, _time.monotonic() + _AUTH_CACHE_TTL)
+        # Bound de memória: limpa entradas expiradas se o cache crescer demais
+        if len(_auth_cache) > 5000:
+            now = _time.monotonic()
+            for k in [k for k, v in _auth_cache.items() if v[1] <= now]:
+                _auth_cache.pop(k, None)
+
+
+def _try_local_verify(token: str) -> AuthenticatedUser | None:
+    """
+    Verificação LOCAL do JWT (sem rede), habilitada apenas se SUPABASE_JWT_SECRET
+    estiver configurada e a lib PyJWT disponível. Valida assinatura HS256, exp e
+    audience ('authenticated'). Retorna None se não puder verificar localmente —
+    nesse caso o chamador faz o fallback para a verificação via rede.
+    """
+    secret = os.getenv("SUPABASE_JWT_SECRET")
+    if not secret:
+        return None
+    try:
+        import jwt  # PyJWT
+    except ImportError:
+        return None
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience="authenticated",
+            options={"require": ["exp", "sub"]},
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        return AuthenticatedUser(id=user_id, email=payload.get("email"))
+    except Exception:
+        # Assinatura inválida/expirada/algoritmo diferente → deixa o fallback decidir
+        return None
 
 
 def get_unverified_user_id_from_header(authorization: str | None) -> str | None:
@@ -83,6 +152,21 @@ def _extract_bearer_token(authorization: str | None) -> str:
 
 
 def verify_access_token(access_token: str) -> AuthenticatedUser:
+    # 1) Verificação LOCAL do JWT (sem rede), se SUPABASE_JWT_SECRET estiver
+    #    configurada. É o caminho mais seguro e rápido — valida assinatura,
+    #    expiração e audience. Cacheamos para evitar redecodificar a cada request.
+    local_user = _try_local_verify(access_token)
+    if local_user is not None:
+        _auth_cache_put(access_token, local_user)
+        return local_user
+
+    # 2) Cache token→user (TTL curto). Evita round-trip ao Supabase Auth quando
+    #    a verificação local não está disponível (sem JWT secret configurado).
+    cached = _auth_cache_get(access_token)
+    if cached is not None:
+        return cached
+
+    # 3) Fallback: verificação via rede no Supabase Auth.
     try:
         response = requests.get(
             f"{_supabase_url()}/auth/v1/user",
@@ -108,7 +192,9 @@ def verify_access_token(access_token: str) -> AuthenticatedUser:
                 detail="Nao foi possivel identificar o usuario autenticado.",
             )
 
-        return AuthenticatedUser(id=user_id, email=payload.get("email"))
+        user = AuthenticatedUser(id=user_id, email=payload.get("email"))
+        _auth_cache_put(access_token, user)
+        return user
     except HTTPException:
         raise
     except requests.RequestException as exc:
@@ -154,8 +240,9 @@ def require_farm_ownership(farm_id: str, user: AuthenticatedUser) -> dict:
     from services import farm_service
     if not farm_id or not farm_id.strip():
         raise HTTPException(status_code=_status.HTTP_400_BAD_REQUEST, detail="farm_id inválido.")
-    farm = farm_service.get_farm_by_id(user.id, farm_id.strip()) if hasattr(farm_service, "get_farm_by_id") else None
+    farm = farm_service.get_farm_by_id(user.id, farm_id.strip())
     if not farm:
+        # 404 (não 403) — não revela existência de farm de outro usuário
         raise HTTPException(
             status_code=_status.HTTP_404_NOT_FOUND,
             detail="Fazenda não encontrada ou sem permissão de acesso.",

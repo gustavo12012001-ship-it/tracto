@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { apiFetch } from '../services/api';
-import jsPDF from 'jspdf';
+import { useConfirm } from '../components/ui/useConfirm';
+// jsPDF lazy via dynamic import quando exportar PDF
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type GenoStatus = 'Em desenvolvimento' | 'Candidata' | 'Descartada' | 'Registrada';
@@ -119,8 +120,9 @@ async function syncGenerationToAPI(data: Generation): Promise<string | null> {
   } catch { return null; }
 }
 
-// ── Passport PDF Export ────────────────────────────────────────────────────────
-function exportPassport(geno: Genotype) {
+// ── Passport PDF Export — jsPDF lazy ────────────────────────────────────────
+async function exportPassport(geno: Genotype) {
+  const { default: jsPDF } = await import('jspdf');
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const W = doc.internal.pageSize.getWidth();
   let y = 18;
@@ -246,6 +248,7 @@ const lblCls = 'text-[10px] font-bold uppercase tracking-widest mb-1 block';
 
 // ── Germoplasma Tab ────────────────────────────────────────────────────────────
 function GermoplasmaTab() {
+  const confirm = useConfirm();
   const [list, setList]     = useState<Genotype[]>(loadGenotypes);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -345,8 +348,8 @@ Com base em todos esses dados, forneça:
     void syncGenotypeToAPI(newItem);
   };
 
-  const del = (id: string) => {
-    if (!window.confirm('Excluir esta linhagem?')) return;
+  const del = async (id: string) => {
+    if (!await confirm({ title: 'Excluir linhagem?', message: 'Esta ação não pode ser desfeita.', danger: true })) return;
     const updated = list.filter(g => g.id !== id);
     setList(updated); saveGenotypes(updated);
     // Sync delete to backend (fire-and-forget)
@@ -493,14 +496,14 @@ Com base em todos esses dados, forneça:
                         <span className="material-symbols-outlined text-sm">lab_research</span>
                       </button>
                       <button
-                        onClick={() => exportPassport(g)}
+                        onClick={() => void exportPassport(g)}
                         className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-all"
                         style={{ color: '#60a5fa' }}
                         title="Exportar Passaporte PDF"
                       >
                         <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
                       </button>
-                      <button onClick={() => del(g.id)} className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#f87171' }}>
+                      <button onClick={() => void del(g.id)} className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#f87171' }}>
                         <span className="material-symbols-outlined text-sm">delete</span>
                       </button>
                     </div>
@@ -714,7 +717,7 @@ function CruzamentosTab() {
                   </div>
                   {c.notes && <p className="text-[11px] mt-1 italic" style={{ color: '#475569' }}>{c.notes}</p>}
                 </div>
-                <button onClick={() => del(c.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 flex-shrink-0" style={{ color: '#f87171' }}>
+                <button onClick={() => void del(c.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 flex-shrink-0" style={{ color: '#f87171' }}>
                   <span className="material-symbols-outlined text-sm">delete</span>
                 </button>
               </div>
@@ -851,7 +854,7 @@ function GeracoesTab() {
                 {gen.selection_criteria && <p className="text-xs mt-1 italic" style={{ color: '#64748b' }}>Critério: {gen.selection_criteria}</p>}
                 {gen.notes && <p className="text-xs mt-0.5 italic" style={{ color: '#475569' }}>{gen.notes}</p>}
               </div>
-              <button onClick={() => del(gen.id)} className="p-1 rounded hover:bg-red-500/10 flex-shrink-0" style={{ color: '#f87171' }}>
+              <button onClick={() => void del(gen.id)} className="p-1 rounded hover:bg-red-500/10 flex-shrink-0" style={{ color: '#f87171' }}>
                 <span className="material-symbols-outlined text-sm">delete</span>
               </button>
             </div>

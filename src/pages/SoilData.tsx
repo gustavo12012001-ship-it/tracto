@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { hydrateNamespace, persist } from '../services/userData';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SoilAnalysis {
@@ -31,13 +32,18 @@ function loadAllSoil(): Record<string, SoilAnalysis> {
 function saveSoil(fieldId: string, analysis: SoilAnalysis) {
   const all = loadAllSoil();
   all[fieldId] = analysis;
-  try { localStorage.setItem(SOIL_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  // (A-01) write-through: grava local (sync) e propaga ao backend (best-effort).
+  persist('soil', SOIL_KEY, all);
 }
 
 function deleteSoil(fieldId: string) {
   const all = loadAllSoil();
   delete all[fieldId];
-  try { localStorage.setItem(SOIL_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  persist('soil', SOIL_KEY, all);
+}
+
+function isSoilEmpty(d: Record<string, SoilAnalysis> | null): boolean {
+  return !d || Object.keys(d).length === 0;
 }
 
 // ── CSV Parser ─────────────────────────────────────────────────────────────────
@@ -166,7 +172,18 @@ export default function SoilData() {
   const [selectedFieldId, setSelectedFieldId] = useState<string>(fields[0]?.id ?? '');
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  const [syncing, setSyncing] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // (A-01) Sincroniza com o backend (fonte de verdade) no mount: hidrata o
+  // cache local e migra dados legados do localStorage na primeira vez.
+  useEffect(() => {
+    let alive = true;
+    hydrateNamespace<Record<string, SoilAnalysis>>('soil', SOIL_KEY, isSoilEmpty)
+      .then(() => { if (alive) setSoilData(loadAllSoil()); })
+      .finally(() => { if (alive) setSyncing(false); });
+    return () => { alive = false; };
+  }, []);
 
   const selectedField = fields.find(f => f.id === selectedFieldId);
   const selectedFarm = farms.find(f => f.id === selectedField?.farm_id);
@@ -235,6 +252,12 @@ export default function SoilData() {
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
             Importe análises laboratoriais em CSV e visualize os parâmetros por talhão.
           </p>
+          {syncing && (
+            <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--muted)' }} role="status">
+              <span className="w-3 h-3 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
+              Sincronizando com a nuvem…
+            </div>
+          )}
         </div>
 
         {fields.length === 0 ? (

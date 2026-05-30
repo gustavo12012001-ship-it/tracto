@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../services/supabase';
@@ -277,17 +277,37 @@ export default function Layout() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showNotifications, selectorOpen]);
 
+  const [syncFailed, setSyncFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  const doSync = useCallback(async () => {
+    setSyncFailed(false);
+    setRetrying(false);
+    // Timeout: se backend demorar mais de 8s, marca como falha
+    const timeout = setTimeout(() => {
+      useAppStore.setState({ isSyncing: false });
+      setSyncFailed(true);
+    }, 8000);
+    try {
+      await syncFromBackend();
+      setSyncFailed(false);
+    } catch {
+      setSyncFailed(true);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }, [syncFromBackend]);
+
+  const handleRetrySync = useCallback(async () => {
+    setRetrying(true);
+    await doSync();
+    setRetrying(false);
+  }, [doSync]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        // Timeout: se backend demorar mais de 5s, continua sem sync
-        const timeout = setTimeout(() => {
-          useAppStore.setState({ isSyncing: false });
-        }, 5000);
-
-        syncFromBackend().finally(() => clearTimeout(timeout));
-
-        // Sempre tenta geolocalizacao no mount; o util decide fallback em caso de erro/negacao.
+        void doSync();
         const state = useAppStore.getState();
         void state.updateGeolocation();
       }
@@ -295,14 +315,14 @@ export default function Layout() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        syncFromBackend();
+        void doSync();
         const state = useAppStore.getState();
         void state.updateGeolocation();
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [syncFromBackend]);
+  }, [doSync]);
 
   // ── Pré-carrega meteorologia ao abrir o app ──────────────────────────────────
   useEffect(() => {
@@ -406,8 +426,8 @@ export default function Layout() {
         [data-theme="light"] .card-glass { background: rgba(0,0,0,0.02); }
 
         /* ── Light mode: sobrescrever surfaces escuras ──── */
-        [data-theme="light"] .bg-slate-800\/50,
-        [data-theme="light"] .bg-slate-700\/50,
+        [data-theme="light"] .bg-slate-800/50,
+        [data-theme="light"] .bg-slate-700/50,
         [data-theme="light"] .bg-slate-900 { background-color: rgba(0,0,0,0.06) !important; }
         /* Cards e superfícies com rgba branco */
         [data-theme="light"] [style*="rgba(255,255,255,0.0"],
@@ -430,10 +450,10 @@ export default function Layout() {
           border-color: rgba(15,23,42,0.18) !important;
         }
         /* Bordas explícitas Tailwind (border-white/N) → visíveis no light mode */
-        [data-theme="light"] .border-white\/5,
-        [data-theme="light"] .border-white\/10,
-        [data-theme="light"] .border-white\/15,
-        [data-theme="light"] .border-white\/20 {
+        [data-theme="light"] .border-white/5,
+        [data-theme="light"] .border-white/10,
+        [data-theme="light"] .border-white/15,
+        [data-theme="light"] .border-white/20 {
           border-color: rgba(15,23,42,0.18) !important;
         }
         /* Divider lines em <hr> e elementos com border-t/b/l/r usando rgba branco */
@@ -747,6 +767,7 @@ export default function Layout() {
           {/* Close button */}
           <button
             onClick={() => setDrawerOpen(false)}
+            aria-label="Fechar menu"
             className="absolute top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-lg"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)' }}
           >
@@ -1040,6 +1061,8 @@ export default function Layout() {
               <div className="relative" ref={bellRef}>
                 <button
                   onClick={() => setShowNotifications((v) => !v)}
+                  aria-label="Notificações"
+                  aria-expanded={showNotifications}
                   className="relative p-2 rounded-lg transition-all hover:bg-white/5"
                   style={{ background: showNotifications ? 'rgba(236,91,19,0.12)' : 'var(--surface)', border: `1px solid ${showNotifications ? 'rgba(236,91,19,0.3)' : 'var(--border)'}` }}
                 >
@@ -1088,6 +1111,7 @@ export default function Layout() {
                               {alert.field && <p className="text-[9px] mt-1" style={{ color: '#475569' }}>📍 {alert.field}</p>}
                             </div>
                             <button onClick={() => dismissAlert(alert.id)}
+                              aria-label="Dispensar alerta"
                               className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-white/10 transition-all"
                               style={{ color: '#475569' }}>
                               <span className="material-symbols-outlined text-xs">close</span>
@@ -1118,6 +1142,32 @@ export default function Layout() {
             className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[6000] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-orange-500 focus:text-white">
             Pular para o conteúdo
           </a>
+
+          {/* Banner de falha de sync — aparece quando o backend não responde */}
+          {syncFailed && fields.length === 0 && (
+            <div
+              className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2.5"
+              style={{ background: 'rgba(251,191,36,0.10)', borderBottom: '1px solid rgba(251,191,36,0.25)' }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="material-symbols-outlined text-base flex-shrink-0" style={{ color: '#fbbf24' }}>wifi_off</span>
+                <p className="text-xs" style={{ color: '#fbbf24' }}>
+                  Não foi possível carregar seus talhões. Verifique a conexão e tente novamente.
+                </p>
+              </div>
+              <button
+                onClick={() => void handleRetrySync()}
+                disabled={retrying}
+                className="flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.35)', color: '#fbbf24' }}
+              >
+                {retrying
+                  ? <><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> Carregando…</>
+                  : <><span className="material-symbols-outlined text-sm">refresh</span> Tentar novamente</>
+                }
+              </button>
+            </div>
+          )}
 
           {/* Page Content — scrolls correctly on mobile */}
           <main id="main-content" className="flex-1 flex overflow-hidden min-h-0" role="main">

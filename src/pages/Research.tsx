@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { apiFetch } from '../services/api';
+import { persist } from '../services/userData';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ResearchEntry {
@@ -29,7 +30,8 @@ function loadAll(): Record<string, ResearchEntry> {
 }
 
 function saveAll(data: Record<string, ResearchEntry>) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+  // (A-01) write-through: cache local (sync) + backup no backend (best-effort).
+  persist('research_blocks', STORAGE_KEY, data);
 }
 
 function loadEntry(fieldId: string): ResearchEntry {
@@ -246,7 +248,7 @@ function saveFenologia(fieldId: string, evals: FenologicalEval[]) {
   try {
     const all = JSON.parse(localStorage.getItem(FENO_KEY) ?? '{}');
     all[fieldId] = evals;
-    localStorage.setItem(FENO_KEY, JSON.stringify(all));
+    persist('fenotipos', FENO_KEY, all);  // (A-01) local + backend
   } catch { /* ignore */ }
 }
 
@@ -858,7 +860,7 @@ function loadExperiments(): Experiment[] {
 }
 
 function saveExperiments(exps: Experiment[]) {
-  try { localStorage.setItem(EXP_KEY, JSON.stringify(exps)); } catch { /* ignore */ }
+  persist('experiments', EXP_KEY, exps);  // (A-01) local + backend
 }
 
 const TREATMENT_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -1774,7 +1776,7 @@ const loadAvaliacoes = (): Avaliacao[] => {
   try { return JSON.parse(localStorage.getItem(AV_KEY) ?? '[]'); } catch { return []; }
 };
 const saveAvaliacoes = (d: Avaliacao[]) => {
-  try { localStorage.setItem(AV_KEY, JSON.stringify(d)); } catch { /**/ }
+  persist('avaliacoes', AV_KEY, d);  // (A-01) local + backend
 };
 
 const COR_PENDAO = ['Amarelo claro','Amarelo','Amarelo escuro','Roxo claro','Roxo','Rosado','Branco'];
@@ -1978,9 +1980,13 @@ IMPORTANTE: se não houver referência de escala visível (pessoa, régua, bitol
           image_base64: photo?.base64 ?? null,
           image_mime_type: photo?.mime ?? 'image/jpeg',
           user_profile: 'pesquisador',
-          research_context: localStorage.getItem('tracto-germoplasma-v1')
-            ? `Germoplasma da empresa:\n${localStorage.getItem('tracto-germoplasma-v1')}`
-            : null,
+          // (A-01) Contexto de germoplasma para a IA. TODO: derivar no backend a
+          // partir das tabelas verificadas (germoplasm_service) em vez de confiar
+          // no cache do cliente. Por ora, leitura única do cache local.
+          research_context: (() => {
+            const g = localStorage.getItem('tracto-germoplasma-v1');
+            return g ? `Germoplasma da empresa:\n${g}` : null;
+          })(),
         }),
       });
 

@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../services/api';
 import BillingProfileModal from '../components/BillingProfileModal';
+import { useConfirm } from '../components/ui/useConfirm';
+import { toast } from '../components/ui/Toast';
 
 interface Plan {
   id: string;
@@ -53,6 +55,7 @@ const PLAN_COLORS: Record<string, { color: string; bg: string }> = {
 
 export default function Pricing() {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [currentPlanId, setCurrentPlanId] = useState<string>('free');
@@ -122,12 +125,22 @@ export default function Pricing() {
   };
 
   const cancelSubscription = async () => {
-    if (!confirm('Tem certeza? Seu acesso aos recursos premium será encerrado ao fim do período atual.')) return;
+    const ok = await confirm({
+      title: 'Cancelar assinatura?',
+      message: 'Seu acesso aos recursos premium será encerrado ao fim do período atual. Esta ação pode ser revertida assinando novamente.',
+      confirmLabel: 'Sim, cancelar',
+      cancelLabel: 'Manter assinatura',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await apiFetch('/api/billing/cancel', { method: 'POST' });
+      toast.success('Assinatura cancelada.');
       await fetchAll();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha ao cancelar.');
+      const msg = e instanceof Error ? e.message : 'Falha ao cancelar.';
+      setError(msg);
+      toast.error(msg);
     }
   };
 

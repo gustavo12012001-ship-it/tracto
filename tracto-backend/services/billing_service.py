@@ -8,8 +8,6 @@ Fallback: free plan se sem assinatura ou plan_id desconhecido.
 
 import logging
 import os
-import threading
-import time as _time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -45,11 +43,10 @@ _FREE_FALLBACK: dict[str, Any] = {
     "is_trial": False,
 }
 
-# Cache simples de entitlements por user_id com TTL de 60 segundos.
-# Evita 2 HTTP requests ao Supabase por request ao /api/chat.
-_ent_cache: dict[str, tuple[dict, float]] = {}
+# Cache de entitlements por user_id com TTL de 60s — evita 2 HTTP requests ao
+# Supabase por request ao /api/chat. (A-03) O armazenamento agora é o cache
+# compartilhado (services.shared_cache): Redis se REDIS_URL existir, senão local.
 _ent_cache_ttl: float = 60.0
-_ent_cache_lock = threading.Lock()
 
 
 def _is_trial_active(trial_end_at: str | None) -> bool:
@@ -180,23 +177,25 @@ class BillingService:
 
         Frontend usa pra mostrar/esconder features. Backend usa pra enforcement
         em endpoints sensíveis (satélite, IA, WhatsApp, limite de talhões).
+
+        (A-03) Usa o cache compartilhado: Redis quando REDIS_URL está definida
+        (consistente entre instâncias), senão cache local em memória.
         """
-        with _ent_cache_lock:
-            cached = _ent_cache.get(user_id)
-            if cached and _time.monotonic() < cached[1]:
-                return cached[0].copy()
+        from services.shared_cache import cache as _shared
+
+        ckey = f"entitlements:{user_id}"
+        cached = _shared.get_json(ckey)
+        if isinstance(cached, dict):
+            return cached.copy()
 
         result = self._compute_entitlements(user_id)
-
-        with _ent_cache_lock:
-            _ent_cache[user_id] = (result, _time.monotonic() + _ent_cache_ttl)
-
+        _shared.set_json(ckey, result, ttl_seconds=_ent_cache_ttl)
         return result.copy()
 
     def invalidate_cache(self, user_id: str) -> None:
         """Remove entitlements do cache (chamar após webhook de billing confirmado)."""
-        with _ent_cache_lock:
-            _ent_cache.pop(user_id, None)
+        from services.shared_cache import cache as _shared
+        _shared.delete(f"entitlements:{user_id}")
 
     def check_field_limit(self, user_id: str, current_count: int) -> tuple[bool, str | None]:
         """

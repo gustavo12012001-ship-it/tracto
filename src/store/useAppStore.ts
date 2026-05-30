@@ -9,6 +9,14 @@ export interface Entitlements {
   max_fields: number;
   can_use_whatsapp: boolean;
   can_use_push: boolean;
+  has_ia_chat: boolean;
+  has_satellite: boolean;
+  plan_id: string;
+  plan_name: string;
+  status: string;
+  is_trial: boolean;
+  trial_end_at: string | null;
+  current_period_end: string | null;
 }
 
 export interface Location {

@@ -189,6 +189,61 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// ── Paywall: bloqueia chat se plano não tem has_ia_chat ───────────────────────
+function ChatPaywall({ entitlements }: { entitlements: import('../store/useAppStore').Entitlements | null }) {
+  const isTrial = entitlements?.is_trial ?? false;
+  const trialEnd = entitlements?.trial_end_at
+    ? new Date(entitlements.trial_end_at).toLocaleDateString('pt-BR')
+    : null;
+  const planName = entitlements?.plan_name ?? 'Gratuito';
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6" style={{ background: 'var(--bg)' }}>
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(236,91,19,0.12)' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 36, color: '#ec5b13' }}>lock</span>
+      </div>
+
+      <div className="text-center max-w-sm">
+        <h2 className="text-xl font-black mb-2" style={{ color: 'var(--text)' }}>
+          {isTrial ? 'Seu trial expirou' : 'Recurso não incluso no seu plano'}
+        </h2>
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+          {isTrial
+            ? `Seu período de teste gratuito encerrou em ${trialEnd ?? '—'}. Assine um plano para continuar usando a Tracto IA.`
+            : `O plano ${planName} não inclui acesso à Tracto IA agronômica. Faça upgrade para desbloquear análises, alertas e chat com IA.`}
+        </p>
+      </div>
+
+      <div className="rounded-2xl p-5 max-w-sm w-full" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <p className="text-xs font-black uppercase tracking-widest mb-3" style={{ color: 'var(--muted)' }}>O que você desbloqueia</p>
+        {[
+          'Tracto IA agronômica com contexto do seu talhão',
+          'Análise de fotos da lavoura (pragas, doenças)',
+          'Histórico de conversas salvo',
+          'Integração com caderno de campo',
+        ].map((f, i) => (
+          <div key={i} className="flex items-center gap-2 py-1.5">
+            <span className="material-symbols-outlined text-sm" style={{ color: '#22c55e' }}>check_circle</span>
+            <span className="text-xs" style={{ color: 'var(--text)' }}>{f}</span>
+          </div>
+        ))}
+      </div>
+
+      <a
+        href="/app/billing"
+        className="px-8 py-3 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
+        style={{ background: '#ec5b13', boxShadow: '0 4px 14px rgba(236,91,19,0.35)' }}
+      >
+        Ver planos e assinar
+      </a>
+
+      <p className="text-xs" style={{ color: 'var(--muted)' }}>
+        7 dias grátis · Cancele quando quiser · Processado pelo Mercado Pago
+      </p>
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function Chat() {
   const {
@@ -200,6 +255,7 @@ export default function Chat() {
     fetchFieldIntelligence,
     currentSatelliteScene,
     userProfile,
+    entitlements,
   } = useAppStore();
 
   // Conversation state
@@ -573,6 +629,12 @@ export default function Chat() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
+
+  // Bloqueia se entitlements já carregaram e has_ia_chat é false
+  if (entitlements !== null && !entitlements.has_ia_chat) {
+    return <ChatPaywall entitlements={entitlements} />;
+  }
+
   return (
     <>
       {/* ── Mobile overlay backdrop ─────────────────────────────────────── */}
@@ -594,16 +656,16 @@ export default function Chat() {
           }`}
         style={{
           width: 'min(256px, 80vw)',
-          background: '#0d1117',
-          borderColor: 'rgba(255,255,255,0.07)',
+          background: 'var(--sidebar)',
+          borderColor: 'var(--border)',
         }}
       >
         {/* New conversation button */}
-        <div className="p-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+        <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
           <button
             onClick={startNewConversation}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
-            style={{ background: 'rgba(236,91,19,0.14)', border: '1px solid rgba(236,91,19,0.22)' }}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+            style={{ background: 'rgba(236,91,19,0.14)', border: '1px solid rgba(236,91,19,0.22)', color: 'var(--text)' }}
           >
             <span>Nova Conversa</span>
             <span className="material-symbols-outlined text-base" style={{ color: '#ec5b13' }}>
@@ -616,7 +678,7 @@ export default function Chat() {
         <div className="flex-1 overflow-y-auto scrollbar-thin p-3">
           <p
             className="text-[10px] font-semibold uppercase tracking-widest px-2 py-2"
-            style={{ color: '#64748b' }}
+            style={{ color: 'var(--muted)' }}
           >
             Conversas Salvas
           </p>
@@ -631,7 +693,7 @@ export default function Chat() {
           )}
 
           {!loadingConversations && !apiError && savedConversations.length === 0 && (
-            <p className="text-[10px] px-2 py-3" style={{ color: '#334155' }}>
+            <p className="text-[10px] px-2 py-3" style={{ color: 'var(--muted)' }}>
               Nenhuma conversa salva ainda.
             </p>
           )}
@@ -658,14 +720,14 @@ export default function Chat() {
                   >
                     <p
                       className="text-xs font-medium truncate pr-5"
-                      style={{ color: isActive ? '#f97316' : '#cbd5e1' }}
+                      style={{ color: isActive ? '#f97316' : 'var(--text)' }}
                     >
                       {conv.title}
                     </p>
-                    <p className="text-[10px] mt-0.5" style={{ color: '#475569' }}>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
                       {relativeDate(conv.updated_at)}
                     </p>
-                    <p className="text-[10px] mt-0.5" style={{ color: conv.field_id ? '#64748b' : '#f59e0b' }}>
+                    <p className="text-[10px] mt-0.5" style={{ color: conv.field_id ? 'var(--muted)' : '#f59e0b' }}>
                       {conversationScope}
                     </p>
                   </button>
@@ -709,7 +771,7 @@ export default function Chat() {
         </div>
 
         {/* API status */}
-        <div className="p-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+        <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
           <div
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-semibold ${
               apiError ? 'text-red-400' : 'text-green-400'
@@ -735,8 +797,8 @@ export default function Chat() {
         <div
           className="px-5 py-3 border-b flex items-center justify-between flex-shrink-0"
           style={{
-            borderColor: 'rgba(255,255,255,0.07)',
-            background: 'rgba(255,255,255,0.018)',
+            borderColor: 'var(--border)',
+            background: 'var(--surface)',
           }}
         >
           <div className="flex items-center gap-3">

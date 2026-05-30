@@ -13,6 +13,9 @@ export default defineConfig([
     'tmp_jsx/**',
     'tmp_*.tsx',
     '*.backup.*',
+    // E2E roda com @playwright/test (devDep opcional, fora do lockfile da CI).
+    'e2e/**',
+    'playwright.config.ts',
   ]),
   {
     files: ['**/*.{ts,tsx}'],
@@ -25,6 +28,21 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // Convenção: vars/args prefixados com `_` são intencionalmente não usados.
+      // caughtErrors:'none' ignora bindings de catch não usados (ex.: catch (e)).
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrors: 'none',
+      }],
+      // Regras do React Compiler (eslint-plugin-react-hooks v6) são HINTS de
+      // otimização/DX, não bugs de correção. Mantidas como WARNING para guiar
+      // melhorias sem bloquear a CI nem exigir refactors arriscados imediatos.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-refresh/only-export-components': 'warn',
     },
   },
 ])
