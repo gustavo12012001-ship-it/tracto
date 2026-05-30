@@ -26,13 +26,11 @@ const Services = lazy(() => import('./pages/Services'));
 const Pricing = lazy(() => import('./pages/Pricing'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Maps = lazy(() => import('./pages/Maps'));
-const Research = lazy(() => import('./pages/Research'));
 const SoilData = lazy(() => import('./pages/SoilData'));
 const FieldLog = lazy(() => import('./pages/FieldLog'));
 const Calculator = lazy(() => import('./pages/Calculator'));
 const Seasons = lazy(() => import('./pages/Seasons'));
 const Caderno = lazy(() => import('./pages/Caderno'));
-const Germoplasma = lazy(() => import('./pages/Germoplasma'));
 const Images = lazy(() => import('./pages/Images'));
 const BillingSuccess = lazy(() => import('./pages/BillingResult').then(m => ({ default: m.BillingSuccess })));
 const BillingFailed = lazy(() => import('./pages/BillingResult').then(m => ({ default: m.BillingFailed })));
@@ -84,13 +82,11 @@ function App() {
           <Route path="services" element={<Services />} />
           <Route path="billing" element={<Pricing />} />
           <Route path="settings" element={<Settings />} />
-          <Route path="research" element={<Research />} />
           <Route path="soil" element={<SoilData />} />
           <Route path="field-log" element={<FieldLog />} />
           <Route path="calculator" element={<Calculator />} />
           <Route path="seasons" element={<Seasons />} />
           <Route path="caderno" element={<Caderno />} />
-          <Route path="germoplasma" element={<Germoplasma />} />
           <Route path="images" element={<Images />} />
           {/* Páginas de retorno do checkout Mercado Pago */}
           <Route path="billing/success" element={<BillingSuccess />} />

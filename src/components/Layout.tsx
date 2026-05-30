@@ -42,31 +42,6 @@ const NAV_PRODUTOR: NavItem[] = [
   { to: '/app/chat',      label: 'Tracto IA',           icon: iconMap('smart_toy'), badge: 'IA' },
 ];
 
-const NAV_PESQUISADOR: NavItem[] = [
-  { to: '/app/dashboard',    label: 'Mapa & Talhões',      icon: iconMap('map') },
-  { to: '/app/caderno',      label: 'Caderno de Pesquisa', icon: iconMap('menu_book') },
-  { to: '/app/research',     label: 'Pesquisa Agronômica', icon: iconMap('biotech') },
-  { to: '/app/germoplasma',  label: 'Germoplasma',         icon: iconMap('genetics') },
-  { to: '/app/weather',      label: 'Clima',               icon: iconMap('wb_sunny') },
-  { to: '/app/alerts',       label: 'Alertas',             icon: iconMap('notifications_active') },
-  { to: '/app/reports',      label: 'Relatórios',           icon: iconMap('bar_chart') },
-  { to: '/app/chat',         label: 'MelhorIA',             icon: iconMap('smart_toy'), badge: 'IA' },
-];
-
-// Fallback quando nenhum perfil selecionado — mostra tudo
-const NAV_DEFAULT: NavItem[] = [
-  { to: '/app/dashboard',   label: 'Mapa & Talhões',      icon: iconMap('map') },
-  { to: '/app/caderno',     label: 'Caderno de Campo',    icon: iconMap('menu_book') },
-  { to: '/app/research',    label: 'Pesquisa',             icon: iconMap('biotech') },
-  { to: '/app/germoplasma', label: 'Germoplasma',          icon: iconMap('genetics') },
-  { to: '/app/images',      label: 'Imagens',             icon: iconMap('photo_library') },
-  { to: '/app/weather',     label: 'Clima',               icon: iconMap('wb_sunny') },
-  { to: '/app/alerts',      label: 'Alertas',             icon: iconMap('notifications_active') },
-  { to: '/app/reports',     label: 'Relatórios',           icon: iconMap('bar_chart') },
-  { to: '/app/market',      label: 'Mercado',              icon: iconMap('trending_up') },
-  { to: '/app/chat',        label: 'Tracto IA',           icon: iconMap('smart_toy'), badge: 'IA' },
-];
-
 // ── Sidebar content (shared between desktop & mobile drawer) ──────────────────
 function SidebarContent({
   onNavClick,
@@ -79,18 +54,10 @@ function SidebarContent({
   theme: Theme;
   toggleTheme: () => void;
 }) {
-  const { alerts, userProfile } = useAppStore();
+  const { alerts } = useAppStore();
   const activeAlertCount = alerts.filter((a) => !a.dismissed).length;
 
-  const navItems: NavItem[] =
-    userProfile === 'produtor'   ? NAV_PRODUTOR :
-    userProfile === 'pesquisador' ? NAV_PESQUISADOR :
-    NAV_DEFAULT;
-
-  const profileLabel =
-    userProfile === 'produtor'    ? '🌾 Produtor Rural' :
-    userProfile === 'pesquisador' ? '🔬 Pesquisador' :
-    null;
+  const navItems: NavItem[] = NAV_PRODUTOR;
 
   const [userName, setUserName] = useState('Usuário');
 
@@ -123,15 +90,6 @@ function SidebarContent({
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
-
-        {/* Profile badge — apenas exibe o perfil, sem botão de troca */}
-        {profileLabel && (
-          <div className="px-3 pt-2 pb-1">
-            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
-              {profileLabel}
-            </span>
-          </div>
-        )}
 
         {navItems.map((item) => (
           <NavLink

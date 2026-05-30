@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { useAppStore } from '../store/useAppStore';
 
 const maskPhone = (v: string) => {
   let val = v.replace(/\D/g, '');
@@ -38,7 +37,6 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  const { setUserProfile } = useAppStore();
   const [success, setSuccess] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -98,9 +96,6 @@ export default function Register() {
       });
 
       if (signUpError) throw new Error(signUpError.message);
-
-      // Perfil pesquisador é o padrão da plataforma
-      setUserProfile('pesquisador');
 
       setSuccess(true);
     } catch (err: unknown) {
