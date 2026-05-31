@@ -363,7 +363,7 @@ async def send_whatsapp_reply(phone: str, message: str) -> bool:
 
 @app.get("/api/billing/entitlements")
 async def get_entitlements(user: AuthenticatedUser = Depends(get_current_user)):
-    return billing_service.get_entitlements(user.id)
+    return billing_service.get_entitlements(user.id, user.email)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1403,7 +1403,7 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
     try:
         # ── Verificação de entitlement: plano precisa ter has_ia_chat ──────────
         # asyncio.to_thread evita bloquear o event loop (billing_service usa requests síncrono)
-        ent = await asyncio.to_thread(billing_service.get_entitlements, _user.id)
+        ent = await asyncio.to_thread(billing_service.get_entitlements, _user.id, _user.email)
         if not ent.get("has_ia_chat", False):
             raise HTTPException(
                 status_code=403,
@@ -1411,9 +1411,14 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
             )
 
         # ── Limite diário de mensagens por usuário ─────────────────────────────
-        # Pro: 100 msgs/dia | enterprise: 200 | outros planos com IA: 30
+        # Dono: ilimitado | Pro: 100/dia | enterprise: 200 | outros com IA: 30
         plan_id = ent.get("plan_id", "free")
-        daily_limit = 100 if plan_id == "pro" else 200 if plan_id == "enterprise" else 30
+        daily_limit = (
+            1_000_000 if ent.get("is_owner") or plan_id == "owner"
+            else 100 if plan_id == "pro"
+            else 200 if plan_id == "enterprise"
+            else 30
+        )
         await _check_daily_chat_limit(_user.id, daily_limit)
 
         # field_id canônico e obrigatório
@@ -1611,7 +1616,7 @@ async def sentinel_overlay_endpoint(
         raise HTTPException(status_code=400, detail="mode inválido.")
 
     # Verifica entitlement de satélite antes de qualquer chamada externa paga
-    _sat_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id)
+    _sat_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id, user.email)
     if not _sat_ent.get("has_satellite", False):
         raise HTTPException(
             status_code=403,
@@ -1901,7 +1906,7 @@ async def _planet_overlay_response(
     scene_id: str,
     user: AuthenticatedUser,
 ) -> Response:
-    _planet_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id)
+    _planet_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id, user.email)
     if not _planet_ent.get("has_satellite", False):
         raise HTTPException(
             status_code=403,
@@ -1998,7 +2003,7 @@ async def up42_overlay_endpoint(
 ):
     """Retorna preview/thumbnail da cena Up42 como PNG, recortada ao talhão."""
     try:
-        _up42_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id)
+        _up42_ent = await asyncio.to_thread(billing_service.get_entitlements, user.id, user.email)
         if not _up42_ent.get("has_satellite", False):
             raise HTTPException(
                 status_code=403,
@@ -3081,7 +3086,7 @@ async def save_field_endpoint(request: FieldCreate, user: AuthenticatedUser = De
         # Verificação de limite de talhões pelo plano do usuário
         current_fields = await farm_service.async_get_fields(user.id)
         current_count = len(current_fields) if current_fields else 0
-        allowed, err_msg = await asyncio.to_thread(billing_service.check_field_limit, user.id, current_count)
+        allowed, err_msg = await asyncio.to_thread(billing_service.check_field_limit, user.id, current_count, user.email)
         if not allowed:
             raise HTTPException(status_code=403, detail=err_msg)
 

@@ -43,6 +43,54 @@ _FREE_FALLBACK: dict[str, Any] = {
     "is_trial": False,
 }
 
+# ── Allowlist de DONO/ADMIN ──────────────────────────────────────────────────
+# Donos da plataforma recebem acesso TOTAL, ignorando plano/assinatura.
+# Configurável por ambiente (sem segredos): OWNER_EMAILS e/ou OWNER_USER_IDS
+# (separados por vírgula). DEFAULT_OWNER_EMAILS é uma lista fixa no código para
+# funcionar sem precisar mexer no Railway. E-mails não são segredos.
+DEFAULT_OWNER_EMAILS: list[str] = [
+    # Donos fixos da plataforma (preenchido a pedido do próprio dono).
+    # Ex.: "dono@empresa.com.br"
+]
+
+_OWNER_FULL_ACCESS: dict[str, Any] = {
+    "plan_id": "owner",
+    "plan_name": "Acesso Total (Dono)",
+    "status": "active",
+    "max_fields": 1_000_000,
+    "max_farms": 1_000_000,
+    "can_use_whatsapp": True,
+    "can_use_push": True,
+    "has_ia_chat": True,
+    "has_satellite": True,
+    "billing_cycle": None,
+    "current_period_end": None,
+    "trial_end_at": None,
+    "is_trial": False,
+    "is_owner": True,
+}
+
+
+def _owner_emails() -> set[str]:
+    env = os.getenv("OWNER_EMAILS", "")
+    emails = {e.strip().lower() for e in env.split(",") if e.strip()}
+    emails.update(e.strip().lower() for e in DEFAULT_OWNER_EMAILS if e.strip())
+    return emails
+
+
+def _owner_user_ids() -> set[str]:
+    env = os.getenv("OWNER_USER_IDS", "")
+    return {u.strip() for u in env.split(",") if u.strip()}
+
+
+def is_owner(user_id: str | None, email: str | None = None) -> bool:
+    """True se o usuário é dono/admin (acesso total, ignora plano)."""
+    if user_id and user_id in _owner_user_ids():
+        return True
+    if email and email.strip().lower() in _owner_emails():
+        return True
+    return False
+
 # Cache de entitlements por user_id com TTL de 60s — evita 2 HTTP requests ao
 # Supabase por request ao /api/chat. (A-03) O armazenamento agora é o cache
 # compartilhado (services.shared_cache): Redis se REDIS_URL existir, senão local.
@@ -171,16 +219,22 @@ class BillingService:
             "is_trial": _is_trial_active(sub.get("trial_end_at")),
         }
 
-    def get_entitlements(self, user_id: str) -> dict:
+    def get_entitlements(self, user_id: str, email: str | None = None) -> dict:
         """
         Retorna o conjunto de entitlements do usuário com cache TTL de 60s.
 
         Frontend usa pra mostrar/esconder features. Backend usa pra enforcement
         em endpoints sensíveis (satélite, IA, WhatsApp, limite de talhões).
 
+        Donos (allowlist) recebem ACESSO TOTAL, ignorando plano e cache.
+
         (A-03) Usa o cache compartilhado: Redis quando REDIS_URL está definida
         (consistente entre instâncias), senão cache local em memória.
         """
+        # Dono → acesso total, sem consultar plano nem cache.
+        if is_owner(user_id, email):
+            return _OWNER_FULL_ACCESS.copy()
+
         from services.shared_cache import cache as _shared
 
         ckey = f"entitlements:{user_id}"
@@ -197,11 +251,11 @@ class BillingService:
         from services.shared_cache import cache as _shared
         _shared.delete(f"entitlements:{user_id}")
 
-    def check_field_limit(self, user_id: str, current_count: int) -> tuple[bool, str | None]:
+    def check_field_limit(self, user_id: str, current_count: int, email: str | None = None) -> tuple[bool, str | None]:
         """
         Confirma se o usuário pode criar mais um talhão. Retorna (allowed, error_msg).
         """
-        ent = self.get_entitlements(user_id)
+        ent = self.get_entitlements(user_id, email)
         max_fields = ent.get("max_fields", 1)
         if current_count >= max_fields:
             return False, (

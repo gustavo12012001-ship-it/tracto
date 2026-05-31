@@ -128,7 +128,7 @@ def client_free(monkeypatch):
 
     user = AuthenticatedUser(id="free-user-id", email="free@test.com")
     m.app.dependency_overrides[m.get_current_user] = lambda: user
-    monkeypatch.setattr("main.billing_service.get_entitlements", lambda uid: FREE_ENT)
+    monkeypatch.setattr("main.billing_service.get_entitlements", lambda uid, email=None: FREE_ENT)
 
     with TestClient(m.app) as c:
         yield c
@@ -144,7 +144,7 @@ def client_pro(monkeypatch):
 
     user = AuthenticatedUser(id="pro-user-id", email="pro@test.com")
     m.app.dependency_overrides[m.get_current_user] = lambda: user
-    monkeypatch.setattr("main.billing_service.get_entitlements", lambda uid: PRO_ENT)
+    monkeypatch.setattr("main.billing_service.get_entitlements", lambda uid, email=None: PRO_ENT)
 
     with TestClient(m.app) as c:
         yield c
@@ -220,7 +220,7 @@ class TestWhatsAppWebhook:
                 def raise_for_status(self): pass
                 def json(self): return [{"id": "user-123"}]
             monkeypatch.setattr(_req_mod, "get", lambda *a, **kw: FakeResp())
-            monkeypatch.setattr("main.billing_service.get_entitlements", lambda uid: FREE_ENT)
+            monkeypatch.setattr("main.billing_service.get_entitlements", lambda uid, email=None: FREE_ENT)
             with TestClient(m.app) as c:
                 resp = c.post(
                     "/webhooks/whatsapp",
