@@ -29,7 +29,7 @@ L.Icon.Default.mergeOptions({
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type DrawMode = 'none' | 'drawing' | 'drawing_block' | 'drawing_farm';
+type DrawMode = 'none' | 'drawing' | 'drawing_farm';
 type MapLayer = 'osm' | 'google' | 'esri';
 
 interface SentinelScene {
@@ -245,7 +245,7 @@ function MapDrawHandler({
       return;
     }
 
-    const fillColor = drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13';
+    const fillColor = drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13';
 
     const ghost = L.circleMarker(map.getCenter(), {
       radius: 7,
@@ -535,14 +535,6 @@ export default function FieldMap() {
   const [fieldCulturaAnterior, setFieldCulturaAnterior] = useState('');
   const [fieldRotacao, setFieldRotacao] = useState('');
 
-  const [showBlockPicker, setShowBlockPicker] = useState(false);
-
-  // ── Estado do bloco de pesquisa ───────────────────────────────────────────
-  const [blockParentId, setBlockParentId] = useState<string | null>(null);
-  const [blockName, setBlockName] = useState('');
-  const [blockTratamento, setBlockTratamento] = useState('');
-  const [blockNumero, setBlockNumero] = useState('');
-
   // ── Estado do cadastro de fazenda ─────────────────────────────────────────
   const [farmDrawName, setFarmDrawName] = useState('');
   const [farmDrawCity, setFarmDrawCity] = useState('');
@@ -755,8 +747,6 @@ export default function FieldMap() {
     setFieldIrrigacao(''); setFieldAdubacao(''); setFieldUltimaAdubacao('');
     setFieldTextura(''); setFieldCulturaAnterior(''); setFieldRotacao('');
     setShowAdvancedFields(false);
-    setBlockParentId(null); setBlockName(''); setBlockTratamento(''); setBlockNumero('');
-    setShowBlockPicker(false);
     setFarmDrawName(''); setFarmDrawCity(''); setFarmDrawTarget('new');
     setDrawMode('none');
   };
@@ -782,45 +772,6 @@ export default function FieldMap() {
     }
   };
 
-  const startDrawingBlock = (parentId: string) => {
-    resetForm();
-    setBlockParentId(parentId);
-    const nextNum = fields.filter((f) => f.parent_field_id === parentId).length + 1;
-    const letter = String.fromCharCode(64 + nextNum);
-    setBlockName(`Bloco ${letter}`);
-    setBlockNumero(String(nextNum));
-    setDrawMode('drawing_block');
-  };
-
-  const finishBlock = async () => {
-    if (!blockParentId) { alert('Selecione um talhão principal primeiro.'); return; }
-    const parentField = fields.find((f) => f.id === blockParentId);
-    const farmId = parentField?.farm_id ?? activeFarmId;
-    if (!farmId) { alert('Fazenda não encontrada. Selecione uma fazenda ativa.'); return; }
-    if (drawPoints.length < 3) { alert('Marque pelo menos 3 pontos.'); return; }
-    const areaHa = polygonAreaHa(drawPoints);
-    if (areaHa < 0.001) { alert('Área muito pequena. Mínimo 0.001 ha.'); return; }
-    const name = blockName.trim() || `Bloco ${fields.filter((f) => f.parent_field_id === blockParentId).length + 1}`;
-    const centroid: [number, number] = [
-      drawPoints.reduce((s, p) => s + p[0], 0) / drawPoints.length,
-      drawPoints.reduce((s, p) => s + p[1], 0) / drawPoints.length,
-    ];
-    try {
-      setIsSaving(true);
-      await createField(farmId, {
-        lat: centroid[0], lng: centroid[1], name, boundaries: drawPoints, areaHa,
-        parent_field_id: blockParentId,
-        field_type: 'research_block',
-        treatment_label: blockTratamento || undefined,
-        block_number: blockNumero ? parseInt(blockNumero, 10) : undefined,
-      });
-      resetForm();
-    } catch (err: unknown) {
-      alert(`Erro ao salvar bloco: ${err instanceof Error ? err.message : 'desconhecido'}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   // ── Criar fazenda via modal (nome+cidade → geocode → voa no mapa) ──────────
   const createNewFarm = async () => {
@@ -1025,11 +976,8 @@ export default function FieldMap() {
           <Marker position={[currentLocation.lat, currentLocation.lng]}><Popup>📍 Sua localização</Popup></Marker>
         )}
 
-        {fields.map((loc, idx) => {
-          const isBlock = loc.field_type === 'research_block';
-          const color = isBlock
-            ? ['#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#60a5fa', '#fb923c'][idx % 6]
-            : FIELD_COLORS[idx % FIELD_COLORS.length];
+        {fields.filter((loc) => loc.field_type !== 'research_block').map((loc, idx) => {
+          const color = FIELD_COLORS[idx % FIELD_COLORS.length];
           const isActive = loc.id === activeFieldId;
 
           return (
@@ -1039,9 +987,9 @@ export default function FieldMap() {
               pathOptions={{
                 color,
                 fillColor: color,
-                fillOpacity: isBlock ? (isActive ? 0.35 : 0.25) : (isActive ? 0.08 : 0.2),
-                weight: isBlock ? (isActive ? 2.5 : 1.5) : (isActive ? 3 : 2),
-                dashArray: isBlock ? '3 3' : (isActive ? undefined : '4 2'),
+                fillOpacity: isActive ? 0.08 : 0.2,
+                weight: isActive ? 3 : 2,
+                dashArray: isActive ? undefined : '4 2',
               }}
               eventHandlers={{ click: (e) => {
                 // During drawing, absorb the click so it doesn't also place a draw point
@@ -1050,40 +998,26 @@ export default function FieldMap() {
               } }}
             >
               <Tooltip permanent direction="center" className="leaflet-field-label" offset={[0, 0]}>
-                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: isBlock ? 9 : 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
                   {loc.name}
                 </span>
               </Tooltip>
               <Popup>
                 <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 200 }}>
-                  {isBlock && (
-                    <p style={{ fontSize: 9, fontWeight: 600, color: '#34d399', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
-                      Bloco de Pesquisa {loc.parent_field_id ? `· ${fields.find((f) => f.id === loc.parent_field_id)?.name ?? ''}` : ''}
-                    </p>
-                  )}
                   <p style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{loc.name}</p>
-                  {loc.treatment_label && <p style={{ fontSize: 11, color: '#34d399', marginBottom: 2 }}>🧪 {loc.treatment_label}</p>}
                   {loc.cultura && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌱 {loc.cultura}{loc.variedade ? ` · ${loc.variedade}` : ''}</p>}
                   {loc.boundaries && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>📐 {polygonAreaHa(loc.boundaries).toFixed(4)} ha</p>}
-                  {!isBlock && loc.irrigacaoTipo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>💧 {loc.irrigacaoTipo}</p>}
-                  {!isBlock && loc.texturaSolo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌍 Solo {loc.texturaSolo}</p>}
+                  {loc.irrigacaoTipo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>💧 {loc.irrigacaoTipo}</p>}
+                  {loc.texturaSolo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌍 Solo {loc.texturaSolo}</p>}
                   <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
-                    {!isBlock && (
-                      <button onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
-                        style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
-                        🛰 Ver Imagens
-                      </button>
-                    )}
+                    <button onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
+                      style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
+                      🛰 Ver Imagens
+                    </button>
                     <button onClick={() => startEditing(loc)}
                       style={{ fontSize: 11, color: '#60a5fa', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
                       ✏ Editar
                     </button>
-                    {!isBlock && loc.id && (
-                      <button onClick={() => startDrawingBlock(loc.id!)}
-                        style={{ fontSize: 11, color: '#34d399', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
-                        🔬 + Bloco
-                      </button>
-                    )}
                     <a
                       href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
                       target="_blank" rel="noopener noreferrer"
@@ -1106,14 +1040,14 @@ export default function FieldMap() {
             {drawPoints.length > 1 && (
               <Polyline positions={[...drawPoints, drawPoints[0]]}
                 pathOptions={{
-                  color: drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13',
+                  color: drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13',
                   weight: 2, dashArray: '6 4', opacity: 0.85,
                 }} />
             )}
             {drawPoints.map((pt, i) => (
               <Marker key={i} position={pt} icon={L.divIcon({
                 className: '',
-                html: `<div style="width:10px;height:10px;background:${drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13'};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
+                html: `<div style="width:10px;height:10px;background:${drawMode === 'drawing_farm' ? '#ffffff' : '#ec5b13'};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5)"></div>`,
                 iconAnchor: [5, 5],
               })} />
             ))}
@@ -1264,23 +1198,6 @@ export default function FieldMap() {
                 <span className="material-symbols-outlined text-base">add_location_alt</span>
                 Desenhar Talhão
               </button>
-              <button onClick={() => {
-                setActionsOpen(false);
-                const standardFields = fields.filter((f) => f.field_type !== 'research_block');
-                const activeStandard = activeFieldId ? fields.find((f) => f.id === activeFieldId && f.field_type !== 'research_block') : null;
-                if (activeStandard?.id) {
-                  startDrawingBlock(activeStandard.id);
-                } else if (standardFields.length === 1 && standardFields[0].id) {
-                  startDrawingBlock(standardFields[0].id);
-                } else {
-                  setShowBlockPicker(true);
-                }
-              }}
-                className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all"
-                style={{ borderColor: 'rgba(52,211,153,0.35)', color: '#34d399' }}>
-                <span className="material-symbols-outlined text-base">biotech</span>
-                Bloco de Pesquisa
-              </button>
               <button onClick={() => { setActionsOpen(false); setShowNewFarmModal(true); }}
                 className="glass-overlay flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all">
                 <span className="material-symbols-outlined text-base">add_home</span>
@@ -1291,39 +1208,14 @@ export default function FieldMap() {
         </div>
       )}
 
-      {/* Seletor de talhão pai para bloco de pesquisa */}
-      {showBlockPicker && (
-        <div className="absolute top-[80px] right-2 md:top-20 md:right-4 z-[500] flex flex-col gap-2 px-4 py-3 rounded-2xl pointer-events-auto"
-          style={{ background: 'rgba(8,8,9,0.97)', backdropFilter: 'blur(20px)', border: '1px solid rgba(52,211,153,0.3)', width: 'min(220px, calc(100vw - 16px))', maxHeight: 320, overflowY: 'auto' }}>
-          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#34d399' }}>
-            <span className="material-symbols-outlined text-xs align-middle mr-1">biotech</span>
-            Selecione o talhão principal
-          </p>
-          {fields.filter((f) => f.field_type !== 'research_block').length === 0 ? (
-            <p className="text-xs py-2" style={{ color: '#64748b' }}>Nenhum talhão disponível. Crie um talhão primeiro.</p>
-          ) : (
-            fields.filter((f) => f.field_type !== 'research_block').map((f) => (
-              <button key={f.id} onClick={() => { setShowBlockPicker(false); if (f.id) startDrawingBlock(f.id); }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-left hover:bg-white/10 transition-all"
-                style={{ border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0' }}>
-                <span className="material-symbols-outlined text-sm" style={{ color: '#ec5b13' }}>polyline</span>
-                {f.name}
-                {f.areaHa && <span className="ml-auto text-[9px]" style={{ color: '#475569' }}>{f.areaHa.toFixed(1)} ha</span>}
-              </button>
-            ))
-          )}
-          <button onClick={() => setShowBlockPicker(false)} className="text-[10px] text-center py-1 hover:text-white transition-colors" style={{ color: '#475569' }}>Cancelar</button>
-        </div>
-      )}
-
       {/* Instrução de desenho */}
       {drawMode !== 'none' && (
         <div className="glass-overlay absolute top-2 left-2 right-2 md:top-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[500] flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold pointer-events-none"
           style={{
-            borderColor: drawMode === 'drawing_block' ? 'rgba(52,211,153,0.4)' : drawMode === 'drawing_farm' ? 'rgba(255,255,255,0.3)' : 'rgba(236,91,19,0.3)',
+            borderColor: drawMode === 'drawing_farm' ? 'rgba(255,255,255,0.3)' : 'rgba(236,91,19,0.3)',
           }}>
-          <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_block' ? '#34d399' : drawMode === 'drawing_farm' ? '#fff' : '#ec5b13' }}>draw</span>
-          {drawMode === 'drawing_block' ? '🔬 Bloco — ' : drawMode === 'drawing_farm' ? '🏡 Fazenda — ' : ''}
+          <span className="material-symbols-outlined text-base" style={{ color: drawMode === 'drawing_farm' ? '#fff' : '#ec5b13' }}>draw</span>
+          {drawMode === 'drawing_farm' ? '🏡 Fazenda — ' : ''}
           Clique para adicionar vértices · arraste para navegar · {drawPoints.length} ponto{drawPoints.length !== 1 ? 's' : ''}
         </div>
       )}
@@ -1450,64 +1342,6 @@ export default function FieldMap() {
               Cancelar
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Painel de criação de bloco de pesquisa */}
-      {drawMode === 'drawing_block' && (
-        <div className="glass-overlay absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] flex flex-col gap-3 px-5 py-4 rounded-2xl pointer-events-auto overflow-y-auto" style={panelStyle}>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(52,211,153,0.15)' }}>
-              <span className="text-sm">🔬</span>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#34d399' }}>Bloco de Pesquisa</p>
-              {blockParentId && (
-                <p className="text-[10px]" style={{ color: '#64748b' }}>
-                  Talhão pai: {fields.find((f) => f.id === blockParentId)?.name}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={labelCls}>Nome do Bloco</label>
-              <input className={inputCls} placeholder="Ex: Bloco A" value={blockName} onChange={(e) => setBlockName(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls}>Nº do Bloco</label>
-              <input type="number" min="1" className={inputCls} placeholder="1" value={blockNumero} onChange={(e) => setBlockNumero(e.target.value)} />
-            </div>
-          </div>
-
-          <div>
-            <label className={labelCls}>Material / Tratamento</label>
-            <input className={inputCls} placeholder="Ex: Variedade NK 7059 + 200 kg/ha NPK" value={blockTratamento} onChange={(e) => setBlockTratamento(e.target.value)} />
-          </div>
-
-          {drawPoints.length >= 3 && (
-            <p className="text-[10px] text-center" style={{ color: '#64748b' }}>
-              Área: <span className="font-bold text-white">{polygonAreaHa(drawPoints).toFixed(4)} ha</span>
-              {' '}· {drawPoints.length} pontos
-            </p>
-          )}
-
-          <div className="flex gap-2">
-            <button onClick={finishBlock} disabled={isSaving || drawPoints.length < 3}
-              className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40"
-              style={{ background: '#34d399', color: '#051a12' }}>
-              {isSaving ? 'Salvando...' : 'Salvar Bloco'}
-            </button>
-            <button onClick={resetForm} className="px-4 py-2.5 rounded-xl text-xs font-semibold hover:bg-white/10"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
-              Cancelar
-            </button>
-          </div>
-
-          <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-            Após salvar, adicione quantos blocos precisar no mesmo talhão
-          </p>
         </div>
       )}
 
