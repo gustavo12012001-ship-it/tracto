@@ -50,7 +50,7 @@ _FREE_FALLBACK: dict[str, Any] = {
 # funcionar sem precisar mexer no Railway. E-mails não são segredos.
 DEFAULT_OWNER_EMAILS: list[str] = [
     # Donos fixos da plataforma (preenchido a pedido do próprio dono).
-    # Ex.: "dono@empresa.com.br"
+    "gustavo12012001@gmail.com",  # Gustavo Rocha — dono
 ]
 
 _OWNER_FULL_ACCESS: dict[str, Any] = {
