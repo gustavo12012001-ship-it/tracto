@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { analyzeFieldDocument } from '../services/api';
 import { hydrateNamespace, persist } from '../services/userData';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -83,6 +84,45 @@ function parseCSV(text: string): Partial<SoilAnalysis> | null {
   });
 
   return Object.keys(result).length > 0 ? result : null;
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.replace(',', '.').replace(/[^\d.-]/g, '');
+  const parsed = parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function mapExtractedSoilData(data: Record<string, unknown>): Partial<SoilAnalysis> {
+  return {
+    ph: toNumber(data.ph),
+    mo: toNumber(data.materia_organica ?? data.mo),
+    p: toNumber(data.fosforo ?? data.p),
+    k: toNumber(data.potassio ?? data.k),
+    ca: toNumber(data.calcio ?? data.ca),
+    mg: toNumber(data.magnesio ?? data.mg),
+    al: toNumber(data.aluminio ?? data.al),
+    ctc: toNumber(data.ctc),
+    v: toNumber(data.saturacao_bases ?? data.v),
+    b: toNumber(data.boro ?? data.b),
+    cu: toNumber(data.cobre ?? data.cu),
+    fe: toNumber(data.ferro ?? data.fe),
+    mn: toNumber(data.manganes ?? data.manganesio ?? data.mn),
+    zn: toNumber(data.zinco ?? data.zn),
+  };
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'));
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      resolve(dataUrl.split(',')[1] || '');
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── Interpretation helpers ─────────────────────────────────────────────────────
@@ -189,11 +229,66 @@ export default function SoilData() {
   const selectedFarm = farms.find(f => f.id === selectedField?.farm_id);
   const currentSoil = selectedFieldId ? soilData[selectedFieldId] : undefined;
 
+  const saveParsedAnalysis = (parsed: Partial<SoilAnalysis>, successMsg: string) => {
+    if (!selectedFieldId) return;
+    const analysis: SoilAnalysis = {
+      fieldId: selectedFieldId,
+      fieldName: selectedField?.name ?? 'Talhao',
+      importedAt: new Date().toISOString(),
+      ...parsed,
+    };
+    saveSoil(selectedFieldId, analysis);
+    setSoilData(loadAllSoil());
+    setImportMsg({ msg: successMsg, type: 'ok' });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedFieldId) return;
     setImporting(true);
     setImportMsg(null);
+
+    const isTextImport =
+      file.type === 'text/csv' ||
+      file.type === 'text/plain' ||
+      /\.(csv|txt)$/i.test(file.name);
+
+    if (!isTextImport && !file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      setImportMsg({ msg: 'Formato nao suportado ainda. Envie CSV, PDF ou imagem.', type: 'err' });
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
+    if (!isTextImport) {
+      readAsBase64(file)
+        .then((fileBase64) => analyzeFieldDocument({
+          field_id: selectedFieldId,
+          field_name: selectedField?.name,
+          file_name: file.name,
+          mime_type: file.type,
+          file_base64: fileBase64,
+          notebook_section: 'solos_adubacoes',
+        }))
+        .then((result) => {
+          const parsed = mapExtractedSoilData(result.extracted_data);
+          const count = Object.values(parsed).filter((value) => value !== undefined).length;
+          if (count === 0) {
+            setImportMsg({ msg: 'A IA leu o arquivo, mas nao encontrou parametros de solo reconhecidos.', type: 'err' });
+            return;
+          }
+          saveParsedAnalysis(parsed, `${count} parametros extraidos do arquivo com IA.`);
+        })
+        .catch((err) => {
+          setImportMsg({ msg: err instanceof Error ? err.message : 'Erro ao analisar o arquivo.', type: 'err' });
+        })
+        .finally(() => {
+          setImporting(false);
+          if (fileRef.current) fileRef.current.value = '';
+        });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -203,17 +298,9 @@ export default function SoilData() {
           setImportMsg({ msg: 'Nenhum dado reconhecido no CSV. Verifique as colunas.', type: 'err' });
           return;
         }
-        const analysis: SoilAnalysis = {
-          fieldId: selectedFieldId,
-          fieldName: selectedField?.name ?? 'Talhão',
-          importedAt: new Date().toISOString(),
-          ...parsed,
-        };
-        saveSoil(selectedFieldId, analysis);
-        setSoilData(loadAllSoil());
-        setImportMsg({ msg: `${Object.keys(parsed).length} parâmetros importados com sucesso!`, type: 'ok' });
+        saveParsedAnalysis(parsed, `${Object.keys(parsed).length} parametros importados com sucesso!`);
       } catch {
-        setImportMsg({ msg: 'Erro ao processar o arquivo CSV.', type: 'err' });
+        setImportMsg({ msg: 'Erro ao processar o arquivo.', type: 'err' });
       } finally {
         setImporting(false);
         if (fileRef.current) fileRef.current.value = '';
@@ -222,10 +309,10 @@ export default function SoilData() {
     reader.onerror = () => {
       setImportMsg({ msg: 'Erro ao ler o arquivo.', type: 'err' });
       setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
     };
     reader.readAsText(file, 'UTF-8');
   };
-
   const handleDelete = (fieldId: string) => {
     if (!window.confirm('Remover análise de solo deste talhão?')) return;
     deleteSoil(fieldId);
@@ -241,7 +328,7 @@ export default function SoilData() {
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: 'var(--bg)' }}>
-      <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-6">
+      <div className="w-full max-w-[1400px] mx-auto px-4 md:px-6 py-8 flex flex-col gap-6">
 
         {/* Header */}
         <div>
@@ -250,7 +337,7 @@ export default function SoilData() {
             <h1 className="text-2xl font-black text-white">Análise de Solo</h1>
           </div>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            Importe análises laboratoriais em CSV e visualize os parâmetros por talhão.
+            Importe analises laboratoriais em CSV, PDF ou imagem e visualize os parametros por talhao.
           </p>
           {syncing && (
             <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--muted)' }} role="status">
@@ -311,16 +398,15 @@ export default function SoilData() {
 
               {/* Import section */}
               <div className="flex flex-col gap-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                <p className="text-xs font-bold text-white">Importar CSV de análise</p>
+                <p className="text-xs font-bold text-white">Importar analise</p>
                 <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                  Colunas reconhecidas: pH, M.O.(%), P, K, Ca, Mg, Al, CTC, V(%), B, Cu, Fe, Mn, Zn.
-                  Separadores: vírgula, ponto-e-vírgula ou tabulação. Primeira linha = cabeçalhos, segunda = valores.
+                  Aceita CSV, PDF ou imagem. Campos reconhecidos: pH, M.O.(%), P, K, Ca, Mg, Al, CTC, V(%), B, Cu, Fe, Mn, Zn.
                 </p>
                 <div className="flex items-center gap-3">
                   <input
                     ref={fileRef}
                     type="file"
-                    accept=".csv,.txt"
+                    accept=".csv,.txt,application/pdf,image/*"
                     className="hidden"
                     onChange={handleFileChange}
                     id="soil-csv-input"
@@ -337,7 +423,7 @@ export default function SoilData() {
                     {importing
                       ? <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
                       : <span className="material-symbols-outlined text-base">upload_file</span>}
-                    {importing ? 'Importando...' : 'Importar CSV de análise'}
+                    {importing ? 'Importando...' : 'Importar analise'}
                   </label>
                   {currentSoil && (
                     <button
@@ -436,7 +522,7 @@ export default function SoilData() {
                 <div className="text-center px-6">
                   <p className="text-sm font-bold text-white mb-1">Nenhuma análise importada para este talhão</p>
                   <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                    Importe um arquivo CSV com os resultados da análise laboratorial para visualizar os parâmetros.
+                    Importe CSV, PDF ou imagem com os resultados da analise laboratorial para visualizar os parametros.
                   </p>
                 </div>
               </div>
