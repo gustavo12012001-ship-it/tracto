@@ -428,3 +428,103 @@ Responda em portugues, em 3-4 paragrafos, e finalize com a acao recomendada ao p
     except Exception as exc:
         logging.error("Erro na analise do mapa climatico Claude: %s", exc)
         return "Nao foi possivel analisar o mapa climatico no momento."
+
+
+def analyze_field_document(
+    file_base64: str,
+    mime_type: str,
+    file_name: str,
+    notebook_section: str,
+    field_name: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    client = _get_client()
+
+    prompt = f"""Analise este anexo do caderno agronomico da Tracto.
+
+Arquivo: {file_name}
+Tipo: {mime_type}
+Secao do caderno: {notebook_section}
+Talhao: {field_name or 'Nao informado'}
+Observacoes do produtor: {notes or 'Nenhuma'}
+
+Extraia informacoes agronomicas uteis, especialmente quando houver laudo de solo,
+recomendacao de adubacao, aplicacao, fitossanitario, colheita ou diario de campo.
+Se algum valor nao estiver legivel, diga claramente que nao foi identificado.
+
+Responda APENAS JSON valido neste formato:
+{{
+  "summary": "resumo tecnico curto em portugues",
+  "extracted_data": {{
+    "tipo_documento": "laudo de solo | recomendacao | nota de campo | imagem | outro",
+    "cultura": null,
+    "data": null,
+    "ph": null,
+    "materia_organica": null,
+    "fosforo": null,
+    "potassio": null,
+    "calcio": null,
+    "magnesio": null,
+    "aluminio": null,
+    "ctc": null,
+    "saturacao_bases": null,
+    "recomendacao_adubacao": null,
+    "pontos_atencao": []
+  }},
+  "recommendations": ["acao pratica 1", "acao pratica 2"],
+  "confidence": 0.0
+}}"""
+
+    if mime_type.startswith("image/"):
+        attachment_block: dict[str, Any] = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": mime_type,
+                "data": file_base64,
+            },
+        }
+    elif mime_type == "application/pdf":
+        attachment_block = {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": file_base64,
+            },
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Formato nao suportado. Envie PDF ou imagem.")
+
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1400,
+            temperature=0.1,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        attachment_block,
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+        parsed = json.loads(_clean_json_text(response.content[0].text))
+        if not isinstance(parsed, dict):
+            raise ValueError("Resposta da IA nao e um objeto JSON.")
+        return {
+            "summary": str(parsed.get("summary") or "Nao foi possivel resumir o anexo."),
+            "extracted_data": parsed.get("extracted_data") if isinstance(parsed.get("extracted_data"), dict) else {},
+            "recommendations": parsed.get("recommendations") if isinstance(parsed.get("recommendations"), list) else [],
+            "confidence": float(parsed.get("confidence") or 0.0),
+        }
+    except HTTPException:
+        raise
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        logging.error("JSON invalido na analise de anexo do caderno: %s", exc)
+        raise HTTPException(status_code=502, detail="IA retornou resposta invalida para o anexo.") from exc
+    except Exception as exc:
+        logging.error("Erro na analise de anexo do caderno: %s", exc)
+        raise HTTPException(status_code=502, detail="Nao foi possivel analisar o anexo no momento.") from exc

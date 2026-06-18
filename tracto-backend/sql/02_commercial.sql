@@ -104,7 +104,7 @@ BEGIN
         user_plan := 'free';
     END IF;
 
-    -- 2. Se for free, checar a quantidade atual de fields
+    -- 2. Checar a quantidade atual de fields para planos limitados
     IF user_plan = 'free' THEN
         SELECT count(*) INTO field_count
         FROM fields
@@ -112,6 +112,14 @@ BEGIN
 
         IF field_count >= 1 THEN
             RAISE EXCEPTION 'Plan limit exceeded. Free tier is limited to 1 field. Please upgrade your plan.';
+        END IF;
+    ELSIF user_plan = 'familiar' THEN
+        SELECT count(*) INTO field_count
+        FROM fields
+        WHERE user_id = NEW.user_id;
+
+        IF field_count >= 5 THEN
+            RAISE EXCEPTION 'Plan limit exceeded. Familiar tier is limited to 5 fields. Please upgrade your plan.';
         END IF;
     END IF;
 

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +24,8 @@ from models import (
     ChatRequest,
     FieldAnalysisRequest,
     FieldAnalysisResponse,
+    FieldDocumentAnalysisRequest,
+    FieldDocumentAnalysisResponse,
     RecaptchaRequest,
     SaveConversationRequest,
     FarmBase,
@@ -58,7 +60,7 @@ from models import (
 )
 from services import supabase_service, farm_service
 from services.billing_service import billing_service, validate_cpf, validate_cnpj
-from services.ai_service import MODEL, _get_client, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
+from services.ai_service import MODEL, _get_client, analyze_field_document, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
 from services.sentinel_service import (
@@ -982,30 +984,17 @@ def send_push_notification(
 
 @app.post("/api/push/subscribe")
 async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = Depends(get_current_user)):
-    # Salva a subscription na tabela push_subscriptions (upsert por endpoint)
-    try:
-        import requests as _req
-        _sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
-        _sb_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/push_subscriptions"
-        _req.post(
-            _sb_url,
-            headers={
-                "apikey": _sb_key,
-                "Authorization": f"Bearer {_sb_key}",
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates,return=minimal",
-            },
-            params={"on_conflict": "endpoint"},
-            json={
-                "user_id": user.id,
-                "endpoint": req.endpoint,
-                "p256dh": req.p256dh,
-                "auth": req.auth,
-            },
-            timeout=8,
-        )
-    except Exception as exc:
-        logging.warning("[push/subscribe] Falha ao salvar subscription no Supabase: %s", exc)
+    entitlements = billing_service.get_entitlements(user.id)
+    if not entitlements.get("can_use_push"):
+        raise HTTPException(status_code=403, detail="Notificacoes push exigem plano Profissional.")
+
+    # Insere na nova tabela push_subscriptions
+    billing_service.supabase.table("push_subscriptions").upsert({
+        "user_id": user.id,
+        "endpoint": req.endpoint,
+        "p256dh": req.p256dh,
+        "auth": req.auth
+    }).execute()
     return {"status": "ok", "message": "Inscricao de push salva com sucesso na base de dados."}
 
 @app.post("/webhooks/whatsapp")
@@ -1539,6 +1528,30 @@ async def analyze_weather_map_endpoint(request: dict, _user: AuthenticatedUser =
     except Exception as exc:
         logging.error("Erro na analise do mapa climatico: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao analisar o mapa climatico.") from exc
+
+
+@app.post("/api/field-notebook/analyze-document", response_model=FieldDocumentAnalysisResponse)
+@limiter.limit("5/minute")
+async def analyze_field_document_endpoint(
+    request: Request,
+    body: FieldDocumentAnalysisRequest,
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    allowed_mimes = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+    if body.mime_type not in allowed_mimes:
+        raise HTTPException(status_code=400, detail="Formato nao suportado. Envie PDF, JPG, PNG ou WEBP.")
+
+    if len(body.file_base64) > 14_000_000:
+        raise HTTPException(status_code=413, detail="Arquivo muito grande. Envie um anexo de ate aproximadamente 10 MB.")
+
+    return analyze_field_document(
+        file_base64=body.file_base64,
+        mime_type=body.mime_type,
+        file_name=body.file_name,
+        notebook_section=body.notebook_section,
+        field_name=body.field_name,
+        notes=body.notes,
+    )
 
 
 @app.get("/api/sentinel/scenes")
@@ -3393,4 +3406,3 @@ async def api_put_user_data(
     except Exception as exc:
         logging.error("[user_data] PUT %s: %s", namespace, exc)
         raise HTTPException(status_code=502, detail="Erro ao salvar dados.") from exc
-

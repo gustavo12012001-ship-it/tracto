@@ -130,6 +130,23 @@ class FieldAnalysisResponse(BaseModel):
     source: str | None = None
 
 
+class FieldDocumentAnalysisRequest(BaseModel):
+    field_id: str | None = None
+    field_name: str | None = None
+    file_name: str
+    mime_type: str
+    file_base64: str
+    notebook_section: str = "solos_adubacoes"
+    notes: str | None = None
+
+
+class FieldDocumentAnalysisResponse(BaseModel):
+    summary: str
+    extracted_data: dict[str, Any]
+    recommendations: list[str]
+    confidence: float
+
+
 class SaveConversationRequest(BaseModel):
     conversation_id: str
     title: str

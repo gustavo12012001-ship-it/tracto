@@ -1098,7 +1098,7 @@ export default function Settings() {
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: 'var(--bg)' }}>
-      <div className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">
+      <div className="max-w-5xl mx-auto px-4 py-8 flex flex-col gap-6">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-black text-white">Configurações</h1>

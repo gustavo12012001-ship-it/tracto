@@ -21,8 +21,7 @@ export async function buildAuthHeaders(): Promise<Record<string, string>> {
     return {
       Authorization: `Bearer ${session.access_token}`,
     };
-  } catch (error) {
-    console.warn('[API] Falha ao construir headers de autentição:', error);
+  } catch {
     return {};
   }
 }
@@ -56,13 +55,13 @@ function buildFieldWeatherPayload(weatherCache: WeatherCache | null | undefined)
   };
 }
 
-// ── Configuração de resilência ───────────────────────────────────────────────
-const DEFAULT_TIMEOUT_MS = 30_000; // 30s — generoso pra Sentinel/AI
+// â”€â”€ ConfiguraÃ§Ã£o de resilÃªncia â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const DEFAULT_TIMEOUT_MS = 30_000; // 30s â€” generoso pra Sentinel/AI
 const DEFAULT_RETRIES = 2;          // 1 tentativa + 2 retries = 3 totais
 const RETRY_DELAY_MS = 800;         // base, dobra a cada retry
 
 /**
- * Opções estendidas além de RequestInit padrão.
+ * OpÃ§Ãµes estendidas alÃ©m de RequestInit padrÃ£o.
  */
 export interface ApiFetchOptions extends RequestInit {
   /** Timeout em ms. Default 30000. Use 0 pra desabilitar. */
@@ -84,7 +83,7 @@ function delay(ms: number): Promise<void> {
 
 export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): Promise<T> => {
   if (!API_URL) {
-    throw new Error('Backend não configurado. Defina VITE_API_URL no .env');
+    throw new Error('Backend nÃ£o configurado. Defina VITE_API_URL no .env');
   }
   const url = `${API_URL}${path}`;
   const authHeaders = await buildAuthHeaders();
@@ -105,10 +104,10 @@ export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): 
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    // AbortController por tentativa — encadeia signal externo se houver
+    // AbortController por tentativa â€” encadeia signal externo se houver
     const controller = new AbortController();
     const timeoutId = timeoutMs > 0
-      ? setTimeout(() => controller.abort(new Error(`Timeout após ${timeoutMs}ms`)), timeoutMs)
+      ? setTimeout(() => controller.abort(new Error(`Timeout apÃ³s ${timeoutMs}ms`)), timeoutMs)
       : null;
 
     if (externalSignal) {
@@ -137,7 +136,7 @@ export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): 
       const isJson = contentType.includes('application/json');
 
       if (!response.ok) {
-        // Retry em status retryável e se ainda há tentativas
+        // Retry em status retryÃ¡vel e se ainda hÃ¡ tentativas
         if (isRetryableStatus(response.status) && attempt < maxRetries) {
           lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
           await delay(RETRY_DELAY_MS * Math.pow(2, attempt));
@@ -163,10 +162,10 @@ export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): 
           throw new Error(`Acesso negado: ${detail}`);
         }
         if (response.status === 404) {
-          throw new Error(`Não encontrado: ${detail}`);
+          throw new Error(`NÃ£o encontrado: ${detail}`);
         }
         if (response.status === 422) {
-          throw new Error(`Dados inválidos: ${detail}`);
+          throw new Error(`Dados invÃ¡lidos: ${detail}`);
         }
 
         throw new Error(`Erro na API (${response.status} ${response.statusText}): ${detail}`);
@@ -192,37 +191,35 @@ export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): 
     } catch (err) {
       if (timeoutId) clearTimeout(timeoutId);
 
-      // Aborto externo NUNCA faz retry — propaga imediatamente
+      // Aborto externo NUNCA faz retry â€” propaga imediatamente
       if (externalSignal?.aborted) {
-        throw new Error('Requisição cancelada');
+        throw new Error('RequisiÃ§Ã£o cancelada');
       }
 
-      // Network error ou timeout — retry se permitido
+      // Network error ou timeout â€” retry se permitido
       const isNetworkError = err instanceof TypeError && err.message === 'Failed to fetch';
       const isAbortError = err instanceof DOMException && err.name === 'AbortError';
 
       if ((isNetworkError || isAbortError) && attempt < maxRetries) {
         lastError = err;
-        console.warn(`[API] tentativa ${attempt + 1}/${maxRetries + 1} falhou (${url}):`, err);
         await delay(RETRY_DELAY_MS * Math.pow(2, attempt));
         continue;
       }
 
-      console.error('[API] fetch error:', url, err);
       if (isNetworkError) {
-        throw new Error(`Falha de conexão com o backend em ${url}. Verifique sua internet.`);
+        throw new Error(`Falha de conexÃ£o com o backend em ${url}. Verifique sua internet.`);
       }
       if (isAbortError) {
-        throw new Error(`Requisição excedeu o tempo limite (${timeoutMs}ms).`);
+        throw new Error(`RequisiÃ§Ã£o excedeu o tempo limite (${timeoutMs}ms).`);
       }
       if (err instanceof Error) {
-        throw err; // mantém a mensagem original (incluindo as específicas 401/403/etc)
+        throw err; // mantÃ©m a mensagem original (incluindo as especÃ­ficas 401/403/etc)
       }
-      throw new Error(`Erro de requisição para ${url}`);
+      throw new Error(`Erro de requisiÃ§Ã£o para ${url}`);
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('Falha após retries');
+  throw lastError instanceof Error ? lastError : new Error('Falha apÃ³s retries');
 };
 
 export interface FieldAnalysisResult {
@@ -292,6 +289,28 @@ export interface FieldIntelligenceSnapshot {
   updated_at: string;
 }
 
+export interface FieldDocumentAnalysisResult {
+  summary: string;
+  extracted_data: Record<string, unknown>;
+  recommendations: string[];
+  confidence: number;
+}
+
+export async function analyzeFieldDocument(payload: {
+  field_id?: string;
+  field_name?: string;
+  file_name: string;
+  mime_type: string;
+  file_base64: string;
+  notebook_section: string;
+  notes?: string;
+}) {
+  return apiFetch<FieldDocumentAnalysisResult>('/api/field-notebook/analyze-document', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function analyzeField(
   lat: number,
   lng: number,
@@ -330,11 +349,11 @@ export async function fetchFieldIntelligenceSnapshot(
   return apiFetch<FieldIntelligenceSnapshot>(`/api/fields/${fieldId}/intelligence${query}`, {
     method: 'GET',
     abortSignal,
-    timeoutMs: 45_000, // snapshot é pesado (Sentinel + Weather + IA) — timeout maior
+    timeoutMs: 45_000, // snapshot Ã© pesado (Sentinel + Weather + IA) â€” timeout maior
   });
 }
 
-// ── Open-Meteo weather fetch (shared — used by Weather page AND Layout preload) ─
+// â”€â”€ Open-Meteo weather fetch (shared â€” used by Weather page AND Layout preload) â”€
 
 const WEATHER_TTL_MS = 30 * 60 * 1000; // 30 min
 

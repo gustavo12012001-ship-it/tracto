@@ -1,4 +1,4 @@
-// src/pages/Pricing.tsx — Tela de planos + assinatura via Mercado Pago
+// src/pages/Pricing.tsx â€” Tela de planos + assinatura via Mercado Pago
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../services/api';
@@ -100,7 +100,7 @@ export default function Pricing() {
 
   const startCheckout = async (planId: string) => {
     setError(null);
-    // Precisa ter perfil de cobrança completo
+    // Precisa ter perfil de cobranÃ§a completo
     if (!billingProfile) {
       setPendingPlanId(planId);
       setShowProfileModal(true);
@@ -127,7 +127,7 @@ export default function Pricing() {
   const cancelSubscription = async () => {
     const ok = await confirm({
       title: 'Cancelar assinatura?',
-      message: 'Seu acesso aos recursos premium será encerrado ao fim do período atual. Esta ação pode ser revertida assinando novamente.',
+      message: 'Seu acesso aos recursos premium serÃ¡ encerrado ao fim do perÃ­odo atual. Esta aÃ§Ã£o pode ser revertida assinando novamente.',
       confirmLabel: 'Sim, cancelar',
       cancelLabel: 'Manter assinatura',
       danger: true,
@@ -155,15 +155,15 @@ export default function Pricing() {
       <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando planos…</p>
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando planosâ€¦</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ background: 'var(--bg)' }}>
-      <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="flex-1 overflow-y-auto scrollbar-thin p-6" style={{ background: 'var(--bg)' }}>
+      <div className="max-w-[1400px] mx-auto flex flex-col gap-8">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
@@ -175,7 +175,7 @@ export default function Pricing() {
           </button>
           <span className="text-[10px] font-bold px-2 py-1 rounded-full"
             style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-            7 DIAS DE TRIAL GRÁTIS
+            7 DIAS DE TRIAL GRÃTIS
           </span>
         </div>
 
@@ -227,14 +227,14 @@ export default function Pricing() {
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <p className="text-sm font-bold" style={{ color: '#22c55e' }}>
-                  ✓ Assinatura ativa: {plans.find(p => p.id === currentSubscription.plan_id)?.name || currentSubscription.plan_id}
+                  âœ“ Assinatura ativa: {plans.find(p => p.id === currentSubscription.plan_id)?.name || currentSubscription.plan_id}
                 </p>
                 <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
                   Ciclo: {currentSubscription.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}
                   {currentSubscription.current_period_end && (
-                    <> · Próxima cobrança: {new Date(currentSubscription.current_period_end).toLocaleDateString('pt-BR')}</>
+                    <> Â· PrÃ³xima cobranÃ§a: {new Date(currentSubscription.current_period_end).toLocaleDateString('pt-BR')}</>
                   )}
-                  {currentSubscription.status === 'pending' && <> · Aguardando pagamento</>}
+                  {currentSubscription.status === 'pending' && <> Â· Aguardando pagamento</>}
                 </p>
               </div>
               <button onClick={() => void cancelSubscription()}
@@ -275,7 +275,7 @@ export default function Pricing() {
                 <h3 className="text-xl font-black mb-1" style={{ color: 'var(--text)' }}>{plan.name}</h3>
                 <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>{plan.description}</p>
 
-                {/* Preço */}
+                {/* PreÃ§o */}
                 <div className="mb-4">
                   {isFree ? (
                     <p className="text-3xl font-black" style={{ color: 'var(--text)' }}>R$ 0</p>
@@ -283,7 +283,7 @@ export default function Pricing() {
                     <>
                       <p className="text-3xl font-black" style={{ color: 'var(--text)' }}>
                         R$ {monthlyEquivalent.toFixed(2).replace('.', ',')}
-                        <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>/mês</span>
+                        <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>/mÃªs</span>
                       </p>
                       {billingCycle === 'yearly' && (
                         <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
@@ -297,11 +297,11 @@ export default function Pricing() {
                 {/* Features */}
                 <ul className="flex-1 space-y-2 mb-6">
                   <FeatureItem ok={plan.max_fields > 0}>
-                    {plan.max_fields >= 999 ? 'Talhões ilimitados' : `${plan.max_fields} talhão(ões)`}
+                    {plan.max_fields >= 999 ? 'TalhÃµes ilimitados' : `${plan.max_fields} talhÃ£o(Ãµes)`}
                   </FeatureItem>
-                  <FeatureItem ok={plan.has_ia_chat}>Tracto IA agronômica</FeatureItem>
+                  <FeatureItem ok={plan.has_ia_chat}>Tracto IA agronÃ´mica</FeatureItem>
                   <FeatureItem ok={plan.has_satellite}>Imagens Sentinel-2 e NDVI</FeatureItem>
-                  <FeatureItem ok={plan.has_push}>Notificações em tempo real</FeatureItem>
+                  <FeatureItem ok={plan.has_push}>NotificaÃ§Ãµes em tempo real</FeatureItem>
                   <FeatureItem ok={plan.has_whatsapp}>Alertas via WhatsApp</FeatureItem>
                 </ul>
 
@@ -310,7 +310,7 @@ export default function Pricing() {
                   <button disabled
                     className="w-full py-2.5 rounded-xl text-sm font-bold"
                     style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                    ✓ Plano atual
+                    âœ“ Plano atual
                   </button>
                 ) : isFree ? (
                   <button disabled
@@ -327,7 +327,7 @@ export default function Pricing() {
                     {checkoutLoading === plan.id ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
-                        Redirecionando…
+                        Redirecionandoâ€¦
                       </span>
                     ) : (
                       `Assinar ${plan.name}`
@@ -347,12 +347,12 @@ export default function Pricing() {
         </div>
 
         <p className="text-[10px] text-center mt-6" style={{ color: 'var(--muted)' }}>
-          Métodos aceitos: cartão de crédito (Visa, Mastercard, Elo, Hipercard, American Express).
-          Cobrança recorrente automática. Suporte: contato@tractoagro.com.br
+          MÃ©todos aceitos: cartÃ£o de crÃ©dito (Visa, Mastercard, Elo, Hipercard, American Express).
+          CobranÃ§a recorrente automÃ¡tica. Suporte: contato@tractoagro.com.br
         </p>
       </div>
 
-      {/* Modal de cadastro de cobrança */}
+      {/* Modal de cadastro de cobranÃ§a */}
       {showProfileModal && (
         <BillingProfileModal
           initialProfile={billingProfile}

@@ -7,6 +7,7 @@ import { type LocationStatus, fetchCurrentLocation } from '../utils/geolocation'
 
 export interface Entitlements {
   max_fields: number;
+  current_fields?: number;
   can_use_whatsapp: boolean;
   can_use_push: boolean;
   has_ia_chat: boolean;

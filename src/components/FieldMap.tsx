@@ -700,7 +700,7 @@ export default function FieldMap() {
     setCurrentSatelliteScene(null);
     setOverlay({ url: null, bounds: null, loading: false, error: null, sceneKey: null, cacheStatus: null, sceneDate: null });
     setShowScenesPanel(false);
-  }, [activeFieldId]);
+  }, [activeFieldId, setCurrentSatelliteScene]);
 
   useEffect(() => () => {
     if (planetRetryTimerRef.current) clearTimeout(planetRetryTimerRef.current);

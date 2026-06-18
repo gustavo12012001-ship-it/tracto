@@ -7,7 +7,7 @@ import SoilData from './SoilData';
 import Seasons from './Seasons';
 import Calculator from './Calculator';
 import useAppStore from '../store/useAppStore';
-import { apiFetch } from '../services/api';
+import { analyzeFieldDocument, apiFetch, type FieldDocumentAnalysisResult } from '../services/api';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,46 @@ interface NotebookEvent {
   data?: Record<string, unknown>;
   ai_analysis?: string;
   created_at: string;
+}
+
+interface ImportedNotebookFile {
+  name: string;
+  mimeType: string;
+  size: number;
+  base64: string;
+  previewUrl?: string;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function readNotebookFile(file: File): Promise<ImportedNotebookFile> {
+  const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.type)) {
+    return Promise.reject(new Error('Envie um PDF ou imagem nos formatos JPG, PNG ou WEBP.'));
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return Promise.reject(new Error('Arquivo muito grande. Envie um anexo de ate 10 MB.'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo.'));
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const [, base64 = ''] = dataUrl.split(',');
+      resolve({
+        name: file.name,
+        mimeType: file.type,
+        size: file.size,
+        base64,
+        previewUrl: file.type.startsWith('image/') ? dataUrl : undefined,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 const TABS: { id: CadernoTab; label: string; icon: string }[] = [
@@ -659,6 +699,143 @@ function ColheitaTab() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function SoilDocumentImportPanel() {
+  const { fields, activeFieldId } = useAppStore();
+  const activeField = activeFieldId ? fields.find((field) => field.id === activeFieldId) : null;
+  const [file, setFile] = useState<ImportedNotebookFile | null>(null);
+  const [notes, setNotes] = useState('');
+  const [analysis, setAnalysis] = useState<FieldDocumentAnalysisResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFileChange = async (selectedFile: File | undefined) => {
+    setError(null);
+    setAnalysis(null);
+    if (!selectedFile) return;
+    try {
+      setFile(await readNotebookFile(selectedFile));
+    } catch (err) {
+      setFile(null);
+      setError(err instanceof Error ? err.message : 'Falha ao importar o anexo.');
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!file) {
+      setError('Selecione um PDF ou imagem antes de analisar.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await analyzeFieldDocument({
+        field_id: activeField?.id,
+        field_name: activeField?.name,
+        file_name: file.name,
+        mime_type: file.mimeType,
+        file_base64: file.base64,
+        notebook_section: 'solos_adubacoes',
+        notes: notes || undefined,
+      });
+      setAnalysis(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Nao foi possivel analisar o anexo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex-shrink-0 p-3 md:p-4" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,420px)_1fr] gap-3">
+        <div className="rounded-lg p-3" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--primary)' }}>Importar analise</p>
+              <p className="text-sm font-bold truncate" style={{ color: 'var(--text)' }}>PDF ou imagem do laudo</p>
+            </div>
+            <span className="material-symbols-outlined" style={{ color: 'var(--primary)' }}>upload_file</span>
+          </div>
+
+          <input
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(event) => void handleFileChange(event.target.files?.[0])}
+            className="w-full rounded-lg px-3 py-2 text-xs"
+            style={{ color: 'var(--text)', background: 'var(--bg)', border: '1px solid var(--border)' }}
+          />
+
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            rows={2}
+            placeholder="Observacoes opcionais sobre o laudo"
+            className={`${inputCls} mt-3 resize-none`}
+          />
+
+          {file && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg p-2" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+              <span className="material-symbols-outlined" style={{ color: file.mimeType === 'application/pdf' ? '#ef4444' : 'var(--primary)' }}>
+                {file.mimeType === 'application/pdf' ? 'picture_as_pdf' : 'image'}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-bold truncate" style={{ color: 'var(--text)' }}>{file.name}</p>
+                <p className="text-[10px]" style={{ color: 'var(--muted)' }}>{file.mimeType} - {formatFileSize(file.size)}</p>
+              </div>
+            </div>
+          )}
+
+          {error && <p className="mt-3 text-xs" style={{ color: '#f87171' }}>{error}</p>}
+
+          <button
+            type="button"
+            onClick={() => void handleAnalyze()}
+            disabled={loading || !file}
+            className={`${btnPrimary} mt-3 w-full justify-center disabled:opacity-50`}
+            style={{ background: 'var(--primary)' }}
+          >
+            <span className="material-symbols-outlined text-base">{loading ? 'progress_activity' : 'auto_awesome'}</span>
+            {loading ? 'Lendo anexo...' : 'Ler e resumir anexo'}
+          </button>
+        </div>
+
+        <div className="rounded-lg p-3 min-h-[150px]" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          {file?.previewUrl && (
+            <img src={file.previewUrl} alt="Previa do anexo" className="w-full max-h-36 object-contain rounded-lg mb-3" style={{ background: 'var(--bg)' }} />
+          )}
+          {analysis ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-black uppercase tracking-widest" style={{ color: 'var(--muted)' }}>Resumo extraido</p>
+                <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ color: '#22c55e', background: 'rgba(34,197,94,0.12)' }}>
+                  Confianca {Math.round(analysis.confidence * 100)}%
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{analysis.summary}</p>
+              {analysis.recommendations.length > 0 && (
+                <div className="space-y-1">
+                  {analysis.recommendations.map((item, index) => (
+                    <p key={`${item}-${index}`} className="text-xs flex gap-2" style={{ color: 'var(--muted)' }}>
+                      <span className="material-symbols-outlined text-sm" style={{ color: 'var(--primary)' }}>check_circle</span>
+                      <span>{item}</span>
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="h-full min-h-[120px] flex items-center justify-center text-center">
+              <p className="text-xs max-w-md" style={{ color: 'var(--muted)' }}>
+                Selecione um PDF ou imagem do laudo para a Tracto extrair os principais dados agronomicos.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NoFieldSelected() {
   return (
     <div className="flex-1 flex items-center justify-center">
@@ -739,6 +916,7 @@ export default function Caderno() {
         <ColheitaTab />
       </div>
       <div style={{ display: activeTab === 'solo'           ? 'flex' : 'none', flex: 1, minHeight: 0, overflow: 'hidden', flexDirection: 'column' }}>
+        <SoilDocumentImportPanel />
         <SoilData />
       </div>
       <div style={{ display: activeTab === 'safras'         ? 'flex' : 'none', flex: 1, minHeight: 0, overflow: 'hidden', flexDirection: 'column' }}>

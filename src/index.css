@@ -36,6 +36,13 @@ html {
   font-size: 14px;
 }
 
+html,
+body,
+#root {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
 body {
   @apply font-sans antialiased;
 }
@@ -58,6 +65,25 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+img,
+video,
+canvas,
+iframe,
+svg {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  min-width: 0;
+}
+
+button {
+  overflow-wrap: anywhere;
 }
 
 /* Leaflet maps custom resets */
