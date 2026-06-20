@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../store/useAppStore';
+import { API_URL } from '../services/api';
 import { supabase } from '../services/supabase';
 
 // ── Error messages ────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ export default function Login() {
         const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
         if (window.grecaptcha && siteKey) {
           const token = await window.grecaptcha.execute(siteKey, { action: 'login' });
-          await fetch(`${import.meta.env.VITE_API_URL}/api/verify-recaptcha`, {
+          await fetch(`${API_URL}/api/verify-recaptcha`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token }),

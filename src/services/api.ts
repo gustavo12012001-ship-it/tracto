@@ -1,7 +1,7 @@
 import type { WeatherCache } from '../store/useAppStore';
 import { supabase } from './supabase';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'https://tracto-production.up.railway.app';
+export const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 export async function buildAuthHeaders(): Promise<Record<string, string>> {
   try {

@@ -2,7 +2,16 @@
   "installCommand": "npm install --legacy-peer-deps",
   "buildCommand": "npm run build",
   "framework": "vite",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": "tracto-backend/**",
+      "excludeFiles": "{node_modules,dist,.git,tracto-backend/.venv,tracto-backend/venv,tracto-backend/__pycache__}/**"
+    }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/webhooks/(.*)", "destination": "/api/index.py" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { API_URL } from '../services/api';
 import { supabase } from '../services/supabase';
 
 const maskPhone = (v: string) => {
@@ -74,7 +75,7 @@ export default function Register() {
         const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
         if (window.grecaptcha && siteKey) {
           const token = await window.grecaptcha.execute(siteKey, { action: 'register' });
-          await fetch(`${import.meta.env.VITE_API_URL}/api/verify-recaptcha`, {
+          await fetch(`${API_URL}/api/verify-recaptcha`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token }),
