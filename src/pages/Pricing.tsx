@@ -1,4 +1,4 @@
-// src/pages/Pricing.tsx â€” Tela de planos + assinatura via Mercado Pago
+// src/pages/Pricing.tsx - Tela de planos + assinatura via Mercado Pago
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../services/api';
@@ -48,10 +48,39 @@ interface CheckoutResponse {
 }
 
 const PLAN_COLORS: Record<string, { color: string; bg: string }> = {
-  free:       { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-  pro:        { color: '#ec5b13', bg: 'rgba(236,91,19,0.10)' },
+  free: { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
+  pro: { color: '#ec5b13', bg: 'rgba(236,91,19,0.10)' },
   enterprise: { color: '#a855f7', bg: 'rgba(168,85,247,0.10)' },
 };
+
+function cleanText(value: string | null | undefined): string {
+  if (!value) return '';
+  const replacements: Record<string, string> = {
+    'Ã¡': 'á',
+    'Ã ': 'à',
+    'Ã¢': 'â',
+    'Ã£': 'ã',
+    'Ã©': 'é',
+    'Ãª': 'ê',
+    'Ã­': 'í',
+    'Ã³': 'ó',
+    'Ã´': 'ô',
+    'Ãµ': 'õ',
+    'Ãº': 'ú',
+    'Ã§': 'ç',
+    'Ã': 'Á',
+    'Ã‰': 'É',
+    'Ã“': 'Ó',
+    'Ã‡': 'Ç',
+    'Â·': '·',
+    'â€¦': '...',
+    'âœ“': '✓',
+  };
+  return Object.entries(replacements).reduce(
+    (text, [broken, fixed]) => text.split(broken).join(fixed),
+    value,
+  );
+}
 
 export default function Pricing() {
   const navigate = useNavigate();
@@ -100,7 +129,6 @@ export default function Pricing() {
 
   const startCheckout = async (planId: string) => {
     setError(null);
-    // Precisa ter perfil de cobranÃ§a completo
     if (!billingProfile) {
       setPendingPlanId(planId);
       setShowProfileModal(true);
@@ -115,7 +143,6 @@ export default function Pricing() {
       const url = resp.environment === 'sandbox' && resp.sandbox_url
         ? resp.sandbox_url
         : resp.checkout_url;
-      // Redirect pro Mercado Pago checkout
       window.location.href = url;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao iniciar checkout.';
@@ -127,7 +154,7 @@ export default function Pricing() {
   const cancelSubscription = async () => {
     const ok = await confirm({
       title: 'Cancelar assinatura?',
-      message: 'Seu acesso aos recursos premium serÃ¡ encerrado ao fim do perÃ­odo atual. Esta aÃ§Ã£o pode ser revertida assinando novamente.',
+      message: 'Seu acesso aos recursos premium será encerrado ao fim do período atual. Esta ação pode ser revertida assinando novamente.',
       confirmLabel: 'Sim, cancelar',
       cancelLabel: 'Manter assinatura',
       danger: true,
@@ -155,7 +182,7 @@ export default function Pricing() {
       <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando planosâ€¦</p>
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>Carregando planos...</p>
         </div>
       </div>
     );
@@ -164,18 +191,20 @@ export default function Pricing() {
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin p-6" style={{ background: 'var(--bg)' }}>
       <div className="max-w-[1400px] mx-auto flex flex-col gap-8">
-
-        {/* Header */}
         <div className="flex items-center justify-between mb-2">
-          <button onClick={() => navigate(-1)}
+          <button
+            onClick={() => navigate(-1)}
             className="flex items-center gap-1 text-xs hover:opacity-80"
-            style={{ color: 'var(--muted)' }}>
+            style={{ color: 'var(--muted)' }}
+          >
             <span className="material-symbols-outlined text-base">arrow_back</span>
             Voltar
           </button>
-          <span className="text-[10px] font-bold px-2 py-1 rounded-full"
-            style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-            7 DIAS DE TRIAL GRÃTIS
+          <span
+            className="text-[10px] font-bold px-2 py-1 rounded-full"
+            style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}
+          >
+            7 DIAS DE TRIAL GRÁTIS
           </span>
         </div>
 
@@ -186,7 +215,6 @@ export default function Pricing() {
           Tecnologia AgTech profissional. Cancele quando quiser.
         </p>
 
-        {/* Toggle mensal/anual */}
         <div className="flex items-center gap-2 mb-8">
           <button
             onClick={() => setBillingCycle('monthly')}
@@ -195,7 +223,8 @@ export default function Pricing() {
               background: billingCycle === 'monthly' ? 'var(--primary)' : 'var(--surface)',
               color: billingCycle === 'monthly' ? '#fff' : 'var(--muted)',
               border: `1px solid ${billingCycle === 'monthly' ? 'var(--primary)' : 'var(--border)'}`,
-            }}>
+            }}
+          >
             Mensal
           </button>
           <button
@@ -205,48 +234,57 @@ export default function Pricing() {
               background: billingCycle === 'yearly' ? 'var(--primary)' : 'var(--surface)',
               color: billingCycle === 'yearly' ? '#fff' : 'var(--muted)',
               border: `1px solid ${billingCycle === 'yearly' ? 'var(--primary)' : 'var(--border)'}`,
-            }}>
+            }}
+          >
             Anual
-            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
-              style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>-20%</span>
+            <span
+              className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
+              style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}
+            >
+              -20%
+            </span>
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl flex items-center gap-2"
-            style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.3)' }}>
+          <div
+            className="mb-4 px-4 py-3 rounded-xl flex items-center gap-2"
+            style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.3)' }}
+          >
             <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>error</span>
             <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>
           </div>
         )}
 
-        {/* Subscription atual (se ativa) */}
         {currentSubscription && currentSubscription.status !== 'cancelled' && (
-          <div className="mb-6 rounded-2xl p-4"
-            style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)' }}>
+          <div
+            className="mb-6 rounded-2xl p-4"
+            style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)' }}
+          >
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <p className="text-sm font-bold" style={{ color: '#22c55e' }}>
-                  âœ“ Assinatura ativa: {plans.find(p => p.id === currentSubscription.plan_id)?.name || currentSubscription.plan_id}
+                  ✓ Assinatura ativa: {cleanText(plans.find(p => p.id === currentSubscription.plan_id)?.name) || currentSubscription.plan_id}
                 </p>
                 <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
                   Ciclo: {currentSubscription.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}
                   {currentSubscription.current_period_end && (
-                    <> Â· PrÃ³xima cobranÃ§a: {new Date(currentSubscription.current_period_end).toLocaleDateString('pt-BR')}</>
+                    <> · Próxima cobrança: {new Date(currentSubscription.current_period_end).toLocaleDateString('pt-BR')}</>
                   )}
-                  {currentSubscription.status === 'pending' && <> Â· Aguardando pagamento</>}
+                  {currentSubscription.status === 'pending' && <> · Aguardando pagamento</>}
                 </p>
               </div>
-              <button onClick={() => void cancelSubscription()}
+              <button
+                onClick={() => void cancelSubscription()}
                 className="text-[11px] font-bold px-3 py-1.5 rounded-lg"
-                style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}>
+                style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
                 Cancelar assinatura
               </button>
             </div>
           </div>
         )}
 
-        {/* Grid de planos */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {plans.map((plan) => {
             const color = PLAN_COLORS[plan.id] ?? PLAN_COLORS.free;
@@ -255,27 +293,30 @@ export default function Pricing() {
             const isCurrent = plan.id === currentPlanId;
             const isHighlighted = plan.id === 'pro';
             const isFree = plan.id === 'free';
+            const planName = cleanText(plan.name);
 
             return (
-              <div key={plan.id}
+              <div
+                key={plan.id}
                 className="rounded-2xl p-6 flex flex-col"
                 style={{
                   background: 'var(--surface)',
                   border: `2px solid ${isHighlighted ? color.color : 'var(--border)'}`,
                   boxShadow: isHighlighted ? `0 4px 20px ${color.color}25` : 'none',
-                }}>
-
+                }}
+              >
                 {isHighlighted && (
-                  <span className="self-start text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full mb-3"
-                    style={{ background: color.bg, color: color.color }}>
+                  <span
+                    className="self-start text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full mb-3"
+                    style={{ background: color.bg, color: color.color }}
+                  >
                     Mais popular
                   </span>
                 )}
 
-                <h3 className="text-xl font-black mb-1" style={{ color: 'var(--text)' }}>{plan.name}</h3>
-                <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>{plan.description}</p>
+                <h3 className="text-xl font-black mb-1" style={{ color: 'var(--text)' }}>{planName}</h3>
+                <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>{cleanText(plan.description)}</p>
 
-                {/* PreÃ§o */}
                 <div className="mb-4">
                   {isFree ? (
                     <p className="text-3xl font-black" style={{ color: 'var(--text)' }}>R$ 0</p>
@@ -283,7 +324,7 @@ export default function Pricing() {
                     <>
                       <p className="text-3xl font-black" style={{ color: 'var(--text)' }}>
                         R$ {monthlyEquivalent.toFixed(2).replace('.', ',')}
-                        <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>/mÃªs</span>
+                        <span className="text-sm font-normal" style={{ color: 'var(--muted)' }}>/mês</span>
                       </p>
                       {billingCycle === 'yearly' && (
                         <p className="text-[11px] mt-1" style={{ color: 'var(--muted)' }}>
@@ -294,28 +335,30 @@ export default function Pricing() {
                   )}
                 </div>
 
-                {/* Features */}
                 <ul className="flex-1 space-y-2 mb-6">
                   <FeatureItem ok={plan.max_fields > 0}>
-                    {plan.max_fields >= 999 ? 'TalhÃµes ilimitados' : `${plan.max_fields} talhÃ£o(Ãµes)`}
+                    {plan.max_fields >= 999 ? 'Talhões ilimitados' : `${plan.max_fields} talhão(ões)`}
                   </FeatureItem>
-                  <FeatureItem ok={plan.has_ia_chat}>Tracto IA agronÃ´mica</FeatureItem>
+                  <FeatureItem ok={plan.has_ia_chat}>Tracto IA agronômica</FeatureItem>
                   <FeatureItem ok={plan.has_satellite}>Imagens Sentinel-2 e NDVI</FeatureItem>
-                  <FeatureItem ok={plan.has_push}>NotificaÃ§Ãµes em tempo real</FeatureItem>
+                  <FeatureItem ok={plan.has_push}>Notificações em tempo real</FeatureItem>
                   <FeatureItem ok={plan.has_whatsapp}>Alertas via WhatsApp</FeatureItem>
                 </ul>
 
-                {/* CTA */}
                 {isCurrent ? (
-                  <button disabled
+                  <button
+                    disabled
                     className="w-full py-2.5 rounded-xl text-sm font-bold"
-                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                    âœ“ Plano atual
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                  >
+                    ✓ Plano atual
                   </button>
                 ) : isFree ? (
-                  <button disabled
+                  <button
+                    disabled
                     className="w-full py-2.5 rounded-xl text-sm font-bold opacity-60"
-                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                  >
                     Sem necessidade de pagamento
                   </button>
                 ) : (
@@ -323,14 +366,15 @@ export default function Pricing() {
                     onClick={() => void startCheckout(plan.id)}
                     disabled={checkoutLoading === plan.id}
                     className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-60"
-                    style={{ background: color.color, boxShadow: `0 2px 12px ${color.color}40` }}>
+                    style={{ background: color.color, boxShadow: `0 2px 12px ${color.color}40` }}
+                  >
                     {checkoutLoading === plan.id ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
-                        Redirecionandoâ€¦
+                        Redirecionando...
                       </span>
                     ) : (
-                      `Assinar ${plan.name}`
+                      `Assinar ${planName}`
                     )}
                   </button>
                 )}
@@ -339,7 +383,6 @@ export default function Pricing() {
           })}
         </div>
 
-        {/* Trust info */}
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-3">
           <TrustBadge icon="lock" title="Pagamento seguro" desc="Processado pelo Mercado Pago" />
           <TrustBadge icon="schedule" title="Sem fidelidade" desc="Cancele quando quiser" />
@@ -347,12 +390,11 @@ export default function Pricing() {
         </div>
 
         <p className="text-[10px] text-center mt-6" style={{ color: 'var(--muted)' }}>
-          MÃ©todos aceitos: cartÃ£o de crÃ©dito (Visa, Mastercard, Elo, Hipercard, American Express).
-          CobranÃ§a recorrente automÃ¡tica. Suporte: contato@tractoagro.com.br
+          Métodos aceitos: cartão de crédito (Visa, Mastercard, Elo, Hipercard, American Express).
+          Cobrança recorrente automática. Suporte: contato@tractoagro.com.br
         </p>
       </div>
 
-      {/* Modal de cadastro de cobranÃ§a */}
       {showProfileModal && (
         <BillingProfileModal
           initialProfile={billingProfile}
@@ -367,8 +409,10 @@ export default function Pricing() {
 function FeatureItem({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2 text-xs" style={{ color: ok ? 'var(--text)' : 'var(--muted)', opacity: ok ? 1 : 0.5 }}>
-      <span className="material-symbols-outlined flex-shrink-0 mt-0.5"
-        style={{ fontSize: 16, color: ok ? '#22c55e' : '#94a3b8' }}>
+      <span
+        className="material-symbols-outlined flex-shrink-0 mt-0.5"
+        style={{ fontSize: 16, color: ok ? '#22c55e' : '#94a3b8' }}
+      >
         {ok ? 'check_circle' : 'remove_circle_outline'}
       </span>
       <span className="leading-tight">{children}</span>
@@ -378,8 +422,10 @@ function FeatureItem({ ok, children }: { ok: boolean; children: React.ReactNode 
 
 function TrustBadge({ icon, title, desc }: { icon: string; title: string; desc: string }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+    <div
+      className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+    >
       <span className="material-symbols-outlined" style={{ fontSize: 20, color: 'var(--primary)' }}>{icon}</span>
       <div>
         <p className="text-[11px] font-bold" style={{ color: 'var(--text)' }}>{title}</p>
