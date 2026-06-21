@@ -46,7 +46,7 @@ python migrate.py --dry-run    # mostra o que seria aplicado, sem executar
 python migrate.py
 ```
 
-Em **produção** (Railway), rode o mesmo comando a partir de um shell com
+Em **produção**, rode o mesmo comando a partir de um shell com
 `DATABASE_URL` setada (ou como passo de deploy). Cada migration roda em
 transação; em erro, faz rollback e aborta sem registrar a versão.
 

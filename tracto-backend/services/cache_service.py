@@ -16,7 +16,7 @@ class AnalysisCache:
     Thread-safe. Escrita atômica via arquivo temporário.
 
     Nota de deploy:
-    - Railway tem filesystem EFÊMERO: o arquivo é perdido em toda reinicialização.
+    - ambientes serverless tem filesystem efemero: o arquivo pode ser perdido em reinicializacoes.
     - Isso é tolerável — a classe degrada para modo in-memory automaticamente
       quando o diretório não é gravável (e loga um warning na primeira tentativa).
     - Para persistência real entre deploys, migre para Redis ou Supabase.

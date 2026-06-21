@@ -8,7 +8,7 @@ arquivos já aplicados (mesma versão) são pulados.
 
 Conexão: usa a variável de ambiente DATABASE_URL (string de conexão Postgres do
 Supabase — Settings > Database > Connection string > URI). NUNCA commite esse
-valor; configure no Railway/ambiente.
+valor; configure no ambiente de produção.
 
 Uso:
     python migrate.py --status      # lista aplicadas x pendentes

@@ -122,6 +122,7 @@ from services.germoplasm_service import (
 # A identidade do usuário (context_user_id) é usada apenas para contexto em logs.
 limiter = Limiter(key_func=get_remote_address)
 APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
+PROCESS_STARTED_AT = time.perf_counter()
 
 # (A-10) Observabilidade: inicializa Sentry ANTES de criar o app (no-op sem
 # SENTRY_DSN). As integrações FastAPI/Starlette capturam exceções não tratadas.
@@ -137,6 +138,12 @@ except Exception as _exc:  # noqa: BLE001
 async def _lifespan(app_: FastAPI):
     """Tarefas de startup e shutdown do servidor."""
     # --- startup ---
+    logging.info(
+        "[startup] Tracto API cold_start_ms=%s version=%s environment=%s",
+        int((time.perf_counter() - PROCESS_STARTED_AT) * 1000),
+        APP_VERSION,
+        os.getenv("ENVIRONMENT", "development"),
+    )
     try:
         from services.cache_service import start_cache_gc_task
         # GC do cache em arquivo a cada 1h — remove entradas expiradas
@@ -583,7 +590,13 @@ async def create_checkout(
     # 3. Cria registro pending de subscription pra ter external_reference
     sub_id = str(uuid.uuid4())
     frontend_base = os.getenv("FRONTEND_URL", "https://tracto-eta.vercel.app").rstrip("/")
-    backend_base = os.getenv("BACKEND_URL", "https://tracto-production.up.railway.app").rstrip("/")
+    backend_base_env = os.getenv("BACKEND_URL")
+    if not backend_base_env:
+        raise HTTPException(
+            status_code=500,
+            detail="BACKEND_URL nao configurado. Defina a URL publica da API na Vercel.",
+        )
+    backend_base = backend_base_env.rstrip("/")
     success_url = f"{frontend_base}/app/billing/success?sub={sub_id}"
     notification_url = f"{backend_base}/api/billing/mercadopago-webhook"
 
@@ -988,13 +1001,34 @@ async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = 
     if not entitlements.get("can_use_push"):
         raise HTTPException(status_code=403, detail="Notificacoes push exigem plano Profissional.")
 
-    # Insere na nova tabela push_subscriptions
-    billing_service.supabase.table("push_subscriptions").upsert({
+    import requests as _req
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    if not supabase_url or not supabase_key:
+        raise HTTPException(status_code=500, detail="Supabase nao configurado.")
+
+    payload = {
         "user_id": user.id,
         "endpoint": req.endpoint,
         "p256dh": req.p256dh,
-        "auth": req.auth
-    }).execute()
+        "auth": req.auth,
+    }
+    resp = _req.post(
+        f"{supabase_url}/rest/v1/push_subscriptions",
+        headers={
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        json=payload,
+        timeout=10,
+    )
+    if resp.status_code >= 300:
+        logging.error("[push] Falha ao salvar subscription: %s %s", resp.status_code, resp.text[:300])
+        raise HTTPException(status_code=502, detail="Falha ao salvar inscricao de push.")
+
     return {"status": "ok", "message": "Inscricao de push salva com sucesso na base de dados."}
 
 @app.post("/webhooks/whatsapp")
@@ -1005,7 +1039,7 @@ async def whatsapp_webhook(request: Request):
     """
     # ── Autenticação da Z-API ─────────────────────────────────────────────────
     # Valida o token enviado pela Z-API no header 'client-token'.
-    # Configure ZAPI_WEBHOOK_SECRET nas variáveis de ambiente (Railway).
+    # Configure ZAPI_WEBHOOK_SECRET nas variáveis de ambiente da Vercel.
     # Em produção, a ausência do secret rejeita todas as requisições.
     import hmac as _hmac
     _zapi_secret = os.getenv("ZAPI_WEBHOOK_SECRET", "").strip()
@@ -3153,7 +3187,7 @@ async def market_quotes_endpoint(
     _user: AuthenticatedUser = Depends(get_current_user_or_api_key),
 ):
     """
-    Retorna cotações de commodities em tempo real (yfinance + awesomeapi).
+    Retorna cotacoes de commodities em tempo real (Yahoo Finance Chart API + AwesomeAPI).
     Cache de 30 minutos no servidor. Fallback estático se as fontes falharem.
     """
     try:

@@ -9,7 +9,7 @@ Design:
 - Com DSN + pacote, registra as integrações Starlette/FastAPI, que capturam
   automaticamente exceções não tratadas dos endpoints.
 
-Para ativar em produção (Railway):
+Para ativar em produção (Vercel):
     1. (já em requirements.txt) `sentry-sdk[fastapi]`
     2. definir `SENTRY_DSN` nas variáveis de ambiente
 """

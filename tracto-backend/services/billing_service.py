@@ -45,14 +45,8 @@ _FREE_FALLBACK: dict[str, Any] = {
 }
 
 # â”€â”€ Allowlist de DONO/ADMIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# Donos da plataforma recebem acesso TOTAL, ignorando plano/assinatura.
-# ConfigurÃ¡vel por ambiente (sem segredos): OWNER_EMAILS e/ou OWNER_USER_IDS
-# (separados por vÃ­rgula). DEFAULT_OWNER_EMAILS Ã© uma lista fixa no cÃ³digo para
-# funcionar sem precisar mexer no Railway. E-mails nÃ£o sÃ£o segredos.
-DEFAULT_OWNER_EMAILS: list[str] = [
-    # Donos fixos da plataforma (preenchido a pedido do prÃ³prio dono).
-    "gustavo12012001@gmail.com",  # Gustavo Rocha â€” dono
-]
+# Donos/admins recebem acesso total, ignorando plano/assinatura.
+# Configure por ambiente: OWNER_EMAILS e/ou OWNER_USER_IDS, separados por virgula.
 
 _OWNER_FULL_ACCESS: dict[str, Any] = {
     "plan_id": "owner",
@@ -76,7 +70,6 @@ _OWNER_FULL_ACCESS: dict[str, Any] = {
 def _owner_emails() -> set[str]:
     env = os.getenv("OWNER_EMAILS", "")
     emails = {e.strip().lower() for e in env.split(",") if e.strip()}
-    emails.update(e.strip().lower() for e in DEFAULT_OWNER_EMAILS if e.strip())
     return emails
 
 

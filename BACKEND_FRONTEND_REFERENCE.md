@@ -224,7 +224,7 @@ interface AppState {
 
 ```bash
 # API Base
-VITE_API_URL=https://tracto-production.up.railway.app
+VITE_API_URL=https://tracto-eta.vercel.app
 VITE_API_TIMEOUT=30000
 
 # Supabase (Auth + Database)
@@ -379,15 +379,15 @@ CREATE POLICY "Users can access own data" ON [table]
 # Access: https://tracto.app
 ```
 
-### Backend (Railway)
+### Backend (Vercel Python Function)
 
 ```bash
-# Docker container with gunicorn + FastAPI
-# Environment variables set in Railway dashboard
-# Start command: gunicorn -w 4 main:app
-# Exposed port: $PORT (auto-assigned)
+# FastAPI carregado por api/index.py
+# Environment variables set in Vercel dashboard
+# Rewrites: /api/* -> /api/index.py
+# Health check: /api/health
 
-# Access: https://tracto-production.up.railway.app
+# Access: https://tracto-eta.vercel.app
 ```
 
 ### Database (Supabase)
@@ -436,7 +436,7 @@ python main.py
 3. Test with curl or Postman
 4. Ensure `.env` variables are set
 5. `git commit && git push`
-6. Railway rebuilds + deploys automatically
+6. Vercel rebuilds + deploys automatically
 
 ### Testing
 

@@ -32,13 +32,13 @@ MP_TIMEOUT_SECONDS = 15.0
 def _get_access_token() -> str:
     """
     Retorna o access token configurado (sandbox ou produção).
-    Configure via env var MERCADO_PAGO_ACCESS_TOKEN no Railway.
+    Configure via env var MERCADO_PAGO_ACCESS_TOKEN na Vercel.
     """
     token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN", "").strip()
     if not token:
         raise RuntimeError(
             "MERCADO_PAGO_ACCESS_TOKEN não configurada. "
-            "Adicione a chave no Railway > Variables."
+            "Adicione a chave em Vercel > Environment Variables."
         )
     return token
 

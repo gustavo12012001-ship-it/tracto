@@ -1,7 +1,7 @@
 -- Migration 11: chat_usage
 -- Tabela para contagem diária de mensagens de chat por usuário.
 -- Permite que o limite diário de chat persista entre reinicializações do processo
--- (Railway reinicia o dyno com frequência, limpando o estado in-memory).
+-- (ambientes serverless reiniciam com frequencia, limpando o estado in-memory).
 --
 -- Execute no Supabase Dashboard > SQL Editor.
 

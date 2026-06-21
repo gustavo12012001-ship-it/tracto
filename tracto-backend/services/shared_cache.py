@@ -3,7 +3,7 @@
 
 Problema: o backend roda como processo único hoje, então caches em memória
 (entitlements, contadores) funcionam. Ao escalar para múltiplas instâncias
-(Railway replicas), cada processo teria seu próprio cache → entitlements
+(replicas/serverless), cada processo teria seu próprio cache -> entitlements
 inconsistentes e contadores de uso furados.
 
 Solução: uma abstração única (`cache`) que:

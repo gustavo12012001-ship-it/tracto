@@ -22,18 +22,9 @@ def test_is_owner_by_user_id_env(monkeypatch):
     assert not bs.is_owner("uuid-999", None)
 
 
-def test_is_owner_by_default_list(monkeypatch):
-    monkeypatch.setenv("OWNER_EMAILS", "")
-    monkeypatch.setenv("OWNER_USER_IDS", "")
-    monkeypatch.setattr(bs, "DEFAULT_OWNER_EMAILS", ["fixo@dono.com"])
-    assert bs.is_owner("x", "fixo@dono.com")
-    assert not bs.is_owner("x", "naoehdono@dono.com")
-
-
 def test_non_owner_when_unset(monkeypatch):
     monkeypatch.setenv("OWNER_EMAILS", "")
     monkeypatch.setenv("OWNER_USER_IDS", "")
-    monkeypatch.setattr(bs, "DEFAULT_OWNER_EMAILS", [])
     assert not bs.is_owner("x", "alguem@x.com")
     assert not bs.is_owner(None, None)
 
@@ -60,5 +51,4 @@ def test_non_owner_unchanged(monkeypatch):
     """Sem allowlist, usuário comum não vira dono (não quebra o fluxo normal)."""
     monkeypatch.setenv("OWNER_EMAILS", "")
     monkeypatch.setenv("OWNER_USER_IDS", "")
-    monkeypatch.setattr(bs, "DEFAULT_OWNER_EMAILS", [])
     assert bs.is_owner("user-x", "user-x@gmail.com") is False
