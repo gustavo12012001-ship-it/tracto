@@ -171,7 +171,7 @@ export default function Dashboard() {
     <>
       {/* Mapa Central */}
       <section className="flex-1 flex flex-col overflow-hidden p-4 gap-4 min-w-0">
-        <div className="flex-1 relative rounded-xl overflow-hidden min-h-0" style={{ border: '1px solid rgba(255,255,255,0.07)', background: '#0c0c0e' }}>
+        <div className="flex-1 relative rounded-xl overflow-hidden min-h-0 always-dark" style={{ border: '1px solid rgba(255,255,255,0.07)', background: '#0c0c0e' }}>
           <FieldMap />
           {/* Marca d'água — ícone Tracto no canto do mapa */}
           <div

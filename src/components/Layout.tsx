@@ -322,9 +322,9 @@ export default function Layout() {
           --surface: rgba(255,255,255,0.03);
           --border: rgba(255,255,255,0.07);
           --border-strong: rgba(255,255,255,0.12);
-          --muted: #64748b;
+          --muted: #94a3b8;
           --text: #e2e8f0;
-          --text-secondary: #94a3b8;
+          --text-secondary: #cbd5e1;
         }
 
         /* â”€â”€ Light Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -940,11 +940,16 @@ export default function Layout() {
                                 ) : (
                                   <div className="flex items-center gap-1 pl-9 pr-2 py-1 hover:bg-white/4 transition-all group">
                                     <button
-                                      onClick={() => { setActiveField(field.id ?? null); focusActiveField(); navigate('/app/dashboard'); setSelectorOpen(false); }}
+                                      onClick={() => {
+                                        setActiveField(field.id ?? null);
+                                        focusActiveField();
+                                        navigate('/app/dashboard');
+                                        setSelectorOpen(false);
+                                      }}
                                       className="flex-1 flex items-center gap-1.5 text-left min-w-0">
-                                      <span className="material-symbols-outlined text-xs flex-shrink-0" style={{ color: activeFieldId === field.id ? 'var(--primary)' : '#1e3a5f' }}>polyline</span>
-                                      <span className="text-[11px] font-medium truncate" style={{ color: activeFieldId === field.id ? '#fff' : '#64748b' }}>{field.name}</span>
-                                      {field.areaHa && <span className="text-[9px] ml-1 shrink-0" style={{ color: '#1e293b' }}>{field.areaHa.toFixed(1)} ha</span>}
+                                      <span className="material-symbols-outlined text-xs flex-shrink-0" style={{ color: activeFieldId === field.id ? 'var(--primary)' : 'var(--muted)' }}>polyline</span>
+                                      <span className="text-[11px] font-medium truncate" style={{ color: activeFieldId === field.id ? 'var(--primary)' : 'var(--text-secondary)' }}>{field.name}</span>
+                                      {field.areaHa && <span className="text-[9px] ml-1 shrink-0" style={{ color: 'var(--muted)' }}>{field.areaHa.toFixed(1)} ha</span>}
                                     </button>
                                     <a href={`https://www.google.com/maps?q=${field.lat},${field.lng}`}
                                       target="_blank" rel="noopener noreferrer"

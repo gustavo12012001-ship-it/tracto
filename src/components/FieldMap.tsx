@@ -168,11 +168,13 @@ function FlyController({ target }: { target: { lat: number; lng: number; zoom?: 
 
 function ActiveFieldFlyController() {
   const map = useMap();
-  const { fields, activeFieldId } = useAppStore();
-  const prevFieldId = useRef<string | null>(null);
+  const { fields, activeFieldId, activeFieldFocusToken } = useAppStore();
+  const prevFocusKey = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeFieldId || prevFieldId.current === activeFieldId) return;
-    prevFieldId.current = activeFieldId;
+    if (!activeFieldId) return;
+    const focusKey = `${activeFieldId}:${activeFieldFocusToken}`;
+    if (prevFocusKey.current === focusKey) return;
+    prevFocusKey.current = focusKey;
     const field = fields.find((f) => f.id === activeFieldId);
     if (!field) return;
     if (field.boundaries && field.boundaries.length >= 3) {
@@ -180,7 +182,7 @@ function ActiveFieldFlyController() {
     } else {
       map.flyTo([field.lat, field.lng], 15, { duration: 1.2 });
     }
-  }, [activeFieldId, fields, map]);
+  }, [activeFieldId, activeFieldFocusToken, fields, map]);
   return null;
 }
 
@@ -367,7 +369,7 @@ function ScenesPanel({
   const currentScenes = tab === 's2' ? scenes.s2 : tab === 's1' ? scenes.s1 : scenes.up42;
 
   return (
-    <div className="glass-overlay absolute top-2 right-2 md:top-4 md:right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
+    <div className="glass-overlay absolute top-14 right-2 md:top-16 md:right-4 z-[700] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
       style={{ width: 'min(310px, calc(100vw - 16px))', maxHeight: 'calc(100vh - 100px)' }}>
       <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
         <div>
