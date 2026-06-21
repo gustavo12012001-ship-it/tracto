@@ -309,27 +309,27 @@ function SceneCard({
   const iconName = isS2 ? 'satellite_alt' : isUp42 ? 'satellite_alt' : 'radar';
   const iconColor = isS2 ? '#60a5fa' : isUp42 ? '#34d399' : '#a78bfa';
   const iconBg = isS2 ? 'rgba(96,165,250,0.15)' : isUp42 ? 'rgba(52,211,153,0.15)' : 'rgba(167,139,250,0.15)';
-  const resLabel = scene.resolution_m ? `≈${scene.resolution_m}m` : null;
+  const resLabel = scene.resolution_m ? `~${scene.resolution_m}m` : null;
 
   return (
     <button
       onClick={onClick}
       className="w-full text-left rounded-xl p-2.5 transition-all flex items-center gap-3"
       style={{
-        background: isActive ? 'rgba(236,91,19,0.15)' : 'rgba(255,255,255,0.04)',
-        border: `1px solid ${isActive ? 'rgba(236,91,19,0.5)' : 'rgba(255,255,255,0.08)'}`,
+        background: isActive ? 'rgba(236,91,19,0.12)' : 'var(--surface)',
+        border: `1px solid ${isActive ? 'rgba(236,91,19,0.45)' : 'var(--border)'}`,
       }}
     >
       <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: iconBg }}>
         <span className="material-symbols-outlined text-sm" style={{ color: iconColor }}>{iconName}</span>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold text-white leading-tight">{scene.date_br}</p>
-        <p className="text-[10px] mt-0.5 truncate" style={{ color: '#64748b' }}>
+        <p className="text-xs font-bold leading-tight" style={{ color: 'var(--text)' }}>{scene.date_br}</p>
+        <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--muted)' }}>
           {isS2
-            ? scene.cloud_coverage !== null ? `☁ ${scene.cloud_coverage.toFixed(0)}% nuvens` : 'Cobertura N/D'
+            ? scene.cloud_coverage !== null ? `${scene.cloud_coverage.toFixed(0)}% nuvens` : 'Cobertura N/D'
             : isUp42 ? `${scene.provider || 'Up42'} · preview`
-            : scene.orbit ? `Órbita ${scene.orbit}` : 'SAR · Radar'}
+            : scene.orbit ? `Orbita ${scene.orbit}` : 'SAR · Radar'}
         </p>
       </div>
       {isS2 && scene.cloud_coverage !== null && (
@@ -367,28 +367,34 @@ function ScenesPanel({
   const currentScenes = tab === 's2' ? scenes.s2 : tab === 's1' ? scenes.s1 : scenes.up42;
 
   return (
-    <div className="absolute top-2 right-2 md:top-4 md:right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
-      style={{ background: 'rgba(8,8,9,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 'min(280px, calc(100vw - 16px))', maxHeight: 'calc(100vh - 100px)' }}>
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="glass-overlay absolute top-2 right-2 md:top-4 md:right-16 z-[500] flex flex-col rounded-2xl overflow-hidden pointer-events-auto"
+      style={{ width: 'min(310px, calc(100vw - 16px))', maxHeight: 'calc(100vh - 100px)' }}>
+      <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
         <div>
-          <p className="text-xs font-bold text-white">Imagens Satelitais</p>
-          <p className="text-[10px] mt-0.5 truncate max-w-[180px]" style={{ color: '#64748b' }}>{fieldName}</p>
+          <p className="text-xs font-bold" style={{ color: 'var(--text)' }}>Imagens Satelitais</p>
+          <p className="text-[10px] mt-0.5 truncate max-w-[170px]" style={{ color: 'var(--muted)' }}>{fieldName}</p>
         </div>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all" style={{ color: '#64748b' }}>
+        <button
+          onClick={onClose}
+          aria-label="Fechar painel de imagens"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:opacity-80"
+          style={{ color: 'var(--muted)', border: '1px solid var(--border)', background: 'var(--surface)' }}
+        >
           <span className="material-symbols-outlined text-sm">close</span>
+          Fechar
         </button>
       </div>
-      <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="flex p-2 gap-1.5" style={{ borderBottom: '1px solid var(--border)' }}>
         {([
           { key: 's2', label: 'Sentinel-2', icon: 'satellite_alt', color: '#60a5fa', desc: 'Óptico · RGB' },
           { key: 's1', label: 'Sentinel-1', icon: 'radar', color: '#a78bfa', desc: 'Radar · SAR' },
           { key: 'up42', label: 'Up42', icon: 'satellite_alt', color: '#34d399', desc: 'Alta Res · pay/uso' },
         ] as const).map(({ key, label, icon, color, desc }) => (
           <button key={key} onClick={() => setTab(key)} className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl transition-all"
-            style={{ background: tab === key ? `${color}18` : 'rgba(255,255,255,0.03)', border: `1px solid ${tab === key ? `${color}40` : 'rgba(255,255,255,0.06)'}` }}>
-            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : '#64748b' }}>{icon}</span>
-            <span className="text-[10px] font-bold" style={{ color: tab === key ? '#fff' : '#64748b' }}>{label}</span>
-            <span className="text-[9px]" style={{ color: '#475569' }}>{desc}</span>
+            style={{ background: tab === key ? `${color}18` : 'var(--surface)', border: `1px solid ${tab === key ? `${color}40` : 'var(--border)'}` }}>
+            <span className="material-symbols-outlined text-base" style={{ color: tab === key ? color : 'var(--muted)' }}>{icon}</span>
+            <span className="text-[10px] font-bold" style={{ color: tab === key ? color : 'var(--text)' }}>{label}</span>
+            <span className="text-[9px]" style={{ color: 'var(--muted)' }}>{desc}</span>
           </button>
         ))}
       </div>
@@ -396,20 +402,20 @@ function ScenesPanel({
         {scenes.loading ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" />
-            <p className="text-[10px]" style={{ color: '#64748b' }}>Buscando imagens disponíveis...</p>
+            <p className="text-[10px]" style={{ color: 'var(--muted)' }}>Buscando imagens disponíveis...</p>
           </div>
         ) : scenes.error ? (
           <div className="py-6 text-center px-4">
             <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#f87171' }}>cloud_off</span>
             <p className="text-[10px] font-semibold mb-1" style={{ color: '#f87171' }}>Falha ao buscar cenas</p>
-            <p className="text-[10px]" style={{ color: '#64748b' }}>{scenes.error}</p>
+            <p className="text-[10px]" style={{ color: 'var(--muted)' }}>{scenes.error}</p>
           </div>
         ) : currentScenes.length === 0 ? (
           <div className="py-6 text-center">
             <span className="material-symbols-outlined text-2xl block mb-2" style={{ color: '#334155' }}>
               {tab === 's2' ? 'cloud_off' : tab === 's1' ? 'signal_disconnected' : 'public_off'}
             </span>
-            <p className="text-[10px]" style={{ color: '#64748b' }}>
+            <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
               {tab === 'up42' ? 'Nenhuma imagem Up42 disponível nos últimos 90 dias.' : `Nenhuma imagem ${tab === 's2' ? 'Sentinel-2' : 'Sentinel-1'} nos últimos 90 dias.`}
             </p>
           </div>
@@ -423,17 +429,17 @@ function ScenesPanel({
           })
         )}
       </div>
-      <div className="px-4 py-2.5 flex flex-col gap-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <p className="text-[9px] text-center" style={{ color: '#334155' }}>
-          {tab === 'up42' ? 'Up42 Marketplace · Pléiades · SPOT · Satellogic' : 'Catálogo: Copernicus · Earth Search STAC (gratuito)'}
+      <div className="px-4 py-2.5 flex flex-col gap-1" style={{ borderTop: '1px solid var(--border)' }}>
+        <p className="text-[9px] text-center" style={{ color: 'var(--muted)' }}>
+          {tab === 'up42' ? 'Up42 Marketplace · Pleiades · SPOT · Satellogic' : 'Catalogo: Copernicus · Earth Search STAC (gratuito)'}
         </p>
         {tab === 'up42' ? (
-          <p className="text-[9px] text-center" style={{ color: '#1e3a5f' }}>
+          <p className="text-[9px] text-center" style={{ color: 'var(--muted)' }}>
             Preview gratuito · imagem completa por pedido (pay/uso)
           </p>
         ) : (
-          <p className="text-[9px] text-center" style={{ color: '#1e3a5f' }}>
-            Renderização: Sentinel Hub Processing API (requer credenciais)
+          <p className="text-[9px] text-center" style={{ color: 'var(--muted)' }}>
+            Renderizacao: Sentinel Hub Processing API (requer credenciais)
           </p>
         )}
       </div>
@@ -1010,7 +1016,11 @@ export default function FieldMap() {
                   {loc.irrigacaoTipo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>💧 {loc.irrigacaoTipo}</p>}
                   {loc.texturaSolo && <p style={{ fontSize: 11, color: '#64748b', marginBottom: 2 }}>🌍 Solo {loc.texturaSolo}</p>}
                   <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
-                    <button onClick={() => { if (loc.id) { setActiveField(loc.id); setShowScenesPanel(true); } }}
+                    <button onClick={() => {
+                      if (!loc.id) return;
+                      setActiveField(loc.id);
+                      setShowScenesPanel((open) => activeFieldId === loc.id ? !open : true);
+                    }}
                       style={{ fontSize: 11, color: '#ec5b13', background: 'rgba(236,91,19,0.1)', border: '1px solid rgba(236,91,19,0.3)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}>
                       🛰 Ver Imagens
                     </button>
