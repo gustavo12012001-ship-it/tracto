@@ -563,6 +563,24 @@ def _iso_date_is_future(value: str | None) -> bool:
         return False
 
 
+def _parse_pix_external_reference(value: str | None) -> dict[str, str] | None:
+    """Parse refs geradas pelo checkout Pix: pix:user_id:plan_id:cycle:intent_id."""
+    if not value or not value.startswith("pix:"):
+        return None
+    parts = value.split(":", 4)
+    if len(parts) != 5:
+        return None
+    _, user_id, plan_id, billing_cycle, intent_id = parts
+    if billing_cycle not in ("monthly", "yearly"):
+        return None
+    return {
+        "user_id": user_id,
+        "plan_id": plan_id,
+        "billing_cycle": billing_cycle,
+        "intent_id": intent_id,
+    }
+
+
 @app.post("/api/billing/checkout")
 @limiter.limit("10/minute")
 async def create_checkout(
@@ -748,27 +766,19 @@ async def create_pix_checkout(
             detail="Complete seu cadastro (CPF/CNPJ + endereco) antes de pagar.",
         )
 
-    # Evita que um Pix antigo pendente bloqueie uma nova tentativa do mesmo usuario.
-    _req.patch(
-        f"{supabase_base}/rest/v1/subscriptions",
-        headers={**headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
-        params={"user_id": f"eq.{user.id}", "status": "eq.pending", "mp_preapproval_id": "is.null"},
-        json={"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()},
-        timeout=10,
-    )
-
-    sub_id = str(uuid.uuid4())
+    intent_id = str(uuid.uuid4())
+    external_reference = f"pix:{user.id}:{body.plan_id}:{body.billing_cycle}:{intent_id}"
     frontend_base = os.getenv("FRONTEND_URL", "https://tracto-eta.vercel.app").rstrip("/")
     backend_base_env = os.getenv("BACKEND_URL")
     if not backend_base_env:
         raise HTTPException(
             status_code=500,
             detail="BACKEND_URL nao configurado. Defina a URL publica da API na Vercel.",
-        )
+    )
     backend_base = backend_base_env.rstrip("/")
-    success_url = f"{frontend_base}/app/billing/success?sub={sub_id}&method=pix"
-    pending_url = f"{frontend_base}/app/billing/pending?sub={sub_id}&method=pix"
-    failure_url = f"{frontend_base}/app/billing/failed?sub={sub_id}&method=pix"
+    success_url = f"{frontend_base}/app/billing/success?intent={intent_id}&method=pix"
+    pending_url = f"{frontend_base}/app/billing/pending?intent={intent_id}&method=pix"
+    failure_url = f"{frontend_base}/app/billing/failed?intent={intent_id}&method=pix"
     notification_url = f"{backend_base}/api/billing/mercadopago-webhook"
 
     try:
@@ -776,7 +786,7 @@ async def create_pix_checkout(
             title=f"Tracto {plan['name']} ({body.billing_cycle})",
             amount_brl=amount_brl,
             payer_email=profile["email"],
-            external_reference=sub_id,
+            external_reference=external_reference,
             success_url=success_url,
             pending_url=pending_url,
             failure_url=failure_url,
@@ -786,28 +796,8 @@ async def create_pix_checkout(
         logging.error("[billing/checkout-pix] MP rejeitou: %s", exc.detail)
         raise HTTPException(status_code=502, detail=f"Falha no Mercado Pago: {exc.detail}") from exc
 
-    sub_payload = {
-        "id": sub_id,
-        "user_id": user.id,
-        "plan_id": body.plan_id,
-        "status": "pending",
-        "billing_cycle": body.billing_cycle,
-        "mp_init_point": mp_resp.get("init_point"),
-        "mp_payer_email": profile["email"],
-        "started_at": datetime.now(timezone.utc).isoformat(),
-    }
-    sub_resp = _req.post(
-        f"{supabase_base}/rest/v1/subscriptions",
-        headers={**headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
-        json=sub_payload,
-        timeout=10,
-    )
-    if not sub_resp.ok:
-        logging.error("[billing/checkout-pix] insert subscription falhou: %s %s", sub_resp.status_code, sub_resp.text[:300])
-        raise HTTPException(status_code=409, detail="Nao foi possivel iniciar o pagamento Pix. Verifique se ja existe assinatura ativa.")
-
     return {
-        "subscription_id": sub_id,
+        "subscription_id": intent_id,
         "mp_preference_id": mp_resp.get("id"),
         "checkout_url": mp_resp.get("init_point"),
         "sandbox_url": mp_resp.get("sandbox_init_point"),
@@ -996,6 +986,7 @@ async def _process_payment_event(payment: dict) -> None:
     ).get("preapproval_id")
     payer_email = (payment.get("payer") or {}).get("email")
     ext_ref = payment.get("external_reference")
+    pix_ref = _parse_pix_external_reference(ext_ref)
     amount_cents = int(round(float(payment.get("transaction_amount", 0)) * 100))
 
     payload = {
@@ -1020,7 +1011,7 @@ async def _process_payment_event(payment: dict) -> None:
         )
         if sr.ok and sr.json():
             sub_row = sr.json()[0]
-    if not sub_row and ext_ref and payer_email:
+    if not sub_row and ext_ref and payer_email and not pix_ref:
         # Fallback: external_reference + cross-check do email
         sr = _req.get(
             f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
@@ -1034,7 +1025,7 @@ async def _process_payment_event(payment: dict) -> None:
         )
         if sr.ok and sr.json():
             sub_row = sr.json()[0]
-    if not sub_row and ext_ref:
+    if not sub_row and ext_ref and not pix_ref:
         # Pagamento avulso Pix criado por Preferences: o external_reference e o
         # webhook assinado pelo MP sao a origem de verdade para localizar a compra.
         sr = _req.get(
@@ -1051,6 +1042,91 @@ async def _process_payment_event(payment: dict) -> None:
         if sr.ok and sr.json():
             sub_row = sr.json()[0]
 
+    status = str(payment.get("status") or "").lower()
+    if not sub_row and pix_ref:
+        plan_resp = _req.get(
+            f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/plans",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            params={"id": f"eq.{pix_ref['plan_id']}", "is_active": "eq.true", "limit": "1"},
+            timeout=10,
+        )
+        plan = plan_resp.json()[0] if plan_resp.ok and plan_resp.json() else None
+        if not plan:
+            logging.warning("[MP webhook] Pix com plano invalido: %s", pix_ref)
+            return
+
+        expected_cents = plan["price_monthly_brl_cents"] if pix_ref["billing_cycle"] == "monthly" else plan["price_yearly_brl_cents"]
+        if amount_cents < int(expected_cents):
+            logging.warning(
+                "[MP webhook] Pix com valor menor que o plano. payment=%s amount=%s expected=%s ref=%s",
+                payment.get("id"), amount_cents, expected_cents, ext_ref,
+            )
+            return
+
+        sub_lookup = _req.get(
+            f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            params={
+                "user_id": f"eq.{pix_ref['user_id']}",
+                "status": "in.(pending,authorized,paused)",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+            timeout=10,
+        )
+        existing_sub = sub_lookup.json()[0] if sub_lookup.ok and sub_lookup.json() else None
+
+        if status == "approved":
+            now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            sub_update = {
+                "user_id": pix_ref["user_id"],
+                "plan_id": pix_ref["plan_id"],
+                "status": "authorized",
+                "billing_cycle": pix_ref["billing_cycle"],
+                "mp_payer_email": payer_email,
+                "started_at": now_iso,
+                "current_period_start": now_iso,
+                "current_period_end": _period_end_for_cycle(pix_ref["billing_cycle"]),
+                "trial_end_at": None,
+                "last_synced_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if existing_sub:
+                _req.patch(
+                    f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+                    headers={
+                        "apikey": key, "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    params={"id": f"eq.{existing_sub['id']}"},
+                    json={k: v for k, v in sub_update.items() if k != "user_id"},
+                    timeout=10,
+                )
+                sub_row = {**existing_sub, **sub_update}
+            else:
+                sub_id = str(uuid.uuid4())
+                create_resp = _req.post(
+                    f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+                    headers={
+                        "apikey": key, "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation",
+                    },
+                    json={"id": sub_id, **sub_update},
+                    timeout=10,
+                )
+                if not create_resp.ok:
+                    logging.error("[MP webhook] falha ao criar assinatura Pix: %s %s", create_resp.status_code, create_resp.text[:300])
+                    return
+                sub_row = create_resp.json()[0] if create_resp.json() else {"id": sub_id, **sub_update}
+            billing_service.invalidate_cache(pix_ref["user_id"])
+        else:
+            sub_row = {
+                "id": None,
+                "user_id": pix_ref["user_id"],
+                "mp_preapproval_id": None,
+            }
+
     if not sub_row:
         logging.warning(
             "[MP webhook] payment %s sem subscription resolvível (preapproval=%s, ext_ref=%s, email=%s)",
@@ -1058,7 +1134,8 @@ async def _process_payment_event(payment: dict) -> None:
         )
         return
 
-    payload["subscription_id"] = sub_row["id"]
+    if sub_row.get("id"):
+        payload["subscription_id"] = sub_row["id"]
     payload["user_id"] = sub_row["user_id"]
     payload["mp_preapproval_id"] = sub_row.get("mp_preapproval_id")
 
@@ -1074,8 +1151,7 @@ async def _process_payment_event(payment: dict) -> None:
         timeout=10,
     )
 
-    status = str(payment.get("status") or "").lower()
-    is_one_time_pix = not sub_row.get("mp_preapproval_id")
+    is_one_time_pix = not sub_row.get("mp_preapproval_id") and not pix_ref
     if is_one_time_pix:
         sub_update: dict[str, str] = {
             "last_synced_at": datetime.now(timezone.utc).isoformat(),
