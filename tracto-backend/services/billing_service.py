@@ -105,6 +105,19 @@ def _is_trial_active(trial_end_at: str | None) -> bool:
         return False
 
 
+def _is_future_date(value: str | None) -> bool:
+    """Retorna True se uma data ISO existe e ainda nao expirou."""
+    if not value:
+        return False
+    try:
+        end = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        return end > datetime.now(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def validate_cpf(cpf: str) -> bool:
     """Valida CPF com dÃ­gitos verificadores (MÃ³dulo 11). Rejeita sequÃªncias uniformes."""
     digits = "".join(c for c in cpf if c.isdigit())
@@ -214,6 +227,14 @@ class BillingService:
     def _compute_entitlements(self, user_id: str) -> dict:
         """Busca entitlements frescos no Supabase (sem cache)."""
         sub = self.get_user_plan(user_id)
+        status = sub.get("status")
+        has_active_trial = _is_trial_active(sub.get("trial_end_at"))
+        has_active_period = _is_future_date(sub.get("current_period_end"))
+        if status == "pending" and not has_active_trial:
+            return {**_FREE_FALLBACK, "current_fields": self.count_fields(user_id)}
+        if status == "authorized" and sub.get("mp_preapproval_id") is None and not has_active_period:
+            return {**_FREE_FALLBACK, "current_fields": self.count_fields(user_id)}
+
         plan_id = sub.get("plan_id", "free")
         plan = self.get_plan_details(plan_id)
 

@@ -274,6 +274,52 @@ async def create_preapproval(
     return await _post("/preapproval", payload, idempotency_key=external_reference)
 
 
+async def create_pix_preference(
+    *,
+    title: str,
+    amount_brl: float,
+    payer_email: str,
+    external_reference: str,
+    success_url: str,
+    pending_url: str,
+    failure_url: str,
+    notification_url: str,
+) -> dict:
+    """
+    Cria checkout avulso por Pix. Nao e recorrente: o backend libera o periodo
+    contratado quando o webhook do pagamento chegar como approved.
+    """
+    payload = {
+        "items": [
+            {
+                "title": title,
+                "quantity": 1,
+                "currency_id": "BRL",
+                "unit_price": float(amount_brl),
+            }
+        ],
+        "payer": {"email": payer_email},
+        "external_reference": external_reference,
+        "back_urls": {
+            "success": success_url,
+            "pending": pending_url,
+            "failure": failure_url,
+        },
+        "notification_url": notification_url,
+        "payment_methods": {
+            "default_payment_method_id": "pix",
+            "excluded_payment_types": [
+                {"id": "credit_card"},
+                {"id": "debit_card"},
+                {"id": "ticket"},
+            ],
+            "installments": 1,
+        },
+        "statement_descriptor": "TRACTO",
+    }
+    return await _post("/checkout/preferences", payload, idempotency_key=external_reference)
+
+
 async def get_preapproval(mp_preapproval_id: str) -> dict:
     """Busca status atual da assinatura no MP."""
     return await _get(f"/preapproval/{mp_preapproval_id}")

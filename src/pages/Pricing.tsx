@@ -95,6 +95,7 @@ export default function Pricing() {
   const [error, setError] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
+  const [pendingPaymentMethod, setPendingPaymentMethod] = useState<'card' | 'pix'>('card');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -127,25 +128,52 @@ export default function Pricing() {
     void fetchAll();
   }, [fetchAll]);
 
+  const redirectToCheckout = (resp: CheckoutResponse) => {
+    const url = resp.environment === 'sandbox' && resp.sandbox_url
+      ? resp.sandbox_url
+      : resp.checkout_url;
+    window.location.href = url;
+  };
+
   const startCheckout = async (planId: string) => {
     setError(null);
     if (!billingProfile) {
       setPendingPlanId(planId);
+      setPendingPaymentMethod('card');
       setShowProfileModal(true);
       return;
     }
-    setCheckoutLoading(planId);
+    setCheckoutLoading(`card:${planId}`);
     try {
       const resp = await apiFetch<CheckoutResponse>('/api/billing/checkout', {
         method: 'POST',
         body: JSON.stringify({ plan_id: planId, billing_cycle: billingCycle }),
       });
-      const url = resp.environment === 'sandbox' && resp.sandbox_url
-        ? resp.sandbox_url
-        : resp.checkout_url;
-      window.location.href = url;
+      redirectToCheckout(resp);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao iniciar checkout.';
+      setError(msg);
+      setCheckoutLoading(null);
+    }
+  };
+
+  const startPixCheckout = async (planId: string) => {
+    setError(null);
+    if (!billingProfile) {
+      setPendingPlanId(planId);
+      setPendingPaymentMethod('pix');
+      setShowProfileModal(true);
+      return;
+    }
+    setCheckoutLoading(`pix:${planId}`);
+    try {
+      const resp = await apiFetch<CheckoutResponse>('/api/billing/checkout-pix', {
+        method: 'POST',
+        body: JSON.stringify({ plan_id: planId, billing_cycle: billingCycle }),
+      });
+      redirectToCheckout(resp);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Falha ao gerar pagamento Pix.';
       setError(msg);
       setCheckoutLoading(null);
     }
@@ -174,7 +202,10 @@ export default function Pricing() {
   const onProfileSaved = async (planId: string | null) => {
     setShowProfileModal(false);
     await fetchAll();
-    if (planId) await startCheckout(planId);
+    if (planId) {
+      if (pendingPaymentMethod === 'pix') await startPixCheckout(planId);
+      else await startCheckout(planId);
+    }
   };
 
   if (loading) {
@@ -362,21 +393,38 @@ export default function Pricing() {
                     Sem necessidade de pagamento
                   </button>
                 ) : (
-                  <button
-                    onClick={() => void startCheckout(plan.id)}
-                    disabled={checkoutLoading === plan.id}
-                    className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-60"
-                    style={{ background: color.color, boxShadow: `0 2px 12px ${color.color}40` }}
-                  >
-                    {checkoutLoading === plan.id ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
-                        Redirecionando...
-                      </span>
-                    ) : (
-                      `Assinar ${planName}`
-                    )}
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => void startCheckout(plan.id)}
+                      disabled={checkoutLoading === `card:${plan.id}` || checkoutLoading === `pix:${plan.id}`}
+                      className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-60"
+                      style={{ background: color.color, boxShadow: `0 2px 12px ${color.color}40` }}
+                    >
+                      {checkoutLoading === `card:${plan.id}` ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                          Redirecionando...
+                        </span>
+                      ) : (
+                        `Assinar ${planName} no cartao`
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void startPixCheckout(plan.id)}
+                      disabled={checkoutLoading === `card:${plan.id}` || checkoutLoading === `pix:${plan.id}`}
+                      className="w-full py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-60"
+                      style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    >
+                      {checkoutLoading === `pix:${plan.id}` ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin inline-block" />
+                          Gerando Pix...
+                        </span>
+                      ) : (
+                        `Pagar ${billingCycle === 'yearly' ? '1 ano' : '30 dias'} no Pix`
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -390,8 +438,8 @@ export default function Pricing() {
         </div>
 
         <p className="text-[10px] text-center mt-6" style={{ color: 'var(--muted)' }}>
-          Métodos aceitos: cartão de crédito (Visa, Mastercard, Elo, Hipercard, American Express).
-          Cobrança recorrente automática. Suporte: contato@tractoagro.com.br
+          Métodos aceitos: cartão de crédito para assinatura recorrente ou Pix para acesso avulso do período selecionado.
+          Suporte: contato@tractoagro.com.br
         </p>
       </div>
 

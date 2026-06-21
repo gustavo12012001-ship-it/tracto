@@ -426,7 +426,12 @@ async def get_user_subscription(request: Request, user: AuthenticatedUser = Depe
     if not rows:
         return {"subscription": None, "plan_id": "free"}
     sub = rows[0]
-    return {"subscription": sub, "plan_id": sub.get("plan_id", "free")}
+    effective_plan_id = sub.get("plan_id", "free")
+    if sub.get("status") == "pending" and not _iso_date_is_future(sub.get("trial_end_at")):
+        effective_plan_id = "free"
+    if sub.get("status") == "authorized" and not sub.get("mp_preapproval_id") and not _iso_date_is_future(sub.get("current_period_end")):
+        effective_plan_id = "free"
+    return {"subscription": sub, "plan_id": effective_plan_id}
 
 
 @app.get("/api/billing/profile")
@@ -525,6 +530,11 @@ class CheckoutCreateRequest(_BM):
     billing_cycle: str  # 'monthly' or 'yearly'
 
 
+class PixCheckoutCreateRequest(_BM):
+    plan_id: str
+    billing_cycle: str = "monthly"  # monthly = 30 dias, yearly = 365 dias
+
+
 def _checkout_trial_end(trial_days: int) -> str | None:
     """Retorna ISO UTC da data de fim do trial, ou None se trial_days <= 0."""
     if trial_days <= 0:
@@ -532,6 +542,25 @@ def _checkout_trial_end(trial_days: int) -> str | None:
     from datetime import timedelta
     end = datetime.now(timezone.utc) + timedelta(days=trial_days)
     return end.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _period_end_for_cycle(billing_cycle: str) -> str:
+    from datetime import timedelta
+    days = 365 if billing_cycle == "yearly" else 30
+    end = datetime.now(timezone.utc) + timedelta(days=days)
+    return end.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _iso_date_is_future(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed > datetime.now(timezone.utc)
+    except (TypeError, ValueError, AttributeError):
+        return False
 
 
 @app.post("/api/billing/checkout")
@@ -587,6 +616,18 @@ async def create_checkout(
             detail="Complete seu cadastro (CPF/CNPJ + endereço) antes de assinar.",
         )
 
+    _req.patch(
+        f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+        headers={
+            "apikey": key, "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        params={"user_id": f"eq.{user.id}", "status": "eq.pending", "mp_preapproval_id": "is.null"},
+        json={"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()},
+        timeout=10,
+    )
+
     # 3. Cria registro pending de subscription pra ter external_reference
     sub_id = str(uuid.uuid4())
     frontend_base = os.getenv("FRONTEND_URL", "https://tracto-eta.vercel.app").rstrip("/")
@@ -633,7 +674,7 @@ async def create_checkout(
         "trial_end_at": _checkout_trial_end(trial_days=7),
     }
     sb_sub_url = f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions"
-    _req.post(
+    sub_resp = _req.post(
         sb_sub_url,
         headers={
             "apikey": key, "Authorization": f"Bearer {key}",
@@ -643,10 +684,131 @@ async def create_checkout(
         json=sub_payload,
         timeout=10,
     )
+    if not sub_resp.ok:
+        logging.error("[billing/checkout] insert subscription falhou: %s %s", sub_resp.status_code, sub_resp.text[:300])
+        raise HTTPException(status_code=409, detail="Nao foi possivel iniciar assinatura. Verifique se ja existe assinatura ativa.")
 
     return {
         "subscription_id": sub_id,
         "mp_preapproval_id": mp_resp.get("id"),
+        "checkout_url": mp_resp.get("init_point"),
+        "sandbox_url": mp_resp.get("sandbox_init_point"),
+        "environment": mp.get_environment(),
+    }
+
+
+@app.post("/api/billing/checkout-pix")
+@limiter.limit("10/minute")
+async def create_pix_checkout(
+    request: Request,
+    body: PixCheckoutCreateRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Cria um pagamento Pix avulso no Mercado Pago. Ao aprovar, o webhook libera
+    o plano pelo periodo comprado (30 dias no mensal, 365 dias no anual).
+    """
+    import requests as _req
+    from services import mercadopago_service as mp
+
+    if body.billing_cycle not in ("monthly", "yearly"):
+        raise HTTPException(status_code=422, detail="billing_cycle invalido.")
+    if body.plan_id == "free":
+        raise HTTPException(status_code=400, detail="Plano gratuito nao requer pagamento.")
+
+    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    supabase_base = os.getenv("SUPABASE_URL", "").rstrip("/")
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+
+    plan_resp = _req.get(
+        f"{supabase_base}/rest/v1/plans",
+        headers=headers,
+        params={"id": f"eq.{body.plan_id}", "is_active": "eq.true", "limit": "1"},
+        timeout=10,
+    )
+    if not plan_resp.ok or not plan_resp.json():
+        raise HTTPException(status_code=404, detail="Plano nao encontrado.")
+    plan = plan_resp.json()[0]
+
+    amount_cents = plan["price_monthly_brl_cents"] if body.billing_cycle == "monthly" else plan["price_yearly_brl_cents"]
+    if amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="Plano sem preco configurado.")
+    amount_brl = amount_cents / 100.0
+
+    profile_resp = _req.get(
+        f"{supabase_base}/rest/v1/billing_profiles",
+        headers=headers,
+        params={"user_id": f"eq.{user.id}", "limit": "1"},
+        timeout=10,
+    )
+    profile = profile_resp.json()[0] if profile_resp.ok and profile_resp.json() else None
+    if not profile:
+        raise HTTPException(
+            status_code=412,
+            detail="Complete seu cadastro (CPF/CNPJ + endereco) antes de pagar.",
+        )
+
+    # Evita que um Pix antigo pendente bloqueie uma nova tentativa do mesmo usuario.
+    _req.patch(
+        f"{supabase_base}/rest/v1/subscriptions",
+        headers={**headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
+        params={"user_id": f"eq.{user.id}", "status": "eq.pending", "mp_preapproval_id": "is.null"},
+        json={"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()},
+        timeout=10,
+    )
+
+    sub_id = str(uuid.uuid4())
+    frontend_base = os.getenv("FRONTEND_URL", "https://tracto-eta.vercel.app").rstrip("/")
+    backend_base_env = os.getenv("BACKEND_URL")
+    if not backend_base_env:
+        raise HTTPException(
+            status_code=500,
+            detail="BACKEND_URL nao configurado. Defina a URL publica da API na Vercel.",
+        )
+    backend_base = backend_base_env.rstrip("/")
+    success_url = f"{frontend_base}/app/billing/success?sub={sub_id}&method=pix"
+    pending_url = f"{frontend_base}/app/billing/pending?sub={sub_id}&method=pix"
+    failure_url = f"{frontend_base}/app/billing/failed?sub={sub_id}&method=pix"
+    notification_url = f"{backend_base}/api/billing/mercadopago-webhook"
+
+    try:
+        mp_resp = await mp.create_pix_preference(
+            title=f"Tracto {plan['name']} ({body.billing_cycle})",
+            amount_brl=amount_brl,
+            payer_email=profile["email"],
+            external_reference=sub_id,
+            success_url=success_url,
+            pending_url=pending_url,
+            failure_url=failure_url,
+            notification_url=notification_url,
+        )
+    except mp.MercadoPagoError as exc:
+        logging.error("[billing/checkout-pix] MP rejeitou: %s", exc.detail)
+        raise HTTPException(status_code=502, detail=f"Falha no Mercado Pago: {exc.detail}") from exc
+
+    sub_payload = {
+        "id": sub_id,
+        "user_id": user.id,
+        "plan_id": body.plan_id,
+        "status": "pending",
+        "billing_cycle": body.billing_cycle,
+        "mp_init_point": mp_resp.get("init_point"),
+        "mp_payer_email": profile["email"],
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    sub_resp = _req.post(
+        f"{supabase_base}/rest/v1/subscriptions",
+        headers={**headers, "Content-Type": "application/json", "Prefer": "return=minimal"},
+        json=sub_payload,
+        timeout=10,
+    )
+    if not sub_resp.ok:
+        logging.error("[billing/checkout-pix] insert subscription falhou: %s %s", sub_resp.status_code, sub_resp.text[:300])
+        raise HTTPException(status_code=409, detail="Nao foi possivel iniciar o pagamento Pix. Verifique se ja existe assinatura ativa.")
+
+    return {
+        "subscription_id": sub_id,
+        "mp_preference_id": mp_resp.get("id"),
         "checkout_url": mp_resp.get("init_point"),
         "sandbox_url": mp_resp.get("sandbox_init_point"),
         "environment": mp.get_environment(),
@@ -872,6 +1034,22 @@ async def _process_payment_event(payment: dict) -> None:
         )
         if sr.ok and sr.json():
             sub_row = sr.json()[0]
+    if not sub_row and ext_ref:
+        # Pagamento avulso Pix criado por Preferences: o external_reference e o
+        # webhook assinado pelo MP sao a origem de verdade para localizar a compra.
+        sr = _req.get(
+            f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            params={
+                "id": f"eq.{ext_ref}",
+                "mp_preapproval_id": "is.null",
+                "status": "eq.pending",
+                "limit": "1",
+            },
+            timeout=10,
+        )
+        if sr.ok and sr.json():
+            sub_row = sr.json()[0]
 
     if not sub_row:
         logging.warning(
@@ -895,6 +1073,39 @@ async def _process_payment_event(payment: dict) -> None:
         json=payload,
         timeout=10,
     )
+
+    status = str(payment.get("status") or "").lower()
+    is_one_time_pix = not sub_row.get("mp_preapproval_id")
+    if is_one_time_pix:
+        sub_update: dict[str, str] = {
+            "last_synced_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if status == "approved":
+            now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            sub_update.update({
+                "status": "authorized",
+                "current_period_start": now_iso,
+                "current_period_end": _period_end_for_cycle(sub_row.get("billing_cycle", "monthly")),
+            })
+        elif status in {"rejected", "cancelled", "refunded", "charged_back"}:
+            sub_update.update({
+                "status": "cancelled",
+                "cancelled_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        if len(sub_update) > 1:
+            _req.patch(
+                f"{os.getenv('SUPABASE_URL', '').rstrip('/')}/rest/v1/subscriptions",
+                headers={
+                    "apikey": key, "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+                params={"id": f"eq.{sub_row['id']}"},
+                json=sub_update,
+                timeout=10,
+            )
+            billing_service.invalidate_cache(sub_row["user_id"])
 
 
 async def _process_subscription_event(preapproval: dict) -> None:
@@ -1025,6 +1236,7 @@ async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = 
         json=payload,
         timeout=10,
     )
+
     if resp.status_code >= 300:
         logging.error("[push] Falha ao salvar subscription: %s %s", resp.status_code, resp.text[:300])
         raise HTTPException(status_code=502, detail="Falha ao salvar inscricao de push.")
