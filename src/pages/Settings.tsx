@@ -766,12 +766,6 @@ function NotificacoesTab() {
             description="Receba alertas agrônomicos e climáticos no seu e-mail cadastrado"
           />
           <Toggle
-            checked={prefs.whatsapp}
-            onChange={(v) => update('whatsapp', v)}
-            label="Alertas via WhatsApp"
-            description="Receba mensagens direto no WhatsApp cadastrado no perfil (requer plano Pro)"
-          />
-          <Toggle
             checked={prefs.push}
             onChange={(v) => update('push', v)}
             label="Notificações Push (Navegador)"
@@ -797,7 +791,7 @@ function NotificacoesTab() {
       <div className="flex items-start gap-3 p-4 rounded-xl" style={{ background: 'rgba(236,91,19,0.06)', border: '1px solid rgba(236,91,19,0.15)' }}>
         <span className="material-symbols-outlined text-sm mt-0.5" style={{ color: 'var(--primary)' }}>info</span>
         <p className="text-xs" style={{ color: 'var(--muted)' }}>
-          Os alertas por WhatsApp e Push são funcionalidades do plano Profissional.
+          Os alertas por e-mail e Push são funcionalidades do plano Profissional.
           <Link to="/app/billing" className="font-bold ml-1" style={{ color: 'var(--primary)' }}>
             Ver planos →
           </Link>

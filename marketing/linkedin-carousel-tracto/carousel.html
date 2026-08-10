@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Carrossel LinkedIn - Tracto</title>
+    <style>
+      :root {
+        --bg: #070807;
+        --panel: #101312;
+        --panel-soft: #171b18;
+        --ink: #f8faf7;
+        --muted: #b8c2b4;
+        --orange: #ff5a14;
+        --green: #24c46b;
+        --blue: #4da3ff;
+        --line: rgba(255, 255, 255, 0.13);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #141414;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      .deck {
+        display: grid;
+        gap: 32px;
+        padding: 32px;
+      }
+
+      .slide {
+        position: relative;
+        width: 1080px;
+        height: 1350px;
+        overflow: hidden;
+        color: var(--ink);
+        background:
+          linear-gradient(155deg, rgba(255, 90, 20, 0.22), transparent 34%),
+          radial-gradient(circle at 86% 18%, rgba(36, 196, 107, 0.18), transparent 24%),
+          var(--bg);
+      }
+
+      .slide::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+        background-size: 54px 54px;
+        mask-image: linear-gradient(to bottom, black, transparent 82%);
+      }
+
+      .farm-bg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.36;
+        filter: saturate(1.15) contrast(1.05);
+      }
+
+      .shade {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(180deg, rgba(7, 8, 7, 0.52), var(--bg) 83%),
+          linear-gradient(90deg, rgba(7, 8, 7, 0.88), transparent 74%);
+      }
+
+      .content {
+        position: relative;
+        z-index: 2;
+        height: 100%;
+        padding: 76px 78px 64px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 72px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 27px;
+      }
+
+      .brand img {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        background: #fff;
+      }
+
+      .kicker {
+        display: inline-flex;
+        width: max-content;
+        max-width: 100%;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 17px;
+        border: 1px solid rgba(255, 90, 20, 0.38);
+        border-radius: 999px;
+        color: #ffd2bf;
+        background: rgba(255, 90, 20, 0.12);
+        font-weight: 800;
+        font-size: 18px;
+      }
+
+      h1 {
+        margin: 26px 0 0;
+        max-width: 900px;
+        font-size: 82px;
+        line-height: 0.95;
+        letter-spacing: 0;
+        font-weight: 950;
+      }
+
+      h2 {
+        margin: 22px 0 0;
+        max-width: 880px;
+        font-size: 70px;
+        line-height: 1;
+        letter-spacing: 0;
+        font-weight: 950;
+      }
+
+      .lead {
+        margin: 32px 0 0;
+        max-width: 810px;
+        color: var(--muted);
+        font-size: 33px;
+        line-height: 1.25;
+        font-weight: 560;
+      }
+
+      .hero-panel {
+        margin-top: auto;
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .mock-map,
+      .panel,
+      .metric,
+      .feature,
+      .price-card {
+        border: 1px solid var(--line);
+        background: rgba(16, 19, 18, 0.78);
+        backdrop-filter: blur(10px);
+        border-radius: 24px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.24);
+      }
+
+      .mock-map {
+        position: relative;
+        min-height: 330px;
+        overflow: hidden;
+        background:
+          linear-gradient(22deg, rgba(108, 78, 44, 0.9), rgba(48, 94, 55, 0.82)),
+          url("../../src/assets/hero-farm.jpg") center / cover;
+      }
+
+      .field {
+        position: absolute;
+        left: 148px;
+        top: 84px;
+        width: 250px;
+        height: 170px;
+        border: 5px solid var(--orange);
+        background: rgba(255, 90, 20, 0.18);
+        clip-path: polygon(7% 28%, 76% 12%, 100% 44%, 65% 100%, 0 80%);
+      }
+
+      .pin {
+        position: absolute;
+        left: 304px;
+        top: 150px;
+        padding: 11px 15px;
+        border-radius: 999px;
+        color: #111;
+        background: #fff;
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .panel-title {
+        color: #fff;
+        font-size: 19px;
+        font-weight: 900;
+        margin-bottom: 18px;
+      }
+
+      .mini-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 0;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .status {
+        color: var(--green);
+        font-weight: 900;
+      }
+
+      .footer {
+        margin-top: auto;
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        color: #dfe7db;
+        font-size: 20px;
+        font-weight: 750;
+        padding-bottom: 20px;
+      }
+
+      .page {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .list {
+        display: grid;
+        gap: 24px;
+        margin-top: 56px;
+      }
+
+      .feature {
+        display: grid;
+        grid-template-columns: 74px 1fr;
+        gap: 20px;
+        padding: 26px;
+      }
+
+      .icon {
+        width: 74px;
+        height: 74px;
+        display: grid;
+        place-items: center;
+        border-radius: 20px;
+        color: #fff;
+        background: linear-gradient(135deg, var(--orange), #d53f06);
+        font-size: 34px;
+        font-weight: 950;
+      }
+
+      .feature b {
+        display: block;
+        color: #fff;
+        font-size: 29px;
+        margin-bottom: 8px;
+      }
+
+      .feature span {
+        color: var(--muted);
+        font-size: 22px;
+        line-height: 1.28;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+        margin-top: 58px;
+      }
+
+      .metric {
+        padding: 28px;
+        min-height: 185px;
+      }
+
+      .metric strong {
+        display: block;
+        color: #fff;
+        font-size: 51px;
+        line-height: 1;
+      }
+
+      .metric span {
+        display: block;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 21px;
+        line-height: 1.28;
+      }
+
+      .price-wrap {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-top: 60px;
+      }
+
+      .price-card {
+        display: flex;
+        flex-direction: column;
+        padding: 34px 30px;
+        min-height: 460px;
+      }
+
+      .price-card.highlight {
+        border-color: rgba(255, 90, 20, 0.9);
+        box-shadow: 0 0 0 2px rgba(255, 90, 20, 0.1), 0 28px 90px rgba(255, 90, 20, 0.16);
+      }
+
+      .badge {
+        width: max-content;
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: rgba(255, 90, 20, 0.15);
+        color: #ffb08f;
+        font-size: 16px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .plan {
+        margin-top: 22px;
+        font-size: 34px;
+        font-weight: 950;
+      }
+
+      .price {
+        margin-top: 18px;
+        font-size: 58px;
+        font-weight: 950;
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 21px;
+        line-height: 1.35;
+      }
+
+      .cta {
+        margin-top: auto;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        min-height: 70px;
+        padding: 0 22px;
+        border-radius: 16px;
+        background: var(--orange);
+        color: #fff;
+        font-size: 23px;
+        font-weight: 950;
+      }
+
+      .final-cta {
+        margin-top: 72px;
+        width: max-content;
+        padding: 26px 38px;
+        border-radius: 20px;
+        background: var(--orange);
+        font-size: 31px;
+        font-weight: 950;
+        box-shadow: 0 30px 80px rgba(255, 90, 20, 0.28);
+      }
+
+      .note {
+        margin-top: 20px;
+        max-width: 810px;
+        color: #8f9b8b;
+        font-size: 19px;
+        line-height: 1.35;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck">
+      <section class="slide" data-slide="01-capa">
+        <img class="farm-bg" src="../../src/assets/hero-farm.jpg" alt="" />
+        <div class="shade"></div>
+        <div class="content">
+          <div class="topline">
+            <div class="brand"><img src="../../public/tracto-icon.png" alt="" /> Tracto</div>
+            <div class="page">01/06</div>
+          </div>
+          <div class="kicker">Inteligência agronômica para o campo</div>
+          <h1>Seu talhão não precisa ser uma caixa-preta.</h1>
+          <p class="lead">Mapas, satélite, clima, solo, relatórios e IA em um só painel para decidir com mais clareza.</p>
+          <div class="hero-panel">
+            <div class="mock-map"><div class="field"></div><div class="pin">Talhão 1</div></div>
+            <div class="panel">
+              <div class="panel-title">Painel Tracto</div>
+              <div class="mini-row"><span>NDVI</span><b class="status">Monitorado</b></div>
+              <div class="mini-row"><span>Solo</span><b class="status">Importável</b></div>
+              <div class="mini-row"><span>Clima</span><b class="status">Em tempo real</b></div>
+              <div class="mini-row"><span>Relatórios</span><b class="status">Com IA</b></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="02-problema">
+        <div class="content">
+          <div class="topline">
+            <div class="brand"><img src="../../public/tracto-icon.png" alt="" /> Tracto</div>
+            <div class="page">02/06</div>
+          </div>
+          <div class="kicker">O problema</div>
+          <h2>A informação da fazenda fica espalhada demais.</h2>
+          <p class="lead">Um pouco no mapa, um pouco no PDF do laboratório, um pouco no clima, um pouco na memória de quem está no campo.</p>
+          <div class="list">
+            <div class="feature"><div class="icon">1</div><div><b>Talhões sem histórico claro</b><span>Fica difícil comparar safra, solo, imagens e decisões ao longo do tempo.</span></div></div>
+            <div class="feature"><div class="icon">2</div><div><b>Análises de solo presas em arquivos</b><span>PDF, imagem e planilhas precisam virar informação prática, não mais trabalho manual.</span></div></div>
+            <div class="feature"><div class="icon">3</div><div><b>Decisão sem visão integrada</b><span>Quando cada dado fica em um lugar, o risco de agir tarde aumenta.</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="03-solucao">
+        <div class="content">
+          <div class="topline">
+            <div class="brand"><img src="../../public/tracto-icon.png" alt="" /> Tracto</div>
+            <div class="page">03/06</div>
+          </div>
+          <div class="kicker">A solução</div>
+          <h2>Uma plataforma para acompanhar a fazenda por talhão.</h2>
+          <p class="lead">A Tracto organiza o que importa: mapa, imagens Sentinel, clima, caderno de campo, análises e relatórios inteligentes.</p>
+          <div class="metrics">
+            <div class="metric"><strong>Mapa</strong><span>Visualize fazendas e talhões com navegação direta por área.</span></div>
+            <div class="metric"><strong>Satélite</strong><span>Acompanhe imagens e índices para detectar mudanças no campo.</span></div>
+            <div class="metric"><strong>Solo</strong><span>Importe análise em PDF, imagem ou CSV e centralize os parâmetros.</span></div>
+            <div class="metric"><strong>IA</strong><span>Gere leituras e relatórios para apoiar a tomada de decisão agronômica.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="04-recursos">
+        <div class="content">
+          <div class="topline">
+            <div class="brand"><img src="../../public/tracto-icon.png" alt="" /> Tracto</div>
+            <div class="page">04/06</div>
+          </div>
+          <div class="kicker">O que já entra no fluxo</div>
+          <h2>Do campo ao relatório, sem perder contexto.</h2>
+          <div class="list">
+            <div class="feature"><div class="icon">✓</div><div><b>Caderno de campo</b><span>Registro de atividades, aplicações, colheita, fitossanitário, safras e solo.</span></div></div>
+            <div class="feature"><div class="icon">✓</div><div><b>Clima e alertas</b><span>Acompanhe condições que influenciam operação, risco e janela de manejo.</span></div></div>
+            <div class="feature"><div class="icon">✓</div><div><b>Relatórios com IA</b><span>Transforme dados em leitura organizada para acompanhar a lavoura.</span></div></div>
+            <div class="feature"><div class="icon">✓</div><div><b>Pagamento simples</b><span>Planos com cartão e Pix para facilitar a entrada de novos usuários.</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="05-planos">
+        <div class="content">
+          <div class="topline">
+            <div class="brand"><img src="../../public/tracto-icon.png" alt="" /> Tracto</div>
+            <div class="page">05/06</div>
+          </div>
+          <div class="kicker">Para começar agora</div>
+          <h2>Teste, valide e evolua o monitoramento da fazenda.</h2>
+          <div class="price-wrap">
+            <div class="price-card">
+              <div class="badge">Entrada</div>
+              <div class="plan">Gratuito</div>
+              <div class="price">R$ 0</div>
+              <p class="small">Para conhecer a plataforma, cadastrar a fazenda e começar com o básico.</p>
+              <div class="cta">Começar teste</div>
+            </div>
+            <div class="price-card highlight">
+              <div class="badge">Mais completo</div>
+              <div class="plan">Pro</div>
+              <div class="price">R$ 99/mês</div>
+              <p class="small">Para produtor que quer IA, satélite, alertas, relatórios e acompanhamento por talhão.</p>
+              <div class="cta">Assinar Pro</div>
+            </div>
+          </div>
+          <p class="note">A Tracto apoia a análise e a organização das informações. Decisões técnicas devem considerar avaliação agronômica profissional.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="06-final">
+        <img class="farm-bg" src="../../src/assets/hero-farm.jpg" alt="" />
+        <div class="shade"></div>
+        <div class="content">
+          <div class="topline">
+            <div class="brand"><img src="../../public/tracto-icon.png" alt="" /> Tracto</div>
+            <div class="page">06/06</div>
+          </div>
+          <div class="kicker">Venda com clareza</div>
+          <h1>Transforme dados do campo em decisão.</h1>
+          <p class="lead">Acompanhe talhões, análises, clima, satélite e relatórios em uma plataforma feita para o produtor rural.</p>
+          <div class="final-cta">Começar na Tracto</div>
+          <p class="note">Ideal para produtores, consultores, fazendas e equipes que querem monitoramento agronômico mais organizado.</p>
+          <div class="footer">
+            <span>tracto.app</span>
+            <span>AgTech para gestão de talhões</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

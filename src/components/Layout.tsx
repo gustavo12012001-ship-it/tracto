@@ -59,13 +59,13 @@ function SidebarContent({
 
   const navItems: NavItem[] = NAV_PRODUTOR;
 
-  const [userName, setUserName] = useState('UsuÃ¡rio');
+  const [userName, setUserName] = useState('Usuário');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       const name = data.user?.user_metadata?.full_name
         || data.user?.email?.split('@')[0]
-        || 'UsuÃ¡rio';
+        || 'Usuário';
       setUserName(name);
     });
   }, []);
@@ -128,14 +128,14 @@ function SidebarContent({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-white truncate">{userName}</p>
             <p className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>
-              {userName === 'UsuÃ¡rio' ? 'Carregando...' : 'Administrador'}
+              {userName === 'Usuário' ? 'Carregando...' : 'Administrador'}
             </p>
           </div>
-          {/* Settings gear â†’ /app/settings */}
+          {/* Settings gear -> /app/settings */}
           <NavLink
             to="/app/settings"
             onClick={onNavClick}
-            title="ConfiguraÃ§Ãµes"
+            title="Configurações"
             className={({ isActive }) =>
               `flex-shrink-0 transition-colors ${isActive ? 'text-[var(--primary)]' : 'text-slate-600 hover:text-white'}`
             }
@@ -187,7 +187,7 @@ export default function Layout() {
   const bellRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
 
-  // â”€â”€ Estado de ediÃ§Ã£o inline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ Estado de edição inline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [editingFarmId, setEditingFarmId] = useState<string | null>(null);
   const [editFarmName, setEditFarmName] = useState('');
   const [editFarmCity, setEditFarmCity] = useState('');
@@ -282,7 +282,7 @@ export default function Layout() {
     return () => subscription.unsubscribe();
   }, [doSync]);
 
-  // â”€â”€ PrÃ©-carrega meteorologia ao abrir o app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ Pré-carrega meteorologia ao abrir o app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const field = activeFieldId ? fields.find((item) => item.id === activeFieldId) : null;
     const loc = field ? { lat: field.lat, lng: field.lng } : (currentLocation ?? FALLBACK_LOCATION);
@@ -298,8 +298,8 @@ export default function Layout() {
   };
 
   // Determine active farm/field for display
-  const temp = weatherCache ? `${Math.round(weatherCache.temperature)}Â°C` : 'â€“';
-  const humidity = weatherCache ? `${weatherCache.humidity}%` : 'â€“';
+  const temp = weatherCache ? `${Math.round(weatherCache.temperature)}°C` : '-';
+  const humidity = weatherCache ? `${weatherCache.humidity}%` : '-';
   const activeFarm = farms.find((farm) => farm.id === activeFarmId) ?? null;
 
 
@@ -345,7 +345,7 @@ export default function Layout() {
           background-color: #f4f3ef;
           color: #0f172a;
         }
-        /* Texto claro â†’ escuro no modo claro */
+        /* Texto claro -> escuro no modo claro */
         [data-theme="light"] .text-white { color: #0f172a !important; }
         /* Dark floating panels keep white text even in light mode */
         [data-theme="light"] .always-dark * { color: inherit; }
@@ -371,7 +371,7 @@ export default function Layout() {
         [data-theme="light"] .text-slate-400,
         [data-theme="light"] .text-slate-500 { color: #475569 !important; }
         [data-theme="light"] .text-slate-600 { color: #64748b !important; }
-        /* Qualquer elemento com cor branca/clara em inline style â†’ escuro */
+        /* Qualquer elemento com cor branca/clara em inline style -> escuro */
         [data-theme="light"] p, [data-theme="light"] span, [data-theme="light"] h1,
         [data-theme="light"] h2, [data-theme="light"] h3, [data-theme="light"] h4,
         [data-theme="light"] h5, [data-theme="light"] label { color: inherit; }
@@ -387,7 +387,7 @@ export default function Layout() {
         [data-theme="light"] .bg-slate-800/50,
         [data-theme="light"] .bg-slate-700/50,
         [data-theme="light"] .bg-slate-900 { background-color: rgba(0,0,0,0.06) !important; }
-        /* Cards e superfÃ­cies com rgba branco */
+        /* Cards e superfícies com rgba branco */
         [data-theme="light"] [style*="rgba(255,255,255,0.0"],
         [data-theme="light"] [style*="rgba(255,255,255,0.1"] {
           background: rgba(0,0,0,0.03) !important;
@@ -396,7 +396,7 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(255,255,255,0.03)"] { background: rgba(0,0,0,0.04) !important; }
         [data-theme="light"] [style*="rgba(255,255,255,0.05)"] { background: rgba(0,0,0,0.05) !important; }
         [data-theme="light"] [style*="rgba(255,255,255,0.06)"] { background: rgba(0,0,0,0.06) !important; }
-        /* Bordas claras â†’ bordas escuras VISÃVEIS (PERSISTE em todas as Ã¡reas) */
+        /* Bordas claras -> bordas escuras VISÍVEIS (PERSISTE em todas as áreas) */
         [data-theme="light"] [style*="rgba(255,255,255,0.05)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.06)"],
         [data-theme="light"] [style*="rgba(255,255,255,0.07)"],
@@ -407,7 +407,7 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(255,255,255,0.15)"] {
           border-color: rgba(15,23,42,0.18) !important;
         }
-        /* Bordas explÃ­citas Tailwind (border-white/N) â†’ visÃ­veis no light mode */
+        /* Bordas explícitas Tailwind (border-white/N) -> visíveis no light mode */
         [data-theme="light"] .border-white/5,
         [data-theme="light"] .border-white/10,
         [data-theme="light"] .border-white/15,
@@ -423,7 +423,7 @@ export default function Layout() {
         [data-theme="light"] [style*="borderBottom: '1px solid rgba(255,255,255"] {
           border-color: rgba(15,23,42,0.18) !important;
         }
-        /* Cards/seÃ§Ãµes com border solid var(--border) ganham sombra leve pra destacar */
+        /* Cards/seções com border solid var(--border) ganham sombra leve pra destacar */
         [data-theme="light"] .card-glass,
         [data-theme="light"] [class*="rounded-2xl"][style*="var(--surface)"],
         [data-theme="light"] [class*="rounded-xl"][style*="var(--surface)"] {
@@ -435,8 +435,8 @@ export default function Layout() {
         /* Light mode: map/research panels stay dark always */
         [data-theme="light"] .leaflet-container { filter: none; }
 
-        /* â”€â”€ AUDITORIA: inline styles brancos hardcoded â†’ escuro no light mode â”€â”€ */
-        /* NÃ£o aplica dentro de .always-dark (painÃ©is flutuantes que ficam escuros sempre) */
+        /* â”€â”€ AUDITORIA: inline styles brancos hardcoded -> escuro no light mode â”€â”€ */
+        /* Não aplica dentro de .always-dark (painéis flutuantes que ficam escuros sempre) */
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: #fff"],
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color:#fff"],
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: white"],
@@ -445,7 +445,7 @@ export default function Layout() {
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: rgb(255,255,255)"] {
           color: #0f172a !important;
         }
-        /* Backgrounds brancos hardcoded â†’ fundo bege/claro no light mode */
+        /* Backgrounds brancos hardcoded -> fundo bege/claro no light mode */
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background: #fff"],
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background:#fff"],
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background: white"],
@@ -453,7 +453,7 @@ export default function Layout() {
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="background-color: white"] {
           background: #ffffff !important;
         }
-        /* Backgrounds escuros hardcoded em panel (#080809, #0a0a0c, #0c0c0e) â†’ claro */
+        /* Backgrounds escuros hardcoded em panel (#080809, #0a0a0c, #0c0c0e) -> claro */
         [data-theme="light"] :not(.always-dark) [style*="background: #080809"],
         [data-theme="light"] :not(.always-dark) [style*="background:#080809"],
         [data-theme="light"] :not(.always-dark) [style*="background: #0a0a0c"],
@@ -464,7 +464,7 @@ export default function Layout() {
           background: #ffffff !important;
           border-color: rgba(0,0,0,0.08) !important;
         }
-        /* Cores muted hardcoded tÃ­picas â†’ ficam visÃ­veis no light mode */
+        /* Cores muted hardcoded típicas -> ficam visíveis no light mode */
         [data-theme="light"] :not(.always-dark) [style*="color: #64748b"],
         [data-theme="light"] :not(.always-dark) [style*="color:#64748b"],
         [data-theme="light"] :not(.always-dark) [style*="color: #475569"],
@@ -477,7 +477,7 @@ export default function Layout() {
         [data-theme="light"] :not(.always-dark) [style*="color:#1e293b"] {
           color: #64748b !important;
         }
-        /* Texto claro slate-200/300 hardcoded â†’ escuro no light */
+        /* Texto claro slate-200/300 hardcoded -> escuro no light */
         [data-theme="light"] :not(.always-dark) [style*="color: #e2e8f0"],
         [data-theme="light"] :not(.always-dark) [style*="color:#e2e8f0"],
         [data-theme="light"] :not(.always-dark) [style*="color: #f1f5f9"],
@@ -489,7 +489,7 @@ export default function Layout() {
           color: #1e293b !important;
         }
 
-        /* â”€â”€ Overlays flutuantes sobre o mapa (dropdowns AÃ§Ãµes, SatÃ©lite HD, etc) â”€â”€ */
+        /* â”€â”€ Overlays flutuantes sobre o mapa (dropdowns Ações, Satélite HD, etc) â”€â”€ */
         /* Mesmo dentro de .always-dark, esses controles devem adaptar ao tema. */
         [data-theme="light"] [style*="rgba(8,8,9,0."],
         [data-theme="light"] [style*="rgba(0,0,0,0.4)"],
@@ -515,7 +515,7 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(0,0,0,0.95)"] * {
           color: #0f172a !important;
         }
-        /* MantÃ©m Ã­cones laranja/verde/azul originais dentro dos overlays */
+        /* Mantém ícones laranja/verde/azul originais dentro dos overlays */
         [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #ec5b13"],
         [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #34d399"],
         [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #60a5fa"],
@@ -525,7 +525,7 @@ export default function Layout() {
         [data-theme="light"] [style*="rgba(8,8,9,0."] [style*="color: #f87171"] {
           color: inherit !important;
         }
-        /* Placeholder em inputs sobre o mapa fica visÃ­vel no light mode */
+        /* Placeholder em inputs sobre o mapa fica visível no light mode */
         [data-theme="light"] .always-dark input::placeholder,
         [data-theme="light"] [style*="rgba(8,8,9,0."] input::placeholder {
           color: #64748b !important;
@@ -542,7 +542,7 @@ export default function Layout() {
           background: #ffffff;
           color: #0f172a;
         }
-        /* Inputs date/time pickers tambÃ©m */
+        /* Inputs date/time pickers também */
         input[type="date"], input[type="time"], input[type="datetime-local"] {
           color-scheme: dark;
         }
@@ -552,7 +552,7 @@ export default function Layout() {
           color-scheme: light;
         }
 
-        /* â”€â”€ Glass overlay panel â€” adaptativo claro/escuro â”€â”€ */
+        /* â”€â”€ Glass overlay panel - adaptativo claro/escuro â”€â”€ */
         .glass-overlay {
           background: rgba(8,8,9,0.94) !important;
           backdrop-filter: blur(14px) !important;
@@ -569,7 +569,7 @@ export default function Layout() {
         [data-theme="light"] .glass-overlay .text-white {
           color: #0f172a !important;
         }
-        /* Cores semÃ¢nticas internas mantÃ©m (laranja, verde, vermelho) */
+        /* Cores semânticas internas mantém (laranja, verde, vermelho) */
         [data-theme="light"] .glass-overlay [style*="color: #ec5b13"],
         [data-theme="light"] .glass-overlay [style*="color: #34d399"],
         [data-theme="light"] .glass-overlay [style*="color: #f87171"],
@@ -578,7 +578,7 @@ export default function Layout() {
         }
 
         /* â”€â”€ A11y: focus rings em todos elementos interativos â”€â”€ */
-        /* WCAG 2.1: focus visÃ­vel Ã© obrigatÃ³rio pra navegaÃ§Ã£o por teclado */
+        /* WCAG 2.1: focus visível é obrigatório pra navegação por teclado */
         button:focus-visible,
         a:focus-visible,
         input:focus-visible,
@@ -594,7 +594,7 @@ export default function Layout() {
           outline: none;
         }
 
-        /* â”€â”€ A11y: touch targets mÃ­nimo 44px em mobile â”€â”€ */
+        /* â”€â”€ A11y: touch targets mínimo 44px em mobile â”€â”€ */
         @media (max-width: 768px) {
           button, a[role="button"], a.btn, [role="button"] {
             min-height: 36px;
@@ -625,7 +625,7 @@ export default function Layout() {
           white-space: normal;
         }
 
-        /* â”€â”€ Reduced motion: respeita preferÃªncia do usuÃ¡rio â”€â”€ */
+        /* â”€â”€ Reduced motion: respeita preferência do usuário â”€â”€ */
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
             animation-duration: 0.01ms !important;
@@ -635,7 +635,7 @@ export default function Layout() {
           }
         }
 
-        /* â”€â”€ Tracto Input/Select/Label â€” classes reutilizÃ¡veis adaptativas â”€â”€ */
+        /* â”€â”€ Tracto Input/Select/Label - classes reutilizáveis adaptativas â”€â”€ */
         .tracto-input, .tracto-select {
           background: rgba(255,255,255,0.05) !important;
           border: 1px solid rgba(255,255,255,0.1) !important;
@@ -653,7 +653,7 @@ export default function Layout() {
           color: #0f172a !important;
         }
         [data-theme="light"] .tracto-input::placeholder { color: #94a3b8 !important; }
-        /* Seta do select customizada jÃ¡ que appearance:none remove a nativa */
+        /* Seta do select customizada já que appearance:none remove a nativa */
         .tracto-select {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") !important;
           background-repeat: no-repeat !important;
@@ -663,13 +663,13 @@ export default function Layout() {
         }
         .tracto-label { color: #64748b; }
         [data-theme="light"] .tracto-label { color: #475569; }
-        /* Textos com text-white explÃ­cito dentro de overlays mantÃ©m visibilidade */
+        /* Textos com text-white explícito dentro de overlays mantém visibilidade */
         [data-theme="light"] [style*="rgba(8,8,9,0."] .text-white,
         [data-theme="light"] [style*="rgba(0,0,0,0."] .text-white {
           color: #0f172a !important;
         }
 
-        /* â”€â”€ Ãcone da marca: badge branco arredondado em todos os temas â”€â”€ */
+        /* â”€â”€ Ícone da marca: badge branco arredondado em todos os temas â”€â”€ */
         .tracto-brand-icon { background: #fff; border-radius: 7px; padding: 2px; }
 
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
@@ -715,12 +715,12 @@ export default function Layout() {
           <SidebarContent handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />
         </aside>
 
-        {/* Ã¢"â‚¬Ã¢"â‚¬ Mobile Drawer Overlay Ã¢"â‚¬Ã¢"â‚¬ */}
+        {/* â"â‚¬â"â‚¬ Mobile Drawer Overlay â"â‚¬â"â‚¬ */}
         {drawerOpen && (
           <div className="drawer-overlay md:hidden" onClick={() => setDrawerOpen(false)} />
         )}
 
-        {/* Ã¢"â‚¬Ã¢"â‚¬ Mobile Drawer Panel Ã¢"â‚¬Ã¢"â‚¬ */}
+        {/* â"â‚¬â"â‚¬ Mobile Drawer Panel â"â‚¬â"â‚¬ */}
         <div className={`drawer-panel md:hidden ${drawerOpen ? 'open' : 'closed'}`} style={{ background: 'var(--sidebar)', borderRight: '1px solid var(--border)' }}>
           {/* Close button */}
           <button
@@ -734,7 +734,7 @@ export default function Layout() {
           <SidebarContent onNavClick={() => setDrawerOpen(false)} handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />
         </div>
 
-        {/* Ã¢"â‚¬Ã¢"â‚¬ Main Content Ã¢"â‚¬Ã¢"â‚¬ */}
+        {/* â"â‚¬â"â‚¬ Main Content â"â‚¬â"â‚¬ */}
         <div className="flex-1 flex flex-col min-w-0">
 
           {/* TopBar */}
@@ -744,7 +744,7 @@ export default function Layout() {
           >
             {/* Left Section: Operational Context */}
             <div className="flex items-center gap-2 md:gap-5 min-w-0">
-              {/* Hamburguer Ã¢â‚¬" mobile only */}
+              {/* Hamburguer ââ‚¬" mobile only */}
               <button
                 onClick={() => setDrawerOpen((v) => !v)}
                 className="md:hidden flex items-center justify-center w-11 h-11 rounded-lg transition-all"
@@ -756,7 +756,7 @@ export default function Layout() {
                 </span>
               </button>
 
-              {/* Fazenda ativa â€” mobile only (desktop usa o seletor abaixo) */}
+              {/* Fazenda ativa - mobile only (desktop usa o seletor abaixo) */}
               {activeFarm && (
                 <div className="md:hidden flex items-center gap-1.5 min-w-0">
                   <span className="material-symbols-outlined text-sm flex-shrink-0" style={{ color: 'var(--primary)' }}>home_work</span>
@@ -766,7 +766,7 @@ export default function Layout() {
                 </div>
               )}
 
-              {/* FAZENDA ATIVA â€” clickable dropdown */}
+              {/* FAZENDA ATIVA - clickable dropdown */}
               <div className="relative" ref={selectorRef}>
                 <button
                   type="button"
@@ -815,7 +815,7 @@ export default function Layout() {
                               <input
                                 className="w-full px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
                                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                                placeholder="MunicÃ­pio / Estado"
+                                placeholder="Município / Estado"
                                 value={editFarmCity}
                                 onChange={(e) => setEditFarmCity(e.target.value)}
                               />
@@ -859,7 +859,7 @@ export default function Layout() {
                               </button>
                               <button
                                 onClick={async () => {
-                                  if (!window.confirm(`Excluir a fazenda "${farm.name}" e todos os seus talhÃµes?`)) return;
+                                  if (!window.confirm(`Excluir a fazenda "${farm.name}" e todos os seus talhões?`)) return;
                                   try { await deleteFarm(farm.id); } catch { /* silently fail */ }
                                 }}
                                 className="p-1 rounded hover:bg-red-500/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
@@ -869,20 +869,20 @@ export default function Layout() {
                             </div>
                           )}
 
-                          {/* â”€â”€ TalhÃµes da fazenda â”€â”€ */}
+                          {/* â”€â”€ Talhões da fazenda â”€â”€ */}
                           {farmFields.length === 0 ? (
-                            <p className="pl-9 pr-3 py-1 text-[10px]" style={{ color: '#1e293b' }}>Sem talhÃµes</p>
+                            <p className="pl-9 pr-3 py-1 text-[10px]" style={{ color: '#1e293b' }}>Sem talhões</p>
                           ) : farmFields.map((field) => {
                             const isEditingThisField = editingFieldId === field.id;
                             return (
                               <div key={field.id} style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
                                 {isEditingThisField ? (
                                   <div className="pl-9 pr-3 py-2.5 flex flex-col gap-2" style={{ background: 'rgba(96,165,250,0.04)' }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#60a5fa' }}>Editar TalhÃ£o</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#60a5fa' }}>Editar Talhão</p>
                                     <input
                                       className="w-full px-3 py-1.5 rounded-lg text-xs text-white focus:outline-none"
                                       style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                                      placeholder="Nome do talhÃ£o"
+                                      placeholder="Nome do talhão"
                                       value={editFieldName}
                                       onChange={(e) => setEditFieldName(e.target.value)}
                                     />
@@ -961,16 +961,16 @@ export default function Layout() {
                                     <button
                                       onClick={() => { setEditingFieldId(field.id ?? null); setEditFarmName(''); setEditFieldName(field.name ?? ''); setEditFieldCultura(field.cultura ?? ''); setEditFieldVariedade(field.variedade ?? ''); setEditFieldPlantio(field.dataPlantio ?? ''); setEditingFarmId(null); }}
                                       className="p-1 rounded hover:bg-white/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
-                                      title="Editar talhÃ£o">
+                                      title="Editar talhão">
                                       <span className="material-symbols-outlined text-sm" style={{ color: '#60a5fa' }}>edit</span>
                                     </button>
                                     <button
                                       onClick={async () => {
-                                        if (!field.id || !window.confirm(`Excluir o talhÃ£o "${field.name}"?`)) return;
+                                        if (!field.id || !window.confirm(`Excluir o talhão "${field.name}"?`)) return;
                                         try { await removeField(farm.id, field.id); } catch { /* silently fail */ }
                                       }}
                                       className="p-1 rounded hover:bg-red-500/10 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all"
-                                      title="Excluir talhÃ£o">
+                                      title="Excluir talhão">
                                       <span className="material-symbols-outlined text-sm" style={{ color: '#f87171' }}>delete</span>
                                     </button>
                                   </div>
@@ -988,7 +988,7 @@ export default function Layout() {
               <div className="hidden xl:flex items-center gap-2 p-1.5 px-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
                 <span className="material-symbols-outlined text-sm" style={{ color: '#94a3b8' }}>location_on</span>
                 <div>
-                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>LocalizaÃ§Ã£o</p>
+                  <p className="text-[10px] uppercase font-bold tracking-wider leading-none mb-0.5" style={{ color: 'var(--muted)' }}>Localização</p>
                   <p className="text-xs font-bold text-white leading-tight truncate max-w-[180px]">
                     {currentLocation?.name || `${FALLBACK_LOCATION.name} (fallback)`}
                   </p>
@@ -998,7 +998,7 @@ export default function Layout() {
 
             {/* Right Section: Actions & Weather */}
             <div className="flex items-center gap-3 md:gap-4">
-              {/* Weather Info Ã¢â‚¬" hidden on mobile */}
+              {/* Weather Info ââ‚¬" hidden on mobile */}
               <div className="hidden lg:flex items-center gap-4 text-xs font-semibold">
                 <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5">
                   <span className="material-symbols-outlined text-base" style={{ color: '#f97316' }}>wb_sunny</span>
@@ -1010,7 +1010,7 @@ export default function Layout() {
                 </span>
               </div>
 
-              {/* Caderno de Campo â€” atalho rÃ¡pido no header */}
+              {/* Caderno de Campo - atalho rápido no header */}
               <button
                 onClick={() => void navigate('/app/caderno')}
                 title="Caderno de Campo"
@@ -1024,7 +1024,7 @@ export default function Layout() {
               <div className="relative" ref={bellRef}>
                 <button
                   onClick={() => setShowNotifications((v) => !v)}
-                  aria-label="NotificaÃ§Ãµes"
+                  aria-label="Notificações"
                   aria-expanded={showNotifications}
                   className="relative p-2 rounded-lg transition-all hover:bg-white/5"
                   style={{ background: showNotifications ? 'rgba(236,91,19,0.12)' : 'var(--surface)', border: `1px solid ${showNotifications ? 'rgba(236,91,19,0.3)' : 'var(--border)'}` }}
@@ -1038,13 +1038,13 @@ export default function Layout() {
                   )}
                 </button>
 
-                {/* Dropdown de notificaÃ§Ãµes */}
+                {/* Dropdown de notificações */}
                 {showNotifications && (
                   <div className="always-dark absolute right-0 top-full mt-2 z-[600] rounded-2xl overflow-hidden flex flex-col"
                     style={{ background: 'rgba(8,8,9,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)', width: 'min(320px, calc(100vw - 1.5rem))', maxHeight: 420 }}>
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                      <p className="text-xs font-bold text-white">NotificaÃ§Ãµes</p>
+                      <p className="text-xs font-bold text-white">Notificações</p>
                       {alerts.filter((a) => !a.dismissed).length > 0 && (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                           style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
@@ -1059,19 +1059,19 @@ export default function Layout() {
                         <div className="flex flex-col items-center gap-2 py-10">
                           <span className="material-symbols-outlined text-3xl" style={{ color: '#1e3a2e' }}>check_circle</span>
                           <p className="text-xs font-semibold" style={{ color: '#4ade80' }}>Tudo em ordem</p>
-                          <p className="text-[10px] text-center px-6" style={{ color: '#475569' }}>Sem alertas ativos nos seus talhÃµes.</p>
+                          <p className="text-[10px] text-center px-6" style={{ color: '#475569' }}>Sem alertas ativos nos seus talhões.</p>
                         </div>
                       ) : (
                         alerts.filter((a) => !a.dismissed).slice(0, 8).map((alert) => (
                           <div key={alert.id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/3 transition-all"
                             style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                             <span className="text-base flex-shrink-0 mt-0.5">
-                              {alert.type === 'critical' ? 'ðŸ”´' : alert.type === 'warning' ? 'ðŸŸ¡' : 'â„¹ï¸'}
+                              {alert.type === 'critical' ? 'critico' : alert.type === 'warning' ? 'alerta' : 'info'}
                             </span>
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold text-white leading-tight">{alert.title}</p>
                               <p className="text-[10px] mt-0.5 line-clamp-2" style={{ color: '#64748b' }}>{alert.message}</p>
-                              {alert.field && <p className="text-[9px] mt-1" style={{ color: '#475569' }}>ðŸ“ {alert.field}</p>}
+                              {alert.field && <p className="text-[9px] mt-1" style={{ color: '#475569' }}>local {alert.field}</p>}
                             </div>
                             <button onClick={() => dismissAlert(alert.id)}
                               aria-label="Dispensar alerta"
@@ -1103,10 +1103,10 @@ export default function Layout() {
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[6000] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-orange-500 focus:text-white">
-            Pular para o conteÃºdo
+            Pular para o conteúdo
           </a>
 
-          {/* Banner de falha de sync â€” aparece quando o backend nÃ£o responde */}
+          {/* Banner de falha de sync - aparece quando o backend não responde */}
           {syncFailed && fields.length === 0 && (
             <div
               className="flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2.5"
@@ -1115,7 +1115,7 @@ export default function Layout() {
               <div className="flex items-center gap-2 min-w-0">
                 <span className="material-symbols-outlined text-base flex-shrink-0" style={{ color: '#fbbf24' }}>wifi_off</span>
                 <p className="text-xs" style={{ color: '#fbbf24' }}>
-                  NÃ£o foi possÃ­vel carregar seus talhÃµes. Verifique a conexÃ£o e tente novamente.
+                  Não foi possível carregar seus talhões. Verifique a conexão e tente novamente.
                 </p>
               </div>
               <button
@@ -1125,14 +1125,14 @@ export default function Layout() {
                 style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.35)', color: '#fbbf24' }}
               >
                 {retrying
-                  ? <><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> Carregandoâ€¦</>
+                  ? <><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> Carregando...</>
                   : <><span className="material-symbols-outlined text-sm">refresh</span> Tentar novamente</>
                 }
               </button>
             </div>
           )}
 
-          {/* Page Content â€” scrolls correctly on mobile */}
+          {/* Page Content - scrolls correctly on mobile */}
           <main id="main-content" className="flex-1 flex overflow-hidden min-h-0" role="main">
             <Outlet />
           </main>

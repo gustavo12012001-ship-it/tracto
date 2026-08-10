@@ -56,25 +56,25 @@ const PLAN_COLORS: Record<string, { color: string; bg: string }> = {
 function cleanText(value: string | null | undefined): string {
   if (!value) return '';
   const replacements: Record<string, string> = {
-    'Ã¡': 'á',
-    'Ã ': 'à',
-    'Ã¢': 'â',
-    'Ã£': 'ã',
-    'Ã©': 'é',
-    'Ãª': 'ê',
-    'Ã­': 'í',
-    'Ã³': 'ó',
-    'Ã´': 'ô',
-    'Ãµ': 'õ',
-    'Ãº': 'ú',
-    'Ã§': 'ç',
-    'Ã': 'Á',
-    'Ã‰': 'É',
-    'Ã“': 'Ó',
-    'Ã‡': 'Ç',
-    'Â·': '·',
-    'â€¦': '...',
-    'âœ“': '✓',
+    '\u00c3\u00a1': 'á',
+    '\u00c3 ': 'à',
+    '\u00c3\u00a2': 'â',
+    '\u00c3\u00a3': 'ã',
+    '\u00c3\u00a9': 'é',
+    '\u00c3\u00aa': 'ê',
+    '\u00c3\u00ad': 'í',
+    '\u00c3\u00b3': 'ó',
+    '\u00c3\u00b4': 'ô',
+    '\u00c3\u00b5': 'õ',
+    '\u00c3\u00ba': 'ú',
+    '\u00c3\u00a7': 'ç',
+    '\u00c3\u0081': 'Á',
+    '\u00c3\u0089': 'É',
+    '\u00c3\u0093': 'Ó',
+    '\u00c3\u0087': 'Ç',
+    '\u00c2\u00b7': '·',
+    '\u00e2\u0080\u00a6': '...',
+    '\u00e2\u009c\u0093': '✓',
   };
   return Object.entries(replacements).reduce(
     (text, [broken, fixed]) => text.split(broken).join(fixed),
@@ -373,7 +373,6 @@ export default function Pricing() {
                   <FeatureItem ok={plan.has_ia_chat}>Tracto IA agronômica</FeatureItem>
                   <FeatureItem ok={plan.has_satellite}>Imagens Sentinel-2 e NDVI</FeatureItem>
                   <FeatureItem ok={plan.has_push}>Notificações em tempo real</FeatureItem>
-                  <FeatureItem ok={plan.has_whatsapp}>Alertas via WhatsApp</FeatureItem>
                 </ul>
 
                 {isCurrent ? (
@@ -406,7 +405,7 @@ export default function Pricing() {
                           Redirecionando...
                         </span>
                       ) : (
-                        `Assinar ${planName} no cartao`
+                        `Assinar ${planName} no cartão`
                       )}
                     </button>
                     <button
@@ -439,7 +438,14 @@ export default function Pricing() {
 
         <p className="text-[10px] text-center mt-6" style={{ color: 'var(--muted)' }}>
           Métodos aceitos: cartão de crédito para assinatura recorrente ou Pix para acesso avulso do período selecionado.
-          Suporte: contato@tractoagro.com.br
+          Suporte: contato@tractoagro.com.br ·{' '}
+          <button
+            type="button"
+            onClick={() => navigate('/cancellation-policy')}
+            className="underline hover:opacity-80"
+          >
+            Consulte cancelamento, reembolso e responsabilidade agronômica antes de assinar.
+          </button>
         </p>
       </div>
 

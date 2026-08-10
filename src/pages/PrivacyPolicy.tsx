@@ -78,7 +78,7 @@ export default function PrivacyPolicy() {
             <ul>
               <li><strong>Nome completo</strong> — para identificação e personalização da experiência</li>
               <li><strong>Endereço de e-mail</strong> — para autenticação, notificações e suporte</li>
-              <li><strong>Número de telefone / WhatsApp</strong> — para envio de alertas agronômicos críticos</li>
+              <li><strong>Número de telefone</strong> — para identificação, suporte e comunicações operacionais quando habilitadas por você</li>
               <li><strong>Senha</strong> — armazenada de forma criptografada (nunca em texto simples)</li>
             </ul>
 
@@ -114,7 +114,7 @@ export default function PrivacyPolicy() {
                 <tbody>
                   {[
                     ['Autenticação e acesso à plataforma', 'Execução de contrato'],
-                    ['Envio de alertas climáticos e satelitais por WhatsApp', 'Consentimento / Legítimo interesse'],
+                    ['Envio de alertas operacionais por e-mail, push ou canais futuros habilitados pelo usuário', 'Consentimento / Legítimo interesse'],
                     ['Análise agronômica com inteligência artificial', 'Execução de contrato'],
                     ['Prevenção de fraudes e segurança', 'Legítimo interesse'],
                     ['Melhoria contínua do produto', 'Legítimo interesse'],

@@ -1422,7 +1422,7 @@ async def whatsapp_webhook(request: Request):
     
     # Gera resposta com Tracto AI e envia via Z-API
     reply_text = ""
-    # [Z-API send below] Ã  API do WhatsApp/Twilio
+    # [Z-API send below] à API do WhatsApp/Twilio
     try:
         reply_text = await asyncio.to_thread(
             generate_chat_response,
@@ -1437,8 +1437,8 @@ async def whatsapp_webhook(request: Request):
         logging.warning("[whatsapp] Erro ao gerar resposta AI user_id=%s: %s", user_id, exc)
         reply_text = "Olá! Recebi sua mensagem. No momento estou com dificuldade de processar sua solicitação. Tente novamente em instantes."
     # MOCK ESTRUTURAL DE SAÃDA:
-    # A Tracto AI roda perfeitamente o contexto, mas a resposta NÃƒO Ã© devolvida
-    # pois nÃ£o temos a API do WhatsApp/Twilio configurada e tokenizada.
+    # A Tracto AI roda perfeitamente o contexto, mas a resposta NAO é devolvida
+    # pois não temos a API do WhatsApp/Twilio configurada e tokenizada.
     # O despache morre em um logger seguro.
     # Envia resposta via Z-API
     sent = await send_whatsapp_reply(phone=phone, message=reply_text)
@@ -3033,7 +3033,7 @@ async def parcel_ndvi_endpoint(
 @limiter.limit("3/minute")
 async def analyze_field_endpoint(request: Request, field_req: FieldAnalysisRequest, _user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        effective_crop_type = field_req.crop_type or "NÃ£o informada"
+        effective_crop_type = field_req.crop_type or "Não informada"
         # Cache key based on location, crop and current date (24h validity semantic)
         date_str = datetime.now().strftime("%Y%m%d")
         cache_key = f"{field_req.lat:.4f}_{field_req.lng:.4f}_{effective_crop_type}_{date_str}"
@@ -3217,7 +3217,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
         engine = AgronomicEngine()
         fields_context = []
         
-        # Se nao houver campos, usamos os dados genÃ©ricos da request
+        # Se nao houver campos, usamos os dados genéricos da request
         if not request.fields:
         # Fallback para dados globais da fazenda na request
             et0_global = getattr(request, 'et0', None)
@@ -3234,7 +3234,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
             for f in request.fields:
                 lat = f.get("lat")
                 lng = f.get("lng")
-                item_crop = f.get("crop") or request.crop_type or "NÃ£o informada"
+                item_crop = f.get("crop") or request.crop_type or "Não informada"
                 et0_field = getattr(request, 'et0', None)
                 
                 engine_res = {
@@ -3255,7 +3255,7 @@ async def alerts_endpoint(request: AlertRequest, _user: AuthenticatedUser = Depe
             date_str = datetime.now().strftime("%Y%m%d")
             for field in request.fields:
                 if "lat" in field and "lng" in field:
-                    item_crop = field.get("crop") or request.crop_type or "NÃ£o informada"
+                    item_crop = field.get("crop") or request.crop_type or "Não informada"
                     cache_key = f"{field['lat']:.4f}_{field['lng']:.4f}_{item_crop}_{date_str}"
                     cached = analysis_cache.get(cache_key)
                     if cached and cached.get("ndvi_analysis"):
@@ -3320,8 +3320,8 @@ async def delete_conversation_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
-    Remove uma conversa garantindo que pertenÃ§a ao usuÃ¡rio autenticado.
-    Retorna 404 se a conversa nÃ£o existir ou nÃ£o pertencer ao usuÃ¡rio.
+    Remove uma conversa garantindo que pertença ao usuário autenticado.
+    Retorna 404 se a conversa não existir ou não pertencer ao usuário.
     """
     try:
         success = supabase_service.delete_conversation(conversation_id, user_id=user.id)

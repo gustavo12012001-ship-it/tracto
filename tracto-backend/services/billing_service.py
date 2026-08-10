@@ -1,5 +1,5 @@
 """
-services/billing_service.py â€” Resolve entitlements (limites/features) do usuÃ¡rio
+services/billing_service.py - Resolve entitlements (limites/features) do usuário
 baseado na assinatura ativa no Mercado Pago.
 
 Fonte de verdade: tabela `plans` (entitlements) JOIN `subscriptions` (status ativo).
@@ -26,7 +26,7 @@ def _supabase_rest(table: str) -> str:
     return f"{url}/rest/v1/{table}"
 
 
-# Fallback entitlements caso o DB falhe ou plano nÃ£o exista
+# Fallback entitlements caso o DB falhe ou plano não exista
 _FREE_FALLBACK: dict[str, Any] = {
     "plan_id": "free",
     "plan_name": "Gratuito",
@@ -79,21 +79,21 @@ def _owner_user_ids() -> set[str]:
 
 
 def is_owner(user_id: str | None, email: str | None = None) -> bool:
-    """True se o usuÃ¡rio Ã© dono/admin (acesso total, ignora plano)."""
+    """True se o usuário é dono/admin (acesso total, ignora plano)."""
     if user_id and user_id in _owner_user_ids():
         return True
     if email and email.strip().lower() in _owner_emails():
         return True
     return False
 
-# Cache de entitlements por user_id com TTL de 60s â€” evita 2 HTTP requests ao
-# Supabase por request ao /api/chat. (A-03) O armazenamento agora Ã© o cache
-# compartilhado (services.shared_cache): Redis se REDIS_URL existir, senÃ£o local.
+# Cache de entitlements por user_id com TTL de 60s - evita 2 HTTP requests ao
+# Supabase por request ao /api/chat. (A-03) O armazenamento agora é o cache
+# compartilhado (services.shared_cache): Redis se REDIS_URL existir, senão local.
 _ent_cache_ttl: float = 60.0
 
 
 def _is_trial_active(trial_end_at: str | None) -> bool:
-    """Retorna True somente se trial_end_at existe e ainda nÃ£o expirou (UTC)."""
+    """Retorna True somente se trial_end_at existe e ainda não expirou (UTC)."""
     if not trial_end_at:
         return False
     try:
@@ -119,18 +119,18 @@ def _is_future_date(value: str | None) -> bool:
 
 
 def validate_cpf(cpf: str) -> bool:
-    """Valida CPF com dÃ­gitos verificadores (MÃ³dulo 11). Rejeita sequÃªncias uniformes."""
+    """Valida CPF com dígitos verificadores (Módulo 11). Rejeita sequências uniformes."""
     digits = "".join(c for c in cpf if c.isdigit())
     if len(digits) != 11 or len(set(digits)) == 1:
         return False
-    # Primeiro dÃ­gito verificador
+    # Primeiro dígito verificador
     total = sum(int(digits[i]) * (10 - i) for i in range(9))
     r = (total * 10) % 11
     if r == 10:
         r = 0
     if r != int(digits[9]):
         return False
-    # Segundo dÃ­gito verificador
+    # Segundo dígito verificador
     total = sum(int(digits[i]) * (11 - i) for i in range(10))
     r = (total * 10) % 11
     if r == 10:
@@ -139,7 +139,7 @@ def validate_cpf(cpf: str) -> bool:
 
 
 def validate_cnpj(cnpj: str) -> bool:
-    """Valida CNPJ com dÃ­gitos verificadores (MÃ³dulo 11). Rejeita sequÃªncias uniformes."""
+    """Valida CNPJ com dígitos verificadores (Módulo 11). Rejeita sequências uniformes."""
     digits = "".join(c for c in cnpj if c.isdigit())
     if len(digits) != 14 or len(set(digits)) == 1:
         return False
@@ -183,11 +183,11 @@ class BillingService:
                 return {"plan_id": "free", "status": "active"}
             return rows[0]
         except Exception as exc:
-            logging.warning("[billing] exceÃ§Ã£o get_user_plan: %s", exc)
+            logging.warning("[billing] exceção get_user_plan: %s", exc)
             return {"plan_id": "free", "status": "active"}
 
     def get_plan_details(self, plan_id: str) -> dict | None:
-        """Busca configuraÃ§Ã£o do plano (max_fields, features, preÃ§o)."""
+        """Busca configuração do plano (max_fields, features, preço)."""
         try:
             resp = requests.get(
                 _supabase_rest("plans"),
@@ -199,11 +199,11 @@ class BillingService:
                 return None
             return resp.json()[0]
         except Exception as exc:
-            logging.warning("[billing] exceÃ§Ã£o get_plan_details: %s", exc)
+            logging.warning("[billing] exceção get_plan_details: %s", exc)
             return None
 
     def count_fields(self, user_id: str) -> int:
-        """Conta talhÃµes atuais do usuÃ¡rio para compor entitlements."""
+        """Conta talhões atuais do usuário para compor entitlements."""
         try:
             resp = requests.get(
                 _supabase_rest("fields"),
@@ -221,7 +221,7 @@ class BillingService:
                     return int(total)
             return len(resp.json())
         except Exception as exc:
-            logging.warning("[billing] exceÃ§Ã£o count_fields: %s", exc)
+            logging.warning("[billing] exceção count_fields: %s", exc)
             return 0
 
     def _compute_entitlements(self, user_id: str) -> dict:
@@ -255,23 +255,23 @@ class BillingService:
             "current_period_end": sub.get("current_period_end"),
             "trial_end_at": sub.get("trial_end_at"),
             "current_fields": self.count_fields(user_id),
-            # is_trial = True somente enquanto a data de tÃ©rmino ainda nÃ£o chegou
+            # is_trial = True somente enquanto a data de término ainda não chegou
             "is_trial": _is_trial_active(sub.get("trial_end_at")),
         }
 
     def get_entitlements(self, user_id: str, email: str | None = None) -> dict:
         """
-        Retorna o conjunto de entitlements do usuÃ¡rio com cache TTL de 60s.
+        Retorna o conjunto de entitlements do usuário com cache TTL de 60s.
 
         Frontend usa pra mostrar/esconder features. Backend usa pra enforcement
-        em endpoints sensÃ­veis (satÃ©lite, IA, WhatsApp, limite de talhÃµes).
+        em endpoints sensíveis (satélite, IA, WhatsApp, limite de talhões).
 
         Donos (allowlist) recebem ACESSO TOTAL, ignorando plano e cache.
 
-        (A-03) Usa o cache compartilhado: Redis quando REDIS_URL estÃ¡ definida
-        (consistente entre instÃ¢ncias), senÃ£o cache local em memÃ³ria.
+        (A-03) Usa o cache compartilhado: Redis quando REDIS_URL está definida
+        (consistente entre instâncias), senão cache local em memória.
         """
-        # Dono â†’ acesso total, sem consultar plano nem cache.
+        # Dono -> acesso total, sem consultar plano nem cache.
         if is_owner(user_id, email):
             return _OWNER_FULL_ACCESS.copy()
 
@@ -287,22 +287,22 @@ class BillingService:
         return result.copy()
 
     def invalidate_cache(self, user_id: str) -> None:
-        """Remove entitlements do cache (chamar apÃ³s webhook de billing confirmado)."""
+        """Remove entitlements do cache (chamar após webhook de billing confirmado)."""
         from services.shared_cache import cache as _shared
         _shared.delete(f"entitlements:{user_id}")
 
     def check_field_limit(self, user_id: str, current_count: int, email: str | None = None) -> tuple[bool, str | None]:
         """
-        Confirma se o usuÃ¡rio pode criar mais um talhÃ£o. Retorna (allowed, error_msg).
+        Confirma se o usuário pode criar mais um talhão. Retorna (allowed, error_msg).
         """
         ent = self.get_entitlements(user_id, email)
         max_fields = ent.get("max_fields", 1)
         if current_count >= max_fields:
             return False, (
-                f"Limite de {max_fields} talhÃ£o(Ãµes) atingido no plano "
-                f"{ent.get('plan_name', 'Gratuito')}. FaÃ§a upgrade pra adicionar mais."
+                f"Limite de {max_fields} talhão(ões) atingido no plano "
+                f"{ent.get('plan_name', 'Gratuito')}. Faça upgrade pra adicionar mais."
             )
         return True, None
 
-# InstÃ¢ncia global
+# Instância global
 billing_service = BillingService()

@@ -13,6 +13,7 @@ import ResetPassword from './pages/ResetPassword';
 import LandingPage from './pages/LandingPage';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
+import CancellationPolicy from './pages/CancellationPolicy';
 
 // Páginas internas: lazy loaded — reduz bundle inicial drasticamente.
 // Cada chunk só é baixado quando o usuário navega pra rota correspondente.
@@ -59,6 +60,7 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/cancellation-policy" element={<CancellationPolicy />} />
 
         {/* App autenticado — todas lazy */}
         <Route

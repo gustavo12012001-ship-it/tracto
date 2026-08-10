@@ -54,7 +54,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     e.preventDefault();
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.length < 10) {
-      alert('Por favor, insira um número de WhatsApp válido.');
+      alert('Por favor, insira um número de telefone válido.');
       return;
     }
 
@@ -102,7 +102,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
           <form onSubmit={handleSavePhone} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">WhatsApp para Alertas</label>
+              <label className="text-[10px] uppercase tracking-widest text-slate-400 font-bold ml-1">Telefone de contato</label>
               <input
                 type="text"
                 value={phone}
@@ -111,7 +111,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
                 placeholder="(11) 99999-9999"
                 required
               />
-              <p className="text-[10px] text-slate-500 ml-1">Usaremos este número apenas para enviar alertas críticos de clima e satélite da sua lavoura.</p>
+              <p className="text-[10px] text-slate-500 ml-1">Usaremos este número para suporte, segurança da conta e comunicações operacionais autorizadas.</p>
             </div>
 
             <button
