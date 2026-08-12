@@ -44,7 +44,7 @@ _FREE_FALLBACK: dict[str, Any] = {
     "is_trial": False,
 }
 
-# â”€â”€ Allowlist de DONO/ADMIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Allowlist de DONO/ADMIN --------------------------------------------------
 # Donos/admins recebem acesso total, ignorando plano/assinatura.
 # Configure por ambiente: OWNER_EMAILS e/ou OWNER_USER_IDS, separados por virgula.
 

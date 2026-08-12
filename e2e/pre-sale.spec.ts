@@ -12,7 +12,7 @@ async function login(page: Page, email: string, pass: string) {
 
 async function expectNoMojibake(page: Page) {
   const text = await page.locator('body').innerText();
-  expect(text).not.toMatch(/Ã[^\sA-Z]|Â[^\s]|â€|â€œ|â€�|ðŸ/);
+  expect(text).not.toMatch(/Ã[^\sA-Z]|Â[^\s]|â€|"|"|ðŸ/);
 }
 
 test.describe('pre-venda publica', () => {

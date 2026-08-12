@@ -6,7 +6,7 @@ import { FALLBACK_LOCATION } from '../utils/geolocation';
 import { preloadWeather } from '../services/api';
 import { ToastProvider } from './ui/Toast';
 
-// â”€â”€ Theme helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Theme helpers -------------------------------------------------------------
 type Theme = 'dark' | 'light';
 
 function getInitialTheme(): Theme {
@@ -24,7 +24,7 @@ function applyTheme(theme: Theme) {
 
 
 
-// â”€â”€ Nav items por perfil â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Nav items por perfil ------------------------------------------------------
 type NavItem = { to: string; label: string; icon: React.ReactNode; badge?: string };
 
 const iconMap = (name: string) => (
@@ -42,7 +42,7 @@ const NAV_PRODUTOR: NavItem[] = [
   { to: '/app/chat',      label: 'Tracto IA',           icon: iconMap('smart_toy'), badge: 'IA' },
 ];
 
-// â”€â”€ Sidebar content (shared between desktop & mobile drawer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Sidebar content (shared between desktop & mobile drawer) ------------------
 function SidebarContent({
   onNavClick,
   handleLogout,
@@ -177,7 +177,7 @@ function SidebarContent({
   );
 }
 
-// â”€â”€ Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Layout --------------------------------------------------------------------
 export default function Layout() {
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -187,7 +187,7 @@ export default function Layout() {
   const bellRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
 
-  // â”€â”€ Estado de edição inline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- Estado de edição inline -----------------------------------------------
   const [editingFarmId, setEditingFarmId] = useState<string | null>(null);
   const [editFarmName, setEditFarmName] = useState('');
   const [editFarmCity, setEditFarmCity] = useState('');
@@ -282,7 +282,7 @@ export default function Layout() {
     return () => subscription.unsubscribe();
   }, [doSync]);
 
-  // â”€â”€ Pré-carrega meteorologia ao abrir o app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- Pré-carrega meteorologia ao abrir o app ----------------------------------
   useEffect(() => {
     const field = activeFieldId ? fields.find((item) => item.id === activeFieldId) : null;
     const loc = field ? { lat: field.lat, lng: field.lng } : (currentLocation ?? FALLBACK_LOCATION);
@@ -327,7 +327,7 @@ export default function Layout() {
           --text-secondary: #cbd5e1;
         }
 
-        /* â”€â”€ Light Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* -- Light Mode -------------------------------- */
         [data-theme="light"] {
           --primary: #d44e0a;
           --primary-dim: rgba(212,78,10,0.10);
@@ -383,7 +383,7 @@ export default function Layout() {
         [data-theme="light"] .nav-item.active { color: #d44e0a; background: rgba(212,78,10,0.08); }
         [data-theme="light"] .card-glass { background: rgba(0,0,0,0.02); }
 
-        /* â”€â”€ Light mode: sobrescrever surfaces escuras â”€â”€â”€â”€ */
+        /* -- Light mode: sobrescrever surfaces escuras ---- */
         [data-theme="light"] .bg-slate-800/50,
         [data-theme="light"] .bg-slate-700/50,
         [data-theme="light"] .bg-slate-900 { background-color: rgba(0,0,0,0.06) !important; }
@@ -435,7 +435,7 @@ export default function Layout() {
         /* Light mode: map/research panels stay dark always */
         [data-theme="light"] .leaflet-container { filter: none; }
 
-        /* â”€â”€ AUDITORIA: inline styles brancos hardcoded -> escuro no light mode â”€â”€ */
+        /* -- AUDITORIA: inline styles brancos hardcoded -> escuro no light mode -- */
         /* Não aplica dentro de .always-dark (painéis flutuantes que ficam escuros sempre) */
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color: #fff"],
         [data-theme="light"] :not(.always-dark) :not(.always-dark *)[style*="color:#fff"],
@@ -489,7 +489,7 @@ export default function Layout() {
           color: #1e293b !important;
         }
 
-        /* â”€â”€ Overlays flutuantes sobre o mapa (dropdowns Ações, Satélite HD, etc) â”€â”€ */
+        /* -- Overlays flutuantes sobre o mapa (dropdowns Ações, Satélite HD, etc) -- */
         /* Mesmo dentro de .always-dark, esses controles devem adaptar ao tema. */
         [data-theme="light"] [style*="rgba(8,8,9,0."],
         [data-theme="light"] [style*="rgba(0,0,0,0.4)"],
@@ -531,7 +531,7 @@ export default function Layout() {
           color: #64748b !important;
         }
 
-        /* â”€â”€ Dropdowns nativos <select> e <option> adaptam ao tema â”€â”€ */
+        /* -- Dropdowns nativos <select> e <option> adaptam ao tema -- */
         select { color-scheme: dark; }
         [data-theme="light"] select { color-scheme: light; }
         select option {
@@ -552,7 +552,7 @@ export default function Layout() {
           color-scheme: light;
         }
 
-        /* â”€â”€ Glass overlay panel - adaptativo claro/escuro â”€â”€ */
+        /* -- Glass overlay panel - adaptativo claro/escuro -- */
         .glass-overlay {
           background: rgba(8,8,9,0.94) !important;
           backdrop-filter: blur(14px) !important;
@@ -577,7 +577,7 @@ export default function Layout() {
           color: inherit !important;
         }
 
-        /* â”€â”€ A11y: focus rings em todos elementos interativos â”€â”€ */
+        /* -- A11y: focus rings em todos elementos interativos -- */
         /* WCAG 2.1: focus visível é obrigatório pra navegação por teclado */
         button:focus-visible,
         a:focus-visible,
@@ -594,7 +594,7 @@ export default function Layout() {
           outline: none;
         }
 
-        /* â”€â”€ A11y: touch targets mínimo 44px em mobile â”€â”€ */
+        /* -- A11y: touch targets mínimo 44px em mobile -- */
         @media (max-width: 768px) {
           button, a[role="button"], a.btn, [role="button"] {
             min-height: 36px;
@@ -602,7 +602,7 @@ export default function Layout() {
           }
         }
 
-        /* â”€â”€ A11y: screen reader only utility â”€â”€ */
+        /* -- A11y: screen reader only utility -- */
         .sr-only {
           position: absolute;
           width: 1px;
@@ -625,7 +625,7 @@ export default function Layout() {
           white-space: normal;
         }
 
-        /* â”€â”€ Reduced motion: respeita preferência do usuário â”€â”€ */
+        /* -- Reduced motion: respeita preferência do usuário -- */
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
             animation-duration: 0.01ms !important;
@@ -635,7 +635,7 @@ export default function Layout() {
           }
         }
 
-        /* â”€â”€ Tracto Input/Select/Label - classes reutilizáveis adaptativas â”€â”€ */
+        /* -- Tracto Input/Select/Label - classes reutilizáveis adaptativas -- */
         .tracto-input, .tracto-select {
           background: rgba(255,255,255,0.05) !important;
           border: 1px solid rgba(255,255,255,0.1) !important;
@@ -669,7 +669,7 @@ export default function Layout() {
           color: #0f172a !important;
         }
 
-        /* â”€â”€ Ícone da marca: badge branco arredondado em todos os temas â”€â”€ */
+        /* -- Ícone da marca: badge branco arredondado em todos os temas -- */
         .tracto-brand-icon { background: #fff; border-radius: 7px; padding: 2px; }
 
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
@@ -710,7 +710,7 @@ export default function Layout() {
 
       <div className="flex h-screen w-full overflow-hidden" style={{ background: 'var(--bg)' }}>
 
-        {/* â”€â”€ Desktop Sidebar (hidden on mobile) â”€â”€ */}
+        {/* -- Desktop Sidebar (hidden on mobile) -- */}
         <aside className="hidden md:flex w-60 flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border)' }}>
           <SidebarContent handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} />
         </aside>
@@ -801,7 +801,7 @@ export default function Layout() {
                       return (
                         <div key={farm.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
 
-                          {/* â”€â”€ Linha da fazenda â”€â”€ */}
+                          {/* -- Linha da fazenda -- */}
                           {isEditingThisFarm ? (
                             <div className="px-3 py-2.5 flex flex-col gap-2" style={{ background: 'rgba(236,91,19,0.05)' }}>
                               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ec5b13' }}>Editar Fazenda</p>
@@ -869,7 +869,7 @@ export default function Layout() {
                             </div>
                           )}
 
-                          {/* â”€â”€ Talhões da fazenda â”€â”€ */}
+                          {/* -- Talhões da fazenda -- */}
                           {farmFields.length === 0 ? (
                             <p className="pl-9 pr-3 py-1 text-[10px]" style={{ color: '#1e293b' }}>Sem talhões</p>
                           ) : farmFields.map((field) => {

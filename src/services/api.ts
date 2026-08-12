@@ -55,7 +55,7 @@ function buildFieldWeatherPayload(weatherCache: WeatherCache | null | undefined)
   };
 }
 
-// â”€â”€ Configuração de resilência â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Configuração de resilência -----------------------------------------------
 const DEFAULT_TIMEOUT_MS = 30_000; // 30s - generoso pra Sentinel/AI
 const DEFAULT_RETRIES = 2;          // 1 tentativa + 2 retries = 3 totais
 const RETRY_DELAY_MS = 800;         // base, dobra a cada retry
@@ -353,7 +353,7 @@ export async function fetchFieldIntelligenceSnapshot(
   });
 }
 
-// â”€â”€ Open-Meteo weather fetch (shared - used by Weather page AND Layout preload) â”€
+// -- Open-Meteo weather fetch (shared - used by Weather page AND Layout preload) -
 
 const WEATHER_TTL_MS = 30 * 60 * 1000; // 30 min
 
