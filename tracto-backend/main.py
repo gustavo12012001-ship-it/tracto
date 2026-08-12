@@ -61,6 +61,10 @@ from models import (
 from services import supabase_service, farm_service
 from services.billing_service import billing_service, validate_cpf, validate_cnpj
 from services.ai_service import MODEL, _get_client, analyze_field_document, analyze_ndvi_image, analyze_weather_map, generate_alerts_claude, generate_chat_response
+import hmac as _hmac
+import hashlib as _hashlib
+import base64 as _base64
+from fastapi.responses import JSONResponse
 from services.auth_service import AuthenticatedUser, get_unverified_user_id_from_header, get_current_user
 from services.cache_service import analysis_cache
 from services.sentinel_service import (
@@ -118,9 +122,20 @@ from services.germoplasm_service import (
 
 # --- Security & Rate Limiting ---
 
-# O limitador usa IP (get_remote_address) como chave primária para governança econômica.
-# A identidade do usuário (context_user_id) é usada apenas para contexto em logs.
-limiter = Limiter(key_func=get_remote_address)
+# O limitador usa preferencialmente user_id (quando disponível) para evitar bypass
+# por proxies/VPNs; fallback para IP se não houver user_id.
+def get_rate_limit_key(request: Request) -> str:
+    """Usa user_id extraído (não verificado) do header Authorization como chave.
+    Fallback para endereço remoto se não existir user_id.
+    """
+    try:
+        auth = request.headers.get("Authorization", "")
+        user_id = get_unverified_user_id_from_header(auth) or ""
+        return user_id if user_id else get_remote_address(request)
+    except Exception:
+        return get_remote_address(request)
+
+limiter = Limiter(key_func=get_rate_limit_key)
 APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
 PROCESS_STARTED_AT = time.perf_counter()
 
@@ -165,6 +180,36 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Generic exception handler: log internals, return generic message to client
+async def _generic_exception_handler(request: Request, exc: Exception):
+    logging.exception("[unhandled] Exception during request %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Erro ao processar a requisição. Tente novamente mais tarde."})
+
+app.add_exception_handler(Exception, _generic_exception_handler)
+
+
+def _compute_csrf_token_for_user(user_id: str) -> str:
+    """Stateless CSRF token: HMAC(secret, user_id) base64-urlencoded."""
+    secret = os.getenv("CSRF_SECRET", "")
+    if not secret:
+        return ""
+    mac = _hmac.new(secret.encode(), msg=str(user_id).encode(), digestmod=_hashlib.sha256).digest()
+    return _base64.urlsafe_b64encode(mac).decode().rstrip("=")
+
+
+def _validate_csrf_header(request: Request, user_id: str) -> bool:
+    expected = _compute_csrf_token_for_user(user_id)
+    header = request.headers.get("X-CSRF-Token", "").strip()
+    if not expected:
+        # CSRF_SECRET not configured — fail-open but log warning
+        logging.warning("CSRF_SECRET not set — skipping CSRF validation for user=%s", user_id)
+        return True
+    try:
+        return _hmac.compare_digest(header, expected)
+    except Exception:
+        return False
 
 # --- Structured Logging Middleware ---
 @app.middleware("http")
@@ -519,7 +564,7 @@ async def upsert_billing_profile(
         timeout=10,
     )
     if not resp.ok:
-        logging.error("[billing/profile] upsert falhou: %s %s", resp.status_code, resp.text[:300])
+        logging.error("[billing/profile] upsert falhou: status=%s", resp.status_code)
         raise HTTPException(status_code=503, detail="Falha ao salvar perfil.")
     rows = resp.json()
     return {"profile": rows[0] if isinstance(rows, list) and rows else payload}
@@ -661,6 +706,11 @@ async def create_checkout(
 
     # 4. Chama Mercado Pago pra criar preapproval
     try:
+        # CSRF protection: require X-CSRF-Token header to match HMAC(secret, user.id)
+        if not _validate_csrf_header(request, user.id):
+            logging.warning("[billing/checkout] CSRF token inválido user=%s", user.id)
+            raise HTTPException(status_code=403, detail="CSRF token inválido.")
+
         mp_resp = await mp.create_preapproval(
             plan_id=plan.get(f"mp_plan_id_{body.billing_cycle}"),  # pode ser None
             payer_email=profile["email"],
@@ -673,8 +723,8 @@ async def create_checkout(
             trial_days=7,  # 7 dias trial — ajuste conforme negócio
         )
     except mp.MercadoPagoError as exc:
-        logging.error("[billing/checkout] MP rejeitou: %s", exc.detail)
-        raise HTTPException(status_code=502, detail=f"Falha no Mercado Pago: {exc.detail}") from exc
+        logging.error("[billing/checkout] MP rejeitou: status=%s", getattr(exc, 'detail', 'unknown'))
+        raise HTTPException(status_code=502, detail="Falha no Mercado Pago. Tente novamente mais tarde.") from exc
 
     # 5. Salva subscription no DB
     sub_payload = {
@@ -703,7 +753,7 @@ async def create_checkout(
         timeout=10,
     )
     if not sub_resp.ok:
-        logging.error("[billing/checkout] insert subscription falhou: %s %s", sub_resp.status_code, sub_resp.text[:300])
+        logging.error("[billing/checkout] insert subscription falhou: status=%s", sub_resp.status_code)
         raise HTTPException(status_code=409, detail="Nao foi possivel iniciar assinatura. Verifique se ja existe assinatura ativa.")
 
     return {
@@ -782,6 +832,11 @@ async def create_pix_checkout(
     notification_url = f"{backend_base}/api/billing/mercadopago-webhook"
 
     try:
+        # CSRF protection for Pix checkout as well
+        if not _validate_csrf_header(request, user.id):
+            logging.warning("[billing/checkout-pix] CSRF token inválido user=%s", user.id)
+            raise HTTPException(status_code=403, detail="CSRF token inválido.")
+
         mp_resp = await mp.create_pix_preference(
             title=f"Tracto {plan['name']} ({body.billing_cycle})",
             amount_brl=amount_brl,
@@ -793,8 +848,8 @@ async def create_pix_checkout(
             notification_url=notification_url,
         )
     except mp.MercadoPagoError as exc:
-        logging.error("[billing/checkout-pix] MP rejeitou: %s", exc.detail)
-        raise HTTPException(status_code=502, detail=f"Falha no Mercado Pago: {exc.detail}") from exc
+        logging.error("[billing/checkout-pix] MP rejeitou: status=%s", getattr(exc, 'detail', 'unknown'))
+        raise HTTPException(status_code=502, detail="Falha no Mercado Pago. Tente novamente mais tarde.") from exc
 
     return {
         "subscription_id": intent_id,
@@ -1116,7 +1171,7 @@ async def _process_payment_event(payment: dict) -> None:
                     timeout=10,
                 )
                 if not create_resp.ok:
-                    logging.error("[MP webhook] falha ao criar assinatura Pix: %s %s", create_resp.status_code, create_resp.text[:300])
+                    logging.error("[MP webhook] falha ao criar assinatura Pix: status=%s", create_resp.status_code)
                     return
                 sub_row = create_resp.json()[0] if create_resp.json() else {"id": sub_id, **sub_update}
             billing_service.invalidate_cache(pix_ref["user_id"])
@@ -1314,7 +1369,7 @@ async def push_subscribe(req: PushSubscriptionCreate, user: AuthenticatedUser = 
     )
 
     if resp.status_code >= 300:
-        logging.error("[push] Falha ao salvar subscription: %s %s", resp.status_code, resp.text[:300])
+        logging.error("[push] Falha ao salvar subscription: status=%s", resp.status_code)
         raise HTTPException(status_code=502, detail="Falha ao salvar inscricao de push.")
 
     return {"status": "ok", "message": "Inscricao de push salva com sucesso na base de dados."}
@@ -1405,7 +1460,8 @@ async def whatsapp_webhook(request: Request):
             logging.warning("[whatsapp] Erro ao buscar perfil phone=%s: %s", phone, exc)
 
     if not user_id:
-        logging.info("[whatsapp] Número %s não registrado na Tracto — ignorando.", phone)
+        masked = phone[-4:].rjust(len(phone), "*") if phone else "(unknown)"
+        logging.info("[whatsapp] Número %s não registrado na Tracto — ignorando.", masked)
         return {"status": "ok", "message": "Número não registrado. Mensagem ignorada."}
 
     # ── Verifica entitlement can_use_whatsapp ─────────────────────────────────
@@ -1450,7 +1506,8 @@ async def whatsapp_webhook(request: Request):
     # O despache morre em um logger seguro.
     # Envia resposta via Z-API
     sent = await send_whatsapp_reply(phone=phone, message=reply_text)
-    logging.info("[whatsapp] phone=%s user_id=%s enviado=%s", phone, user_id, sent)
+    masked = phone[-4:].rjust(len(phone), "*") if phone else "(unknown)"
+    logging.info("[whatsapp] phone=%s user_id=%s enviado=%s", masked, user_id, sent)
     return {"status": "ok", "sent": sent}
 
 # --- /Stage 3 ---
@@ -1537,6 +1594,8 @@ def _planet_cookie_options(request: Request) -> dict:
 
 
 def _build_farm_context_from_snapshot(snapshot: FieldIntelligenceSnapshot) -> str:
+    # Não incluir coordenadas (lat/lng) no contexto injetado na IA ou logs,
+    # para evitar vazamento de localização da propriedade.
     return _build_farm_context_from_metadata(
         metadata={
             "field_id": snapshot.field_id,
@@ -1545,8 +1604,7 @@ def _build_farm_context_from_snapshot(snapshot: FieldIntelligenceSnapshot) -> st
             "variety": snapshot.variety,
             "planting_date": snapshot.planting_date,
             "area_ha": snapshot.area_ha,
-            "lat": snapshot.lat,
-            "lng": snapshot.lng,
+            # lat/lng intentionally omitted for privacy
         },
         snapshot=snapshot,
     )
@@ -1569,8 +1627,8 @@ def _build_canonical_chat_metadata(snapshot: FieldIntelligenceSnapshot, field_da
         "variety": _pick(field_data.get("variety"), snapshot.variety),
         "planting_date": _pick(field_data.get("planting_date"), snapshot.planting_date),
         "area_ha": _pick(field_data.get("area_ha"), snapshot.area_ha),
-        "lat": _pick(field_data.get("latitude"), snapshot.lat),
-        "lng": _pick(field_data.get("longitude"), snapshot.lng),
+        # Não expor coordenadas no metadata retornado ao contexto de chat
+        # "lat" and "lng" intentionally omitted for privacy
     }
 
 
@@ -1611,7 +1669,7 @@ def _build_farm_context_from_metadata(metadata: dict, snapshot: FieldIntelligenc
         f"- variety: {_safe(metadata.get('variety'))}",
         f"- planting_date: {_safe(metadata.get('planting_date'))}",
         f"- area_ha: {_area_text(metadata.get('area_ha'))}",
-        f"- coordinates: {_coord_text(metadata.get('lat'), metadata.get('lng'))}",
+        # Coordinates removed for privacy. Do not include lat/lng in public context.
         f"TALHÃO ATIVO: {_safe(metadata.get('field_name'))} | {_safe(metadata.get('crop_type'))} | {_area_text(metadata.get('area_ha'))} | {_safe(metadata.get('planting_date'))}",
         f"Variedade: {_safe(metadata.get('variety'))}",
         f"Clima atual: Temp {_safe(weather.get('temperature'))}C, Umidade {_safe(weather.get('humidity'))}%, Vento {_safe(weather.get('wind_speed'))} km/h",
@@ -1753,6 +1811,18 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest, _user: Authenti
                 status_code=404,
                 detail="Talhão não encontrado, removido ou sem permissão de acesso. Selecione um talhão válido.",
             )
+
+        # Segurança adicional: garantir que o registro retornado corresponde
+        # exatamente ao canonical_field_id solicitado. Evita inconsitências
+        # em serviços que resolvem por alias ou retorno incorreto.
+        if str(field_data.get("id") or "") != canonical_field_id:
+            logging.warning(
+                "[SECURITY] field_id mismatch user=%s requested=%s resolved=%s",
+                _user.id,
+                canonical_field_id,
+                field_data.get("id"),
+            )
+            raise HTTPException(status_code=403, detail="Acesso negado ao talhão solicitado.")
 
         if not chat_req.messages:
             raise HTTPException(status_code=400, detail="O historico de mensagens esta vazio.")
@@ -2409,10 +2479,10 @@ async def up42_overlay_endpoint(
     except HTTPException:
         raise
     except Exception as exc:
-        logging.error("[/api/up42/overlay] Erro field_id=%s scene_id=%s: %s", field_id, scene_id, exc)
+        logging.exception("[/api/up42/overlay] Erro field_id=%s scene_id=%s", field_id, scene_id)
         raise HTTPException(
             status_code=503,
-            detail=f"Erro ao carregar overlay Up42: {exc}",
+            detail="Erro ao carregar overlay Up42. Tente novamente mais tarde.",
         ) from exc
 
 

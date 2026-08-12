@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { analyzeField } from '../services/api';
 import type { FieldAnalysisResult } from '../services/api';
 import FieldMap from '../components/FieldMap';
 import useAppStore from '../store/useAppStore';
@@ -45,9 +44,7 @@ export default function Dashboard() {
     soja: { price: 'Atualizando...', change: '—', up: true },
   });
 
-  const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<FieldAnalysisResult | null>(null);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const activeField = activeFieldId
     ? fields.find((field) => field.id === activeFieldId) ?? null
@@ -58,44 +55,9 @@ export default function Dashboard() {
   useEffect(() => {
     // Evita exibir resultado de análise de um talhão antigo ao trocar seleção.
     setAnalysisResult(null);
-    setAnalysisError(null);
   }, [activeFieldId]);
 
-  const handleAnalyze = async () => {
-    if (!activeField) return;
-    const loc = activeField;
-    
-    setAnalyzing(true);
-    setAnalysisError(null);
-    
-    try {
-      const fieldName = loc.name || 'Setor Base';
-      const cropType = loc.cultura;
-      const result = await analyzeField(
-        loc.lat, 
-        loc.lng, 
-        fieldName, 
-        cropType, 
-        weatherCache,
-        loc.boundaries || null,
-        loc.dataPlantio,
-        loc.variedade,
-        loc.areaHa
-      );
-      
-      setAnalysisResult(result);
-      localStorage.setItem(`tracto-ndvi-${loc.lat}-${loc.lng}`, JSON.stringify({
-        timestamp: Date.now(),
-        data: result
-      }));
-      
-    } catch (e) {
-      console.error(e);
-      setAnalysisError(e instanceof Error ? e.message : 'Nao foi possivel concluir a analise.');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
+  
 
   // Fetch market once
   useEffect(() => {
@@ -287,30 +249,9 @@ export default function Dashboard() {
               </div>
 
               {!analysisResult ? (
-                <button
-                  onClick={handleAnalyze}
-                  disabled={analyzing}
-                  className="w-full py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
-                  style={{ 
-                    background: analysisError ? '#ef4444' : '#ec5b13', 
-                    color: '#fff',
-                    opacity: analyzing ? 0.7 : 1
-                  }}
-                >
-                  {analyzing ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Analisando...
-                    </>
-                  ) : analysisError ? (
-                    'Tentar novamente'
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[16px]">satellite_alt</span>
-                      Analisar Talhão
-                    </>
-                  )}
-                </button>
+                <div className="w-full py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2" style={{ background: '#374151', color: '#fff' }}>
+                  Análise desabilitada pelo administrador
+                </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   {analysisResult.ndvi_image_base64 ? (
