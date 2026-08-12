@@ -1,15 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Tracto logo">
   <defs>
-    <linearGradient id="tractoOrange" x1="34" y1="32" x2="220" y2="224" gradientUnits="userSpaceOnUse">
+    <linearGradient id="tractoOrange" x1="30" y1="24" x2="220" y2="226" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ff9a4d"/>
-      <stop offset="0.5" stop-color="#f97316"/>
-      <stop offset="1" stop-color="#dc5a0a"/>
+      <stop offset="0.55" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#df5b0b"/>
     </linearGradient>
   </defs>
 
-  <path d="M128 18L214 68V188L128 238L42 188V68L128 18Z" fill="url(#tractoOrange)"/>
-  <path d="M128 48L186 82V174L128 208L70 174V82L128 48Z" fill="#f97316"/>
+  <path
+    d="M128 18L214 68V188L128 238L42 188V68L128 18Z"
+    fill="url(#tractoOrange)"
+    stroke="#fff5eb"
+    stroke-width="9"
+    stroke-linejoin="round"
+  />
 
-  <path d="M98 88H158V108H136V176H120V108H98V88Z" fill="#ffffff"/>
-  <path d="M71 78H185L204 97V112L128 193L52 112V97L71 78Z" fill="rgba(255,255,255,0.08)"/>
+  <path
+    d="M128 52L185 85V171L128 204L71 171V85L128 52Z"
+    fill="#f97316"
+    stroke="#fff5eb"
+    stroke-width="7"
+    stroke-linejoin="round"
+  />
 </svg>
