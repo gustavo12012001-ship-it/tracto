@@ -1324,7 +1324,15 @@ async def whatsapp_webhook(request: Request):
     """
     Webhook Z-API para mensagens WhatsApp recebidas.
     Suporta JSON (Z-API) e form-urlencoded (Twilio legado).
+    
+    NOTA: Este endpoint está desabilitado por padrão. Use ENABLE_WHATSAPP=true para ativar.
     """
+    # ── Feature Flag: WhatsApp desabilitado por padrão na venda comercial ──────
+    _enable_whatsapp = os.getenv("ENABLE_WHATSAPP", "false").strip().lower() in ("true", "1", "yes")
+    if not _enable_whatsapp:
+        logging.info("[whatsapp] Webhook recebido mas ENABLE_WHATSAPP=false — rejeitado.")
+        raise HTTPException(status_code=403, detail="WhatsApp está desabilitado nesta instalação.")
+    
     # ── Autenticação da Z-API ─────────────────────────────────────────────────
     # Valida o token enviado pela Z-API no header 'client-token'.
     # Configure ZAPI_WEBHOOK_SECRET nas variáveis de ambiente da Vercel.
@@ -1436,7 +1444,7 @@ async def whatsapp_webhook(request: Request):
     except Exception as exc:
         logging.warning("[whatsapp] Erro ao gerar resposta AI user_id=%s: %s", user_id, exc)
         reply_text = "Olá! Recebi sua mensagem. No momento estou com dificuldade de processar sua solicitação. Tente novamente em instantes."
-    # MOCK ESTRUTURAL DE SAÃDA:
+    # MOCK ESTRUTURAL DE SAÍDA:
     # A Tracto AI roda perfeitamente o contexto, mas a resposta NAO é devolvida
     # pois não temos a API do WhatsApp/Twilio configurada e tokenizada.
     # O despache morre em um logger seguro.
